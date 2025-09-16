@@ -104,7 +104,7 @@
       let all_results = []
       for (var i = 0; i < localStorage.length; i++){
         const str = localStorage.getItem(localStorage.key(i));
-        if(str != "") all_results.push(JSON.parse(str));
+        if(str != "" && str != undefined) all_results.push(JSON.parse(str));
       }
       download("test_results.json", JSON.stringify(all_results));
     }
