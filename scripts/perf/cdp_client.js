@@ -1,33 +1,60 @@
 "use strict";
 
 const WebSocket = require("ws");
-const http = require("http");
 
 /**
- * CDP Client — wraps a WebSocket connection to a CDP (Chrome DevTools Protocol)
- * target. Provides promise-based command/response correlation and event dispatch.
+ * BiDi Client — wraps a WebSocket connection to a WebDriver BiDi endpoint.
+ * Provides promise-based command/response correlation and event dispatch.
+ *
+ * Firefox 152 uses WebDriver BiDi (not CDP) when --remote-debugging-port is
+ * specified. The WebSocket endpoint is ws://127.0.0.1:PORT/session.
  */
-class CDPClient {
+class BiDiClient {
   /**
-   * @param {string} wsUrl - WebSocket URL of the CDP target.
+   * @param {number} port - The debugging port.
    */
-  constructor(wsUrl) {
-    this.wsUrl = wsUrl;
+  constructor(port) {
+    this.port = port;
     this.ws = null;
     this._id = 0;
     this._pending = new Map(); // id → {resolve, reject}
     this._eventHandlers = new Map(); // method → Set<fn>
+    this.sessionId = null;
+    this.context = null;
+    this.browserVersion = "unknown";
   }
 
   /**
-   * Connect to the WebSocket endpoint.
+   * Connect to the WebSocket endpoint and create a BiDi session.
    * @returns {Promise<void>}
    */
   connect() {
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(this.wsUrl);
+      const wsUrl = `ws://127.0.0.1:${this.port}/session`;
+      this.ws = new WebSocket(wsUrl);
 
-      this.ws.on("open", resolve);
+      this.ws.on("open", () => {
+        // Create a session
+        this._send("session.new", { capabilities: {} })
+          .then((result) => {
+            this.sessionId = result.sessionId;
+            this.browserVersion =
+              result.capabilities?.browserVersion || "unknown";
+            // Get the browsing context
+            return this._send("browsingContext.getTree", {});
+          })
+          .then((result) => {
+            if (
+              result.contexts &&
+              result.contexts.length > 0
+            ) {
+              this.context = result.contexts[0].context;
+            }
+            resolve();
+          })
+          .catch(reject);
+      });
+
       this.ws.on("error", reject);
 
       this.ws.on("message", (data) => {
@@ -43,10 +70,14 @@ class CDPClient {
           const pending = this._pending.get(msg.id);
           if (pending) {
             this._pending.delete(msg.id);
-            if (msg.error) {
-              pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-            } else {
+            if (msg.type === "error") {
+              pending.reject(
+                new Error(msg.message || JSON.stringify(msg))
+              );
+            } else if (msg.type === "success") {
               pending.resolve(msg.result);
+            } else {
+              pending.reject(new Error("Unexpected response type: " + msg.type));
             }
           }
         } else if (msg.method) {
@@ -54,14 +85,13 @@ class CDPClient {
           const handlers = this._eventHandlers.get(msg.method);
           if (handlers) {
             for (const handler of handlers) {
-              handler(msg.params, msg.sessionId);
+              handler(msg.params);
             }
           }
         }
       });
 
       this.ws.on("close", () => {
-        // Reject all pending commands
         for (const [id, pending] of this._pending) {
           pending.reject(new Error("WebSocket closed"));
         }
@@ -71,12 +101,12 @@ class CDPClient {
   }
 
   /**
-   * Send a CDP command and await the response.
-   * @param {string} method - CDP method name (e.g. "Runtime.evaluate").
+   * Send a BiDi command and await the response.
+   * @param {string} method - BiDi method name.
    * @param {object} [params={}] - Command parameters.
    * @returns {Promise<object>}
    */
-  send(method, params = {}) {
+  _send(method, params = {}) {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         reject(new Error("WebSocket is not open"));
@@ -97,7 +127,7 @@ class CDPClient {
   /**
    * Register an event handler.
    * @param {string} method - Event method name.
-   * @param {function} handler - Handler function (params, sessionId).
+   * @param {function} handler - Handler function (params).
    */
   on(method, handler) {
     if (!this._eventHandlers.has(method)) {
@@ -107,30 +137,19 @@ class CDPClient {
   }
 
   /**
-   * Remove an event handler.
-   * @param {string} method
-   * @param {function} handler
-   */
-  off(method, handler) {
-    const handlers = this._eventHandlers.get(method);
-    if (handlers) {
-      handlers.delete(handler);
-    }
-  }
-
-  /**
    * Evaluate a JavaScript expression in the page context.
    * @param {string} expression - JS expression to evaluate.
    * @param {boolean} [awaitPromise=false] - Whether to await a returned promise.
-   * @param {boolean} [returnByValue=true] - Whether to return the result by value.
-   * @returns {Promise<object>} - The evaluation result.
+   * @returns {Promise<object>} - The evaluation result: {type, value} or {type, ...}.
    */
-  async evaluate(expression, awaitPromise = false, returnByValue = true) {
-    return this.send("Runtime.evaluate", {
+  async evaluate(expression, awaitPromise = false) {
+    const result = await this._send("script.evaluate", {
       expression,
+      target: { context: this.context },
       awaitPromise,
-      returnByValue,
     });
+    // BiDi returns {result: {type: "string", value: "..."}, ...}
+    return result;
   }
 
   /**
@@ -139,12 +158,15 @@ class CDPClient {
    * @returns {Promise<object>}
    */
   async navigate(url) {
-    return this.send("Page.navigate", { url });
+    return this._send("browsingContext.navigate", {
+      context: this.context,
+      url,
+      wait: "complete",
+    });
   }
 
   /**
-   * Wait for the page to reach a readyState by polling.
-   * More robust than relying on Page.loadEventFired (which Firefox may not fire).
+   * Wait for the page to reach readyState 'complete' by polling.
    * @param {number} [timeoutMs=30000]
    * @returns {Promise<void>}
    */
@@ -155,11 +177,7 @@ class CDPClient {
         const result = await this.evaluate(
           'document.readyState === "complete" ? "ready" : "not-ready"'
         );
-        if (
-          result &&
-          result.result &&
-          result.result.value === "ready"
-        ) {
+        if (result && result.result && result.result.value === "ready") {
           return;
         }
       } catch (e) {
@@ -171,7 +189,7 @@ class CDPClient {
   }
 
   /**
-   * Wait for a global variable to be defined (e.g. after ES module load).
+   * Wait for a global variable to be defined.
    * @param {string} varName - The global variable name to check.
    * @param {number} [timeoutMs=30000]
    * @returns {Promise<void>}
@@ -183,11 +201,7 @@ class CDPClient {
         const result = await this.evaluate(
           `typeof window.${varName} !== "undefined" ? "defined" : "undefined"`
         );
-        if (
-          result &&
-          result.result &&
-          result.result.value === "defined"
-        ) {
+        if (result && result.result && result.result.value === "defined") {
           return;
         }
       } catch (e) {
@@ -232,56 +246,18 @@ class CDPClient {
 }
 
 /**
- * Connect to a page target's WebSocket.
- * Fetches /json to find the page target, then connects to its webSocketDebuggerUrl.
+ * Connect to a browser's BiDi endpoint.
  * @param {number} port - The debugging port.
- * @returns {Promise<CDPClient>}
+ * @returns {Promise<BiDiClient>}
  */
 async function connectToPage(port) {
-  // Get the list of targets
-  const targets = await httpGetJson(port, "/json");
-
-  // Find a page target
-  let pageTarget = targets.find((t) => t.type === "page");
-  if (!pageTarget) {
-    // If no page target, try /json/version for browser-level WS
-    throw new Error("No page target found. Browser may not have a page open.");
-  }
-
-  const client = new CDPClient(pageTarget.webSocketDebuggerUrl);
+  const client = new BiDiClient(port);
   await client.connect();
-
-  // Enable required domains
-  await client.send("Page.enable");
-  await client.send("Runtime.enable");
-
   return client;
-}
-
-/**
- * Helper: HTTP GET returning parsed JSON.
- */
-function httpGetJson(port, endpoint) {
-  return new Promise((resolve, reject) => {
-    http.get(
-      `http://127.0.0.1:${port}${endpoint}`,
-      (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => {
-          try {
-            resolve(JSON.parse(data));
-          } catch (e) {
-            reject(e);
-          }
-        });
-      }
-    ).on("error", reject);
-  });
 }
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-module.exports = { CDPClient, connectToPage };
+module.exports = { BiDiClient, connectToPage };

@@ -3,7 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const { createServer } = require("./http_server");
-const { launchBrowser, killBrowser, getBrowserInfo } = require("./browser");
+const { launchBrowser, killBrowser } = require("./browser");
 const { connectToPage } = require("./cdp_client");
 
 // ─── CLI Parsing ───────────────────────────────────────────────────────────
@@ -472,14 +472,6 @@ async function main() {
   }
   console.log(`Browser debugging port: ${browserPort}`);
 
-  // Get browser info
-  let browserInfo = {};
-  try {
-    browserInfo = await getBrowserInfo(browserPort);
-  } catch (e) {
-    // Non-fatal
-  }
-
   // Register cleanup handlers
   const cleanup = () => {
     killBrowser(browserProc);
@@ -502,13 +494,13 @@ async function main() {
     process.exit(1);
   });
 
-  // Connect to the page via CDP
-  console.log("\nConnecting via CDP...");
+  // Connect to the page via WebDriver BiDi
+  console.log("\nConnecting via WebDriver BiDi...");
   let client;
   try {
     client = await connectToPage(browserPort);
   } catch (e) {
-    console.error(`Failed to connect via CDP: ${e.message}`);
+    console.error(`Failed to connect via BiDi: ${e.message}`);
     cleanup();
     process.exit(1);
   }
@@ -534,7 +526,7 @@ async function main() {
   const results = {
     timestamp: new Date().toISOString(),
     browser: args.browser,
-    browser_version: browserInfo.Browser || "unknown",
+    browser_version: client.browserVersion || "unknown",
     node_version: process.version,
     workloads: [],
   };

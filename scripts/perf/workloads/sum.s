@@ -44,7 +44,6 @@ sum_loop:
 
 sum_done:
     # Convert sum to string and print
-    # Simple: print the number as decimal
     la a1, out_buf
     li t3, 0              # digit count
 
@@ -64,22 +63,29 @@ extract_loop:
     j extract_loop
 
 digits_done:
-    # Reverse digits in place
-    li t4, 0              # left index
-    addi t5, t3, -1       # right index
+    # Reverse digits in place using s0/s1 (save/restore)
+    addi sp, sp, -8
+    sw s0, 0(sp)
+    sw s1, 4(sp)
+
+    li s0, 0              # left index
+    addi s1, t3, -1       # right index
 reverse_loop:
-    bge t4, t5, reverse_done
-    add t6, a1, t4
-    add t7, a1, t5
-    lbu t0, 0(t6)
-    lbu t2, 0(t7)
-    sb t2, 0(t6)
-    sb t0, 0(t7)
-    addi t4, t4, 1
-    addi t5, t5, -1
+    bge s0, s1, reverse_done
+    add t4, a1, s0
+    add t5, a1, s1
+    lbu t0, 0(t4)
+    lbu t2, 0(t5)
+    sb t2, 0(t4)
+    sb t0, 0(t5)
+    addi s0, s0, 1
+    addi s1, s1, -1
     j reverse_loop
 
 reverse_done:
+    lw s0, 0(sp)
+    lw s1, 4(sp)
+    addi sp, sp, 8
     j print_result
 
 print_zero:

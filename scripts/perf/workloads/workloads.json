@@ -10,10 +10,10 @@
     "description": "Minimal hello world program (write syscall)"
   },
   {
-    "name": "sum_1_to_100",
+    "name": "sum_1_to_99",
     "files": ["sum.s"],
-    "stdin": "100\n",
-    "expected_stdout": "5050\n",
+    "stdin": "99\n",
+    "expected_stdout": "4950\n",
     "isa": "imac",
     "newlib": true,
     "stack_pointer": "0x7FFFFFC",

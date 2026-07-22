@@ -69,21 +69,29 @@ fib_extract:
     j fib_extract
 
 fib_digits_done:
-    li t4, 0
-    addi t5, t3, -1
+    # Reverse digits using s0/s1
+    addi sp, sp, -8
+    sw s0, 0(sp)
+    sw s1, 4(sp)
+
+    li s0, 0
+    addi s1, t3, -1
 fib_rev:
-    bge t4, t5, fib_rev_done
-    add t6, a1, t4
-    add t7, a1, t5
-    lbu t0, 0(t6)
-    lbu t2, 0(t7)
-    sb t2, 0(t6)
-    sb t0, 0(t7)
-    addi t4, t4, 1
-    addi t5, t5, -1
+    bge s0, s1, fib_rev_done
+    add t4, a1, s0
+    add t5, a1, s1
+    lbu t0, 0(t4)
+    lbu t2, 0(t5)
+    sb t2, 0(t4)
+    sb t0, 0(t5)
+    addi s0, s0, 1
+    addi s1, s1, -1
     j fib_rev
 
 fib_rev_done:
+    lw s0, 0(sp)
+    lw s1, 4(sp)
+    addi sp, sp, 8
     j fib_print
 
 fib_print_zero:
