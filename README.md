@@ -5,7 +5,7 @@ The RISC-V Assembly Learn Environment, or ALE, is an environment designed to sup
 This page is dedicated to providing information for instructors and developers who intend to create new plug-ins and extensions for the tool.
 To use RISC-V ALE, see:
 
-- Stable version: https://riscv-programming.org/ale/
+- Live version: https://eduardorittner.github.io/RISC-V-ALE/#home
 - More details: https://riscv-programming.org/simulator.html
 
 ## Documentation
