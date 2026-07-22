@@ -38,6 +38,10 @@ class SimulatorController{
     this.int_cont_freq_scale = 25;
     this.last_loaded_files = []
     this._executionResolve = null;
+    window.__ale__ = {
+      uniq_id: window.uniq_id,
+      sim_status_ch: this.sim_status_ch,
+    };
     this.startSimulator();
     this.stdio_ch.onmessage = function (e) {
       if(e.data.fh==0){ // stdin
