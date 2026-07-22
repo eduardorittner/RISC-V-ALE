@@ -278,12 +278,23 @@ async function runWorkload(client, workload, workloadsDir, timeout) {
   if (result.compileError) status = "compile_error";
   else if (result.execError === "timeout") status = "timeout";
   else if (result.execError) status = "exec_error";
+  else if (
+    workload.expected_stdout !== undefined &&
+    result.stdout !== workload.expected_stdout
+  ) {
+    status = "output_mismatch";
+  }
 
   return {
     compileTime: result.compileTime || 0,
     execTime: result.execTime || 0,
     stdout: result.stdout || "",
     stderr: result.stderr || "",
+    expectedStdout: workload.expected_stdout || "",
+    stdoutMatch:
+      workload.expected_stdout !== undefined
+        ? result.stdout === workload.expected_stdout
+        : null,
     status,
     error: result.compileError || result.execError || null,
   };
@@ -314,20 +325,25 @@ function printResultsTable(results) {
     pad("Workload", 25) +
       padRight("Compile (ms)", 14) +
       padRight("Exec (ms)", 12) +
-      padRight("Status", 10)
+      padRight("Stdout", 8) +
+      padRight("Status", 16)
   );
   console.log("─".repeat(80));
 
   for (const w of results.workloads) {
+    const stdoutCol =
+      w.stdout_match === true
+        ? "✓"
+        : w.stdout_match === false
+        ? "✗"
+        : "-";
     console.log(
       pad(w.name, 25) +
         padRight(w.compile_time_ms.toFixed(1), 14) +
         padRight(w.exec_time_ms.toFixed(1), 12) +
-        padRight(w.status, 10)
+        padRight(stdoutCol, 8) +
+        padRight(w.status, 16)
     );
-    if (w.error) {
-      console.log("  └─ Error: " + w.error);
-    }
   }
   console.log("─".repeat(80));
 }
@@ -555,6 +571,14 @@ async function main() {
             `Status: ${result.status}`
         );
 
+        if (result.stdoutMatch === false) {
+          console.log(`  Stdout mismatch:`);
+          console.log(`    Expected: ${JSON.stringify(result.expectedStdout)}`);
+          console.log(`    Got:      ${JSON.stringify(result.stdout)}`);
+        } else if (result.stdoutMatch === true) {
+          console.log(`  Stdout: ✓ verified`);
+        }
+
         if (result.status !== "ok" && result.error) {
           console.log(`  Error: ${result.error}`);
         }
@@ -592,6 +616,7 @@ async function main() {
       status: lastResult ? lastResult.status : "unknown",
       stdout: lastResult ? lastResult.stdout : "",
       stderr: lastResult ? lastResult.stderr : "",
+      stdout_match: lastResult ? lastResult.stdoutMatch : null,
     });
   }
 
