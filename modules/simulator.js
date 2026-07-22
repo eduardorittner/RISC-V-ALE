@@ -37,6 +37,7 @@ class SimulatorController{
     this.bus_freq_limit = 30;
     this.int_cont_freq_scale = 25;
     this.last_loaded_files = []
+    this._executionResolve = null;
     this.startSimulator();
     this.stdio_ch.onmessage = function (e) {
       if(e.data.fh==0){ // stdin
@@ -65,6 +66,11 @@ class SimulatorController{
           break;
         case "status":
           if(e.data.status.finish){
+            if(this._executionResolve){
+              const resolve = this._executionResolve;
+              this._executionResolve = null;
+              resolve();
+            }
             this.restart_simulator();
           }else{
             this.sim_status_ch.postMessage(e.data);
@@ -110,6 +116,10 @@ class SimulatorController{
       this.simulator.postMessage({type:"sync", buffer:this.mmio_write_buffer});
       this.mmio_write_buffer = [];
     }, 0)
+
+    return new Promise(resolve => {
+      this._executionResolve = resolve;
+    });
   }
 
   load_syscall(number, code, desc){
@@ -157,6 +167,11 @@ class SimulatorController{
   }
 
   restart_simulator(){
+    if(this._executionResolve){
+      const resolve = this._executionResolve;
+      this._executionResolve = null;
+      resolve();
+    }
     this.simulator.terminate();
     this.sim_status_ch.postMessage({type:"status", status:{stopping:true}});
     this.startSimulator();
