@@ -1,0 +1,47 @@
+[
+  {
+    "name": "hello_world",
+    "files": ["hello.s"],
+    "stdin": "",
+    "isa": "imac",
+    "newlib": true,
+    "stack_pointer": "0x7FFFFFC",
+    "description": "Minimal hello world program (write syscall)"
+  },
+  {
+    "name": "sum_1_to_100",
+    "files": ["sum.s"],
+    "stdin": "100\n",
+    "isa": "imac",
+    "newlib": true,
+    "stack_pointer": "0x7FFFFFC",
+    "description": "Sum integers 1..N read from stdin"
+  },
+  {
+    "name": "fibonacci",
+    "files": ["fib.s"],
+    "stdin": "20\n",
+    "isa": "imac",
+    "newlib": true,
+    "stack_pointer": "0x7FFFFFC",
+    "description": "Compute Nth Fibonacci number (iterative)"
+  },
+  {
+    "name": "memset_bench",
+    "files": ["memset.s"],
+    "stdin": "",
+    "isa": "imac",
+    "newlib": true,
+    "stack_pointer": "0x7FFFFFC",
+    "description": "Fill a 4KB memory region with a value (memory operations)"
+  },
+  {
+    "name": "echo_stdin",
+    "files": ["echo.s"],
+    "stdin": "Hello ALE!\n",
+    "isa": "imac",
+    "newlib": true,
+    "stack_pointer": "0x7FFFFFC",
+    "description": "Read a line from stdin and echo it to stdout"
+  }
+]

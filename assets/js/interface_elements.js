@@ -84,6 +84,11 @@ import {simulator_controller} from "../../modules/simulator.js";
 import {compiler} from "../../modules/compiler.js";
 import {conn} from "../../modules/connection.js";
 
+// Expose on window for performance testing harness (CDP Runtime.evaluate)
+window.simulator_controller = simulator_controller;
+window.compiler = compiler;
+window.__ale_perf_ready__ = true;
+
 var mmio_manager = new MMIO_Manager();
 var web_terminal = new WebTerminal(document.getElementById('xterm-container'), document.getElementById("terminal_badge"));
 var assistant = new Assistant(document.getElementById('assistant_container'), document.getElementById('assistant_button'));

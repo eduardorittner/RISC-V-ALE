@@ -1,0 +1,9 @@
+{
+  "name": "risc-v-ale-perf",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Performance testing harness for RISC-V ALE",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
