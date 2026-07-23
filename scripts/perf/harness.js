@@ -92,6 +92,34 @@ function base64Encode(data) {
   return Buffer.from(data).toString("base64");
 }
 
+// ─── Color ──────────────────────────────────────────────────────────────────
+
+const USE_COLOR = process.stdout.isTTY !== false;
+
+const COLORS = {
+  reset: "\x1b[0m",
+  green: "\x1b[32m",
+  red: "\x1b[31m",
+};
+
+function colorize(text, color) {
+  if (!USE_COLOR || !color) return text;
+  return COLORS[color] + text + COLORS.reset;
+}
+
+/**
+ * Determine the color for a time delta.
+ * Faster (negative delta) → green, slower (positive delta) → red,
+ * roughly the same (within ±5%) → no color.
+ * @param {number} delta - Absolute difference (current - previous).
+ * @param {number} pct - Percentage difference.
+ * @returns {string|null} - "green", "red", or null.
+ */
+function deltaColor(delta, pct) {
+  if (Math.abs(pct) < 5) return null;
+  return delta < 0 ? "green" : "red";
+}
+
 // ─── In-Page Measurement ───────────────────────────────────────────────────
 
 /**
@@ -337,12 +365,13 @@ function printResultsTable(results) {
         : w.stdout_match === false
         ? "✗"
         : "-";
+    const statusColor = w.status === "ok" ? "green" : "red";
     console.log(
       pad(w.name, 25) +
         padRight(w.compile_time_ms.toFixed(1), 14) +
         padRight(w.exec_time_ms.toFixed(1), 12) +
         padRight(stdoutCol, 8) +
-        padRight(w.status, 16)
+        padRight(colorize(w.status, statusColor), 16)
     );
   }
   console.log("─".repeat(80));
@@ -388,12 +417,21 @@ function printComparisonTable(current, last) {
     const execPct =
       prev.exec_time_ms !== 0 ? (execDelta / prev.exec_time_ms) * 100 : 0;
 
+    const compileDeltaStr = colorize(
+      formatDelta(compileDelta, compilePct),
+      deltaColor(compileDelta, compilePct)
+    );
+    const execDeltaStr = colorize(
+      formatDelta(execDelta, execPct),
+      deltaColor(execDelta, execPct)
+    );
+
     console.log(
       pad(w.name, 25) +
         padRight(w.compile_time_ms.toFixed(1), 14) +
         padRight(w.exec_time_ms.toFixed(1), 12) +
-        padRight(formatDelta(compileDelta, compilePct), 16) +
-        padRight(formatDelta(execDelta, execPct), 16)
+        padRight(compileDeltaStr, 16) +
+        padRight(execDeltaStr, 16)
     );
   }
   console.log("═".repeat(90));
@@ -557,18 +595,19 @@ async function main() {
         execTimes.push(result.execTime);
         lastResult = result;
 
+        const iterStatusColor = result.status === "ok" ? "green" : "red";
         console.log(
           `  Compile: ${result.compileTime.toFixed(1)}ms  ` +
             `Exec: ${result.execTime.toFixed(1)}ms  ` +
-            `Status: ${result.status}`
+            `Status: ${colorize(result.status, iterStatusColor)}`
         );
 
         if (result.stdoutMatch === false) {
-          console.log(`  Stdout mismatch:`);
+          console.log(`  Stdout: ${colorize("✗ mismatch", "red")}`);
           console.log(`    Expected: ${JSON.stringify(result.expectedStdout)}`);
           console.log(`    Got:      ${JSON.stringify(result.stdout)}`);
         } else if (result.stdoutMatch === true) {
-          console.log(`  Stdout: ✓ verified`);
+          console.log(`  Stdout: ${colorize("✓ verified", "green")}`);
         }
 
         if (result.status !== "ok" && result.error) {
