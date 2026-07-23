@@ -107,6 +107,18 @@ function colorize(text, color) {
   return COLORS[color] + text + COLORS.reset;
 }
 
+// Regex to strip ANSI escape codes for visible-length calculations
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+/**
+ * Return the visible length of a string, ignoring ANSI escape codes.
+ * @param {string} str
+ * @returns {number}
+ */
+function visibleLength(str) {
+  return str.replace(ANSI_RE, "").length;
+}
+
 /**
  * Determine the color for a time delta.
  * Faster (negative delta) → green, slower (positive delta) → red,
@@ -444,21 +456,22 @@ function formatDelta(delta, pct) {
 
 function pad(str, len) {
   str = String(str);
-  if (str.length >= len) return str.slice(0, len);
-  return str + " ".repeat(len - str.length);
+  const vlen = visibleLength(str);
+  if (vlen >= len) return str;
+  return str + " ".repeat(len - vlen);
 }
 
 function padRight(str, len) {
   str = String(str);
-  if (str.length >= len) return str.slice(0, len);
-  return str + " ".repeat(len - str.length);
+  const vlen = visibleLength(str);
+  if (vlen >= len) return str;
+  return str + " ".repeat(len - vlen);
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-
   // Check for ws dependency
   const wsPath = path.join(PERF_DIR, "node_modules", "ws");
   if (!fs.existsSync(wsPath)) {
