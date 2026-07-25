@@ -1,4 +1,4 @@
-.PHONY: gh-pages perf
+.PHONY: gh-pages perf HEAD
 
 gh-pages:
 	./scripts/deploy_gh_pages.sh
@@ -20,6 +20,35 @@ PERF_NO_COMPARE := $(if $(NO_COMPARE),--no-compare,)
 PERF_ITERATIONS := $(if $(ITERATIONS),--iterations $(ITERATIONS),)
 PERF_ARGS := $(PERF_BROWSER) $(PERF_DRY) $(PERF_NO_COMPARE) $(PERF_ITERATIONS)
 
+ifeq ($(filter HEAD,$(MAKECMDGOALS)),HEAD)
+perf:
+	@if [ ! -d "scripts/perf/node_modules/ws" ]; then \
+		echo "Error: 'ws' package not found."; \
+		echo "Please run: cd scripts/perf && npm install"; \
+		exit 1; \
+	fi
+	@STASHED=0; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Stashing uncommitted changes..."; \
+		git stash push -m "make-perf-head-temp"; \
+		STASHED=1; \
+	fi; \
+	echo "Checking out HEAD~1..."; \
+	git checkout HEAD~1 && \
+	$(MAKE) perf NO_COMPARE=1 && \
+	echo "Switching back to current commit..."; \
+	git switch - && \
+	$(MAKE) perf; \
+	EXIT_CODE=$$?; \
+	if [ $$STASHED -eq 1 ]; then \
+		echo "Restoring stashed changes..."; \
+		git stash pop; \
+	fi; \
+	exit $$EXIT_CODE
+
+HEAD:
+	@:
+else
 perf:
 	@if [ ! -d "scripts/perf/node_modules/ws" ]; then \
 		echo "Error: 'ws' package not found."; \
@@ -27,3 +56,4 @@ perf:
 		exit 1; \
 	fi
 	node scripts/perf/harness.js $(PERF_ARGS)
+endif
