@@ -4,20 +4,95 @@ const { spawn } = require("child_process");
 const http = require("http");
 const fs = require("fs");
 
+const path = require("path");
+
+function getCandidatePaths(browser) {
+  if (browser === "firefox" && process.env.FIREFOX_BIN) return [process.env.FIREFOX_BIN];
+  if (browser === "chrome" && process.env.CHROME_BIN) return [process.env.CHROME_BIN];
+  if (process.env.BROWSER_BIN) return [process.env.BROWSER_BIN];
+
+  const platform = process.platform;
+
+  if (browser === "firefox") {
+    if (platform === "darwin") {
+      return [
+        "/Applications/Firefox.app/Contents/MacOS/firefox",
+        "/Applications/Firefox Nightly.app/Contents/MacOS/firefox",
+        "firefox",
+      ];
+    } else if (platform === "win32") {
+      return [
+        "C:\\Program Files\\Mozilla Firefox\\firefox.exe",
+        "C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe",
+        "firefox",
+      ];
+    } else {
+      return ["firefox", "/usr/bin/firefox", "/snap/bin/firefox"];
+    }
+  }
+
+  if (browser === "chrome") {
+    if (platform === "darwin") {
+      return [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "google-chrome",
+        "chrome",
+        "chromium",
+      ];
+    } else if (platform === "win32") {
+      return [
+        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+        "google-chrome",
+        "chrome",
+      ];
+    } else {
+      return [
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium-browser",
+        "chromium",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+      ];
+    }
+  }
+
+  return [browser];
+}
+
+function resolveBrowserBinary(browser) {
+  const candidates = getCandidatePaths(browser);
+  for (const candidate of candidates) {
+    if (path.isAbsolute(candidate)) {
+      if (fs.existsSync(candidate)) return candidate;
+    } else {
+      // Return command name directly to let system PATH resolve it
+      return candidate;
+    }
+  }
+  return candidates[0];
+}
+
 const BROWSER_COMMANDS = {
   firefox: {
-    cmd: "firefox",
+    getCmd: () => resolveBrowserBinary("firefox"),
     args: [
       "--headless",
       "--remote-debugging-port=0",
       "--no-remote",
+      "-profile",
+      "/tmp/ale-perf-firefox-profile",
     ],
   },
   chrome: {
-    cmd: "google-chrome",
+    getCmd: () => resolveBrowserBinary("chrome"),
     args: [
       "--headless=new",
       "--remote-debugging-port=0",
+      "--enable-bidi",
       "--no-first-run",
       "--no-default-browser-check",
       "--user-data-dir=/tmp/ale-perf-chrome-profile",
@@ -100,7 +175,8 @@ async function launchBrowser(browser) {
     throw new Error(`Unknown browser: ${browser}. Use "firefox" or "chrome".`);
   }
 
-  const proc = spawn(config.cmd, config.args, {
+  const binary = config.getCmd();
+  const proc = spawn(binary, config.args, {
     stdio: ["ignore", "pipe", "pipe"],
   });
 

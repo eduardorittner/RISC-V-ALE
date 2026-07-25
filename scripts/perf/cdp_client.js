@@ -1,13 +1,29 @@
 "use strict";
 
 const WebSocket = require("ws");
+const http = require("http");
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    http
+      .get(url, (res) => {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      })
+      .on("error", reject);
+  });
+}
 
 /**
- * BiDi Client — wraps a WebSocket connection to a WebDriver BiDi endpoint.
- * Provides promise-based command/response correlation and event dispatch.
- *
- * Firefox 152 uses WebDriver BiDi (not CDP) when --remote-debugging-port is
- * specified. The WebSocket endpoint is ws://127.0.0.1:PORT/session.
+ * BiDi & CDP Client — wraps a WebSocket connection to either a WebDriver BiDi endpoint
+ * (Firefox) or Chrome DevTools Protocol endpoint (Chrome/Chromium).
  */
 class BiDiClient {
   /**
@@ -22,87 +38,144 @@ class BiDiClient {
     this.sessionId = null;
     this.context = null;
     this.browserVersion = "unknown";
+    this.isCDP = false;
   }
 
   /**
-   * Connect to the WebSocket endpoint and create a BiDi session.
+   * Connect to the WebSocket endpoint (BiDi or CDP).
    * @returns {Promise<void>}
    */
-  connect() {
+  async connect() {
+    // Try WebDriver BiDi first (Firefox)
+    const bidiSuccess = await this._connectBiDi().catch(() => false);
+    if (bidiSuccess) return;
+
+    // Fall back to Chrome DevTools Protocol (Chrome)
+    await this._connectCDP();
+  }
+
+  _connectBiDi() {
     return new Promise((resolve, reject) => {
       const wsUrl = `ws://127.0.0.1:${this.port}/session`;
-      this.ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(wsUrl);
 
-      this.ws.on("open", () => {
-        // Create a session
+      ws.on("open", () => {
+        this.ws = ws;
+        this.isCDP = false;
+        this._setupMessageHandling();
+
         this._send("session.new", { capabilities: {} })
           .then((result) => {
             this.sessionId = result.sessionId;
             this.browserVersion =
               result.capabilities?.browserVersion || "unknown";
-            // Get the browsing context
             return this._send("browsingContext.getTree", {});
           })
           .then((result) => {
-            if (
-              result.contexts &&
-              result.contexts.length > 0
-            ) {
+            if (result.contexts && result.contexts.length > 0) {
               this.context = result.contexts[0].context;
             }
-            resolve();
+            resolve(true);
           })
-          .catch(reject);
+          .catch((err) => {
+            ws.close();
+            reject(err);
+          });
       });
 
-      this.ws.on("error", reject);
+      ws.on("error", reject);
+    });
+  }
 
-      this.ws.on("message", (data) => {
-        let msg;
-        try {
-          msg = JSON.parse(data.toString());
-        } catch (e) {
-          return;
-        }
+  async _connectCDP() {
+    // Fetch version for version name
+    fetchJson(`http://127.0.0.1:${this.port}/json/version`)
+      .then((v) => { if (v && v.Browser) this.browserVersion = v.Browser; })
+      .catch(() => {});
 
-        if (msg.id !== undefined) {
-          // Command response
-          const pending = this._pending.get(msg.id);
-          if (pending) {
-            this._pending.delete(msg.id);
-            if (msg.type === "error") {
-              pending.reject(
-                new Error(msg.message || JSON.stringify(msg))
-              );
-            } else if (msg.type === "success") {
-              pending.resolve(msg.result);
-            } else {
-              pending.reject(new Error("Unexpected response type: " + msg.type));
-            }
+    // Poll /json/list until a page target is available
+    let pageTarget = null;
+    const start = Date.now();
+    while (Date.now() - start < 10000) {
+      try {
+        const list = await fetchJson(`http://127.0.0.1:${this.port}/json/list`);
+        pageTarget = list.find((t) => t.type === "page") || list[0];
+        if (pageTarget && pageTarget.webSocketDebuggerUrl) break;
+      } catch (e) {
+        // Wait for Chrome endpoint
+      }
+      await sleep(200);
+    }
+
+    if (!pageTarget || !pageTarget.webSocketDebuggerUrl) {
+      throw new Error("Could not obtain CDP page WebSocket debugger URL");
+    }
+
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
+
+      ws.on("open", () => {
+        this.ws = ws;
+        this.isCDP = true;
+        this._setupMessageHandling();
+
+        Promise.all([
+          this._send("Page.enable"),
+          this._send("Runtime.enable")
+        ]).then(() => resolve()).catch(reject);
+      });
+
+      ws.on("error", reject);
+    });
+  }
+
+  _setupMessageHandling() {
+    this.ws.on("message", (data) => {
+      let msg;
+      try {
+        msg = JSON.parse(data.toString());
+      } catch (e) {
+        return;
+      }
+
+      if (msg.id !== undefined) {
+        const pending = this._pending.get(msg.id);
+        if (pending) {
+          this._pending.delete(msg.id);
+          if (msg.error) {
+            pending.reject(
+              new Error(msg.error.message || JSON.stringify(msg.error))
+            );
+          } else if (msg.type === "error") {
+            pending.reject(
+              new Error(msg.message || JSON.stringify(msg))
+            );
+          } else {
+            // CDP returns {id, result: ...}, BiDi returns {id, type: 'success', result: ...}
+            pending.resolve(msg.result !== undefined ? msg.result : msg);
           }
-        } else if (msg.method) {
-          // Event
-          const handlers = this._eventHandlers.get(msg.method);
-          if (handlers) {
-            for (const handler of handlers) {
-              handler(msg.params);
-            }
+        }
+      } else if (msg.method) {
+        const handlers = this._eventHandlers.get(msg.method);
+        if (handlers) {
+          for (const handler of handlers) {
+            handler(msg.params);
           }
         }
-      });
+      }
+    });
 
-      this.ws.on("close", () => {
-        for (const [id, pending] of this._pending) {
-          pending.reject(new Error("WebSocket closed"));
-        }
-        this._pending.clear();
-      });
+    this.ws.on("close", () => {
+      for (const [id, pending] of this._pending) {
+        pending.reject(new Error("WebSocket closed"));
+      }
+      this._pending.clear();
     });
   }
 
   /**
-   * Send a BiDi command and await the response.
-   * @param {string} method - BiDi method name.
+   * Send a BiDi or CDP command and await the response.
+   * @param {string} method - Method name.
    * @param {object} [params={}] - Command parameters.
    * @returns {Promise<object>}
    */
@@ -124,11 +197,6 @@ class BiDiClient {
     });
   }
 
-  /**
-   * Register an event handler.
-   * @param {string} method - Event method name.
-   * @param {function} handler - Handler function (params).
-   */
   on(method, handler) {
     if (!this._eventHandlers.has(method)) {
       this._eventHandlers.set(method, new Set());
@@ -136,40 +204,37 @@ class BiDiClient {
     this._eventHandlers.get(method).add(handler);
   }
 
-  /**
-   * Evaluate a JavaScript expression in the page context.
-   * @param {string} expression - JS expression to evaluate.
-   * @param {boolean} [awaitPromise=false] - Whether to await a returned promise.
-   * @returns {Promise<object>} - The evaluation result: {type, value} or {type, ...}.
-   */
   async evaluate(expression, awaitPromise = false) {
-    const result = await this._send("script.evaluate", {
-      expression,
-      target: { context: this.context },
-      awaitPromise,
-    });
-    // BiDi returns {result: {type: "string", value: "..."}, ...}
-    return result;
+    if (this.isCDP) {
+      const res = await this._send("Runtime.evaluate", {
+        expression,
+        awaitPromise,
+        returnByValue: true,
+      });
+      const val = res.result ? res.result.value : undefined;
+      return { result: { type: typeof val, value: val } };
+    } else {
+      const result = await this._send("script.evaluate", {
+        expression,
+        target: { context: this.context },
+        awaitPromise,
+      });
+      return result;
+    }
   }
 
-  /**
-   * Navigate the page to a URL.
-   * @param {string} url
-   * @returns {Promise<object>}
-   */
   async navigate(url) {
-    return this._send("browsingContext.navigate", {
-      context: this.context,
-      url,
-      wait: "complete",
-    });
+    if (this.isCDP) {
+      return this._send("Page.navigate", { url });
+    } else {
+      return this._send("browsingContext.navigate", {
+        context: this.context,
+        url,
+        wait: "complete",
+      });
+    }
   }
 
-  /**
-   * Wait for the page to reach readyState 'complete' by polling.
-   * @param {number} [timeoutMs=30000]
-   * @returns {Promise<void>}
-   */
   async waitForReady(timeoutMs = 30000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -188,12 +253,6 @@ class BiDiClient {
     throw new Error("Timeout waiting for page readyState");
   }
 
-  /**
-   * Wait for a global variable to be defined.
-   * @param {string} varName - The global variable name to check.
-   * @param {number} [timeoutMs=30000]
-   * @returns {Promise<void>}
-   */
   async waitForGlobal(varName, timeoutMs = 30000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -212,13 +271,6 @@ class BiDiClient {
     throw new Error(`Timeout waiting for window.${varName} to be defined`);
   }
 
-  /**
-   * Poll a global variable until it returns a non-null value.
-   * @param {string} expression - JS expression to evaluate.
-   * @param {number} [intervalMs=100] - Polling interval.
-   * @param {number} [timeoutMs=120000] - Overall timeout.
-   * @returns {Promise<string>} - The string value of the expression.
-   */
   async pollForResult(expression, intervalMs = 100, timeoutMs = 120000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -235,9 +287,6 @@ class BiDiClient {
     throw new Error("Timeout polling for result");
   }
 
-  /**
-   * Close the WebSocket connection.
-   */
   close() {
     if (this.ws) {
       this.ws.close();
@@ -245,11 +294,6 @@ class BiDiClient {
   }
 }
 
-/**
- * Connect to a browser's BiDi endpoint.
- * @param {number} port - The debugging port.
- * @returns {Promise<BiDiClient>}
- */
 async function connectToPage(port) {
   const client = new BiDiClient(port);
   await client.connect();
