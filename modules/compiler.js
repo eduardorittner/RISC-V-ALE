@@ -4,6 +4,55 @@ class Compiler{
     this.loaded_files = [];
     this.stdio_ch = new BroadcastChannel("stdio_channel" + window.uniq_id);
     this.sim_status_ch = new BroadcastChannel('simulator_status' + window.uniq_id);
+    this.clangModule = null;
+    this.lldModule = null;
+    this.initPromise = null;
+
+    // Trigger pre-compilation asynchronously on startup
+    setTimeout(() => this.init_wasm_cache(), 0);
+  }
+
+  async init_wasm_cache() {
+    if (this.clangModule && this.lldModule) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      try {
+        const [clangRes, lldRes] = await Promise.all([
+          fetch("./modules/clang.wasm"),
+          fetch("./modules/lld.wasm")
+        ]);
+
+        const compileClang = (typeof WebAssembly.compileStreaming === "function")
+          ? WebAssembly.compileStreaming(clangRes)
+          : clangRes.arrayBuffer().then(b => WebAssembly.compile(b));
+
+        const compileLld = (typeof WebAssembly.compileStreaming === "function")
+          ? WebAssembly.compileStreaming(lldRes)
+          : lldRes.arrayBuffer().then(b => WebAssembly.compile(b));
+
+        const [clangModule, lldModule] = await Promise.all([compileClang, compileLld]);
+        this.clangModule = clangModule;
+        this.lldModule = lldModule;
+      } catch (err) {
+        console.warn("WASM pre-compilation failed, falling back to standard fetching:", err);
+      }
+    })();
+
+    return this.initPromise;
+  }
+
+  async get_worker() {
+    await this.init_wasm_cache();
+    var worker = new Worker("./modules/clang_worker.js");
+    if (this.clangModule && this.lldModule) {
+      worker.postMessage({
+        type: "init_modules",
+        clangModule: this.clangModule,
+        lldModule: this.lldModule
+      });
+    }
+    return worker;
   }
 
   setup_worker(w, file_callback){
@@ -51,7 +100,7 @@ class Compiler{
   }
 
   async invoke_clang(op, args, out_filename, in_file){
-    var worker = new Worker("./modules/clang_worker.js");
+    var worker = await this.get_worker();
     return new Promise(resolve =>{
       var cto = setTimeout(function () {
         worker.terminate();
