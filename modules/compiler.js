@@ -108,12 +108,12 @@ class Compiler{
   async invoke_clang(op, args, out_filename, in_file){
     var worker = await this.get_worker();
     return new Promise(resolve =>{
-      var cto = setTimeout(function () {
+      var cto = setTimeout(() => {
         worker.terminate();
         this.stdio_ch.postMessage({fh:2, data: "Compiler timed out"});
         resolve(-1);
-      }.bind(this), this.timeout);
-      var file_callback = function (file) {
+      }, this.timeout);
+      var file_callback = (file) => {
         clearTimeout(cto);
         worker.terminate();
         resolve(file);

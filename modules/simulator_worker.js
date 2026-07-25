@@ -3,8 +3,8 @@
 var stdinBuffer = new Uint8Array([]);
 var non_blocking_io = false;
 var interactiveBufferString = "";
-var syscall_delay = 30;
-var simulator_sleep = [1, 1, 1]; // int, read, write
+var syscall_delay = 0;
+var simulator_sleep = [0, 0, 0]; // int, read, write
 var simulator_int_inst_delay = 1000;
 var precompiledWhisperModule = null;
 
@@ -52,7 +52,6 @@ onmessage = function(e) {
 
     case 'sync':
       bus_sync.merge(e.data.buffer);
-      bus_sync.sync();
       break;
 
     case "load_syscall":
@@ -127,38 +126,70 @@ class BusSync{
     this.mmio = mmio;
     this.stdout_buffer = "";
     this.stderr_buffer = "";
-    this.mmio_write_buffer = [];
+    this.mmio_buffer = new Uint8Array(0x10000);
+    this.dirty_flags = new Uint8Array(0x10000);
+    this.dirty_indices = new Uint32Array(0x10000);
+    this.dirty_count = 0;
+    this.is_dirty = false;
   }
 
   add_mmio_update(addr, size, value){
     for (let i = 0; i < size; i++) {
-      this.mmio_write_buffer[addr + i] = (value >> (i*8)) & 0xFF;
+      const idx = (addr + i) & 0xFFFF;
+      this.mmio_buffer[idx] = (value >> (i*8)) & 0xFF;
+      if (this.dirty_flags[idx] === 0) {
+        this.dirty_flags[idx] = 1;
+        this.dirty_indices[this.dirty_count++] = idx;
+      }
     }
+    this.is_dirty = true;
   }
 
   add_stdout(text){
     this.stdout_buffer += `${text}\n`; 
+    this.is_dirty = true;
   }
 
   add_stderr(text){
     this.stderr_buffer += `${text}\n`; 
+    this.is_dirty = true;
   }
 
   merge(extern_mmio_buffer){
-    for (const i in extern_mmio_buffer) {
-      const value = extern_mmio_buffer[i];
-      if(!(i in this.mmio_write_buffer)){ // processor priority
-        this.mmio.memory[1][i] = value;
+    if (!extern_mmio_buffer) return;
+    const keys = Object.keys(extern_mmio_buffer);
+    for (let k = 0; k < keys.length; k++) {
+      const idx = keys[k];
+      const value = extern_mmio_buffer[idx];
+      if (this.dirty_flags[idx] === 0) { // processor priority
+        this.mmio.memory[1][idx] = value;
       }
     }
   }
 
   sync(){
-    postMessage({type: "sync", mmio_buffer: this.mmio_write_buffer, stdout: this.stdout_buffer,
-                 stderr: this.stderr_buffer});
+    if (!this.is_dirty && this.stdout_buffer.length === 0 && this.stderr_buffer.length === 0 && this.dirty_count === 0) {
+      return;
+    }
+    let mmio_updates = null;
+    if (this.dirty_count > 0) {
+      mmio_updates = {};
+      for (let i = 0; i < this.dirty_count; i++) {
+        const idx = this.dirty_indices[i];
+        mmio_updates[idx] = this.mmio_buffer[idx];
+        this.dirty_flags[idx] = 0;
+      }
+      this.dirty_count = 0;
+    }
+    postMessage({
+      type: "sync",
+      mmio_buffer: mmio_updates,
+      stdout: this.stdout_buffer,
+      stderr: this.stderr_buffer
+    });
     this.stdout_buffer = "";
     this.stderr_buffer = "";
-    this.mmio_write_buffer = [];
+    this.is_dirty = false;
   }
 
 }
@@ -188,11 +219,15 @@ class InterruptionController{
 
 class SyscallEmulator{
   constructor(){
-    this.syscalls = [];
+    this.syscalls = {};
   }
 
   register(number, code){
-    this.syscalls[number] = code;
+    try {
+      this.syscalls[number] = new Function('a0', 'a1', 'a2', 'a3', 'a7', 'sendMessage', 'postMessage', code);
+    } catch(e) {
+      this.syscalls[number] = code;
+    }
   }
 
   unregister(number){
@@ -200,7 +235,8 @@ class SyscallEmulator{
   }
 
   run(a0, a1, a2, a3, a7){
-    if(a7 in this.syscalls){
+    const fn = this.syscalls[a7];
+    if(fn !== undefined){
       var sendMessage = function(msg){
         postMessage({type: "device_message", syscall: a7, message: msg});
         if(syscall_delay){
@@ -208,7 +244,11 @@ class SyscallEmulator{
           while(performance.now() - start < syscall_delay);
         }
       };
-      eval(this.syscalls[a7]);
+      if (typeof fn === 'function') {
+        fn(a0, a1, a2, a3, a7, sendMessage, postMessage);
+      } else {
+        eval(fn);
+      }
       return a0;
     }else{
       var text = "Invalid syscall: " + a7;
@@ -261,6 +301,7 @@ function initFS() {
 }
 
 function finishExec() {
+  bus_sync.sync();
   postMessage({type:"status", status:{finish:true}});
 }
 

@@ -124,27 +124,50 @@ class SimulatorController{
       }
     }.bind(this);
     mmio.reset();
-    this.mmio_write_buffer = [];
+    this.mmio_write_buffer = new Uint8Array(0x10000);
+    this.mmio_dirty_flags = new Uint8Array(0x10000);
+    this.mmio_dirty_indices = new Uint32Array(0x10000);
+    this.mmio_dirty_count = 0;
     this.set_freq_limit(this.bus_freq_limit);
     this.set_int_freq_scale_limit(this.int_cont_freq_scale);
   }
 
   add_mmio_update(addr, size, value){
     for (let i = 0; i < size; i++) {
-      this.mmio_write_buffer[addr + i] = (value >> (i*8)) & 0xFF;
+      const idx = (addr + i) & 0xFFFF;
+      this.mmio_write_buffer[idx] = (value >> (i*8)) & 0xFF;
+      if (this.mmio_dirty_flags[idx] === 0) {
+        this.mmio_dirty_flags[idx] = 1;
+        this.mmio_dirty_indices[this.mmio_dirty_count++] = idx;
+      }
+    }
+    this.flush_mmio();
+  }
+
+  flush_mmio(){
+    if (this.mmio_dirty_count === 0) return;
+    const updates = {};
+    for (let i = 0; i < this.mmio_dirty_count; i++) {
+      const idx = this.mmio_dirty_indices[i];
+      updates[idx] = this.mmio_write_buffer[idx];
+      this.mmio_dirty_flags[idx] = 0;
+    }
+    this.mmio_dirty_count = 0;
+    if (this.simulator) {
+      this.simulator.postMessage({type:"sync", buffer: updates});
     }
   }
 
   bus_sync(data){
-    if(data.stdout.length > 0) this.stdio_ch.postMessage({fh:1, data:data.stdout});
-    if(data.stderr.length > 0) this.stdio_ch.postMessage({fh:2, data:data.stderr});
-    for (const i in data.mmio_buffer) {
-      mmio.memory[1][i] = data.mmio_buffer[i];
+    if(data.stdout && data.stdout.length > 0) this.stdio_ch.postMessage({fh:1, data:data.stdout});
+    if(data.stderr && data.stderr.length > 0) this.stdio_ch.postMessage({fh:2, data:data.stderr});
+    if (data.mmio_buffer) {
+      const keys = Object.keys(data.mmio_buffer);
+      for (let k = 0; k < keys.length; k++) {
+        const i = keys[k];
+        mmio.memory[1][i] = data.mmio_buffer[i];
+      }
     }
-    setTimeout( _ => {
-      this.simulator.postMessage({type:"sync", buffer:this.mmio_write_buffer});
-      this.mmio_write_buffer = [];
-    }, 0);
   }
 
   async start_execution(args){
@@ -155,10 +178,7 @@ class SimulatorController{
     this.simulator.postMessage({type: "add_files", files: this.last_loaded_files});
     this.sim_status_ch.postMessage({type: "status", status:{starting_exec: true, args}});
     this.simulator.postMessage({type: "start", args});
-    setTimeout( _ => {
-      this.simulator.postMessage({type:"sync", buffer:this.mmio_write_buffer});
-      this.mmio_write_buffer = [];
-    }, 0)
+    this.flush_mmio();
 
     return new Promise(resolve => {
       this._executionResolve = resolve;

@@ -58,6 +58,11 @@ function initFS() {
   try {
     FS.mkdir('/working');
   } catch (e) {}
+  if (expected_result && expected_result !== "none") {
+    try {
+      FS.unlink('/' + expected_result);
+    } catch (e) {}
+  }
   if(files){
     FS.mount(WORKERFS, {
       files: files, // Array of File objects or FileList
