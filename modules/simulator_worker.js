@@ -131,6 +131,9 @@ class BusSync{
     this.dirty_indices = new Uint32Array(0x10000);
     this.dirty_count = 0;
     this.is_dirty = false;
+    this.last_flush_time = performance.now();
+    this.flush_interval_ms = 16;
+    this.max_buffer_size = 4096;
   }
 
   add_mmio_update(addr, size, value){
@@ -148,11 +151,21 @@ class BusSync{
   add_stdout(text){
     this.stdout_buffer += `${text}\n`; 
     this.is_dirty = true;
+    this.check_auto_flush();
   }
 
   add_stderr(text){
     this.stderr_buffer += `${text}\n`; 
     this.is_dirty = true;
+    this.check_auto_flush();
+  }
+
+  check_auto_flush(){
+    const now = performance.now();
+    const buffer_len = this.stdout_buffer.length + this.stderr_buffer.length;
+    if (buffer_len >= this.max_buffer_size || (now - this.last_flush_time >= this.flush_interval_ms)) {
+      this.sync();
+    }
   }
 
   merge(extern_mmio_buffer){
@@ -190,6 +203,7 @@ class BusSync{
     this.stdout_buffer = "";
     this.stderr_buffer = "";
     this.is_dirty = false;
+    this.last_flush_time = performance.now();
   }
 
 }
@@ -275,6 +289,7 @@ function getStdin (count){
 
 var last_wait_for_input_alert_sent = 0;
 function wait_for_input_alert(){
+  bus_sync.sync();
   if(performance.now() - last_wait_for_input_alert_sent > 5000){
     postMessage({type: "sim_log", subtype: "info", msg: "Waiting for Input..."});
     last_wait_for_input_alert_sent = performance.now();

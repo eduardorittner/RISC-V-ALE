@@ -40,6 +40,32 @@ export class WebTerminal{
     );
     this.term.parent = this;
 
+    this.pending_stdout = "";
+    this.pending_stderr = "";
+    this.render_scheduled = false;
+
+    this.schedule_render = function() {
+      if (this.render_scheduled) return;
+      this.render_scheduled = true;
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => this.flush_render());
+      } else {
+        setTimeout(() => this.flush_render(), 16);
+      }
+    }.bind(this);
+
+    this.flush_render = function() {
+      this.render_scheduled = false;
+      if (this.pending_stdout.length > 0) {
+        this.term.echo(this.pending_stdout.replace(/\n$/, ""));
+        this.pending_stdout = "";
+      }
+      if (this.pending_stderr.length > 0) {
+        this.term.echo(`[[;darkred;]${this.pending_stderr.replace(/\n$/, "")}]`);
+        this.pending_stderr = "";
+      }
+    }.bind(this);
+
     this.sim_status_ch.onmessage = function (e) {
       if(e.data.type == "status"){
         if(e.data.status.running && !this.running_mode){
@@ -51,20 +77,25 @@ export class WebTerminal{
           }
         }
         if((e.data.status.stopping || e.data.status.finish) && this.running_mode){
+          this.flush_render();
           this.term.pop();
           this.running_mode = false;
         }
         if(e.data.status.starting_exec){
+          this.flush_render();
           this.term.echo(`$ whisper ${e.data.status.args.join(" ")}`);
           this.term.history().append(`whisper ${e.data.status.args.join(" ")}`);
         }
       }else if(e.data.type == "sim_log"){
+        this.flush_render();
         this.term.echo("[[;yellow;] (LOG) " + e.data.msg + "]");
       }else if(e.data.type == "clang_status"){
         if(e.data.status.starting){
+          this.flush_render();
           this.term.echo("$ " + e.data.status.tool + " " + e.data.status.args.join(" "));
           this.enter_wait_mode();
         }else{
+          this.flush_render();
           this.term.pop();
         }
       }
@@ -72,12 +103,16 @@ export class WebTerminal{
 
     this.stdio_ch.onmessage = function(e) {
       if(e.data.origin == "clang"){
+        this.flush_render();
         this.term.echo(e.data.data);
       }else if(e.data.fh==1){
-        this.term.echo(e.data.data);
+        this.pending_stdout += e.data.data;
+        this.schedule_render();
       }else if(e.data.fh==2){
-        this.term.echo(`[[;darkred;]${e.data.data}]`)
+        this.pending_stderr += e.data.data;
+        this.schedule_render();
       }else if(e.data.fh == -1 && e.data.debug){
+        this.flush_render();
         this.term.echo("[[;yellow;]>>> ]" + e.data.cmd);
       }
     }.bind(this);
