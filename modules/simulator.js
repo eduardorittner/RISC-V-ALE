@@ -34,32 +34,67 @@ class SimulatorController{
     this.stdio_ch = new BroadcastChannel("stdio_channel" + window.uniq_id);
     this.sim_status_ch = new BroadcastChannel('simulator_status' + window.uniq_id);
     this.bus_ch = new BroadcastChannel('bus_channel' + window.uniq_id);
-    this.bus_freq_limit = 30;
+    this.bus_freq_limit = 1000;
     this.int_cont_freq_scale = 25;
     this.last_loaded_files = []
     this._executionResolve = null;
+    this.whisperModule = null;
+    this.initPromise = null;
     window.__ale__ = {
       uniq_id: window.uniq_id,
       sim_status_ch: this.sim_status_ch,
     };
-    this.startSimulator();
+    this.init_wasm_cache().then(() => {
+      if (!this.simulator) {
+        this.startSimulator();
+      }
+    });
     this.stdio_ch.onmessage = function (e) {
       if(e.data.fh==0){ // stdin
-        this.simulator.postMessage({type: "stdin", stdin: e.data.data});
+        if (this.simulator) this.simulator.postMessage({type: "stdin", stdin: e.data.data});
       }else if(e.data.debug){
-        this.simulator.postMessage({type: "interactive", cmd: e.data.cmd});
+        if (this.simulator) this.simulator.postMessage({type: "interactive", cmd: e.data.cmd});
       }else if(e.data.init_stdin){
-        this.simulator.postMessage({type: "stdin", stdin: e.data.data});
+        if (this.simulator) this.simulator.postMessage({type: "stdin", stdin: e.data.data});
       }
     }.bind(this);
   }
 
+  async init_wasm_cache() {
+    if (this.whisperModule) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      try {
+        const res = await fetch("./modules/whisper.wasm");
+        try {
+          if (typeof WebAssembly.compileStreaming === "function") {
+            this.whisperModule = await WebAssembly.compileStreaming(res.clone());
+            return;
+          }
+        } catch (e) {}
+        const buf = await res.arrayBuffer();
+        this.whisperModule = await WebAssembly.compile(buf);
+      } catch (err) {
+        console.warn("WASM pre-compilation failed, falling back to standard fetching:", err);
+      }
+    })();
+
+    return this.initPromise;
+  }
+
   triggerInterrupt(){
-    this.simulator.postMessage({type: "interrupt", state: 1});
+    if (this.simulator) this.simulator.postMessage({type: "interrupt", state: 1});
   }
 
   startSimulator(){
     this.simulator = new Worker("./modules/simulator_worker.js");
+    if (this.whisperModule) {
+      this.simulator.postMessage({
+        type: "init_modules",
+        whisperModule: this.whisperModule
+      });
+    }
     this.simulator.onmessage = function(e){
       switch(e.data.type){
         case 'device_message':
@@ -112,7 +147,11 @@ class SimulatorController{
     }, 0);
   }
 
-  start_execution(args){
+  async start_execution(args){
+    await this.init_wasm_cache();
+    if (!this.simulator) {
+      this.startSimulator();
+    }
     this.simulator.postMessage({type: "add_files", files: this.last_loaded_files});
     this.sim_status_ch.postMessage({type: "status", status:{starting_exec: true, args}});
     this.simulator.postMessage({type: "start", args});
@@ -130,11 +169,11 @@ class SimulatorController{
     if(desc){
       this.sim_status_ch.postMessage({type: "load_syscall", number, desc, code});
     }
-    this.simulator.postMessage({type: "load_syscall", number, code});
+    if (this.simulator) this.simulator.postMessage({type: "load_syscall", number, code});
   }
 
   remove_syscall(number){
-    this.simulator.postMessage({type: "disable_syscall", number});
+    if (this.simulator) this.simulator.postMessage({type: "disable_syscall", number});
   }
 
   load_files(files){
@@ -157,17 +196,19 @@ class SimulatorController{
 
   set_int_freq_scale_limit(value){
     this.int_cont_freq_scale = value;
-    if(value == 0){
-      this.simulator.postMessage({type: "interrupt_enabled", value: 0});
-    }else{
-      this.simulator.postMessage({type: "interrupt_enabled", value: 1});
+    if (this.simulator) {
+      if(value == 0){
+        this.simulator.postMessage({type: "interrupt_enabled", value: 0});
+      }else{
+        this.simulator.postMessage({type: "interrupt_enabled", value: 1});
+      }
+      this.simulator.postMessage({type: "set_int_delay", value: (2**(32 - value)) - 1});
     }
-    this.simulator.postMessage({type: "set_int_delay", value: (2**(32 - value)) - 1});
   }
 
   set_freq_limit(value){
     this.bus_freq_limit = value;
-    this.simulator.postMessage({type: "set_freq_limit", value});
+    if (this.simulator) this.simulator.postMessage({type: "set_freq_limit", value});
   }
 
   restart_simulator(){
@@ -176,7 +217,7 @@ class SimulatorController{
       this._executionResolve = null;
       resolve();
     }
-    this.simulator.terminate();
+    if (this.simulator) this.simulator.terminate();
     this.sim_status_ch.postMessage({type:"status", status:{stopping:true}});
     this.startSimulator();
   }

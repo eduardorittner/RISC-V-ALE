@@ -6,9 +6,13 @@ var interactiveBufferString = "";
 var syscall_delay = 30;
 var simulator_sleep = [1, 1, 1]; // int, read, write
 var simulator_int_inst_delay = 1000;
+var precompiledWhisperModule = null;
 
 onmessage = function(e) {
   switch(e.data.type){
+    case "init_modules":
+      precompiledWhisperModule = e.data.whisperModule;
+      break;
     case "code_load":
       files = e.data.code;
       break;
@@ -65,10 +69,16 @@ onmessage = function(e) {
     
     case 'set_freq_limit':
       let value = e.data.value;
-      if(value == 1000){
-        simulator_sleep[2] = 1;
+      if(value >= 1000){
+        simulator_sleep[0] = 0;
+        simulator_sleep[1] = 0;
+        simulator_sleep[2] = 0;
+        syscall_delay = 0;
       }else{
+        simulator_sleep[0] = 1000*(1/value);
+        simulator_sleep[1] = 1000*(1/value);
         simulator_sleep[2] = 1000*(1/value);
+        syscall_delay = 30;
       } 
       break;
     case "set_int_delay":
@@ -295,6 +305,17 @@ function sendDebugMsg(msg){
 var Module = {
   // arguments : ["--version"],
   arguments : ["--newlib", "/working/ex2", "--isa", "acdfimsu", "--setreg", "sp=0x10000"],
+  instantiateWasm: function(imports, successCallback) {
+    if (precompiledWhisperModule) {
+      WebAssembly.instantiate(precompiledWhisperModule, imports).then(function(instance) {
+        successCallback(instance, precompiledWhisperModule);
+      }).catch(function(err) {
+        console.error("Precompiled Whisper WASM instantiation error:", err);
+      });
+      return {};
+    }
+    return false;
+  },
   preRun : [initFS],
   print : bus_sync.add_stdout.bind(bus_sync),
   printErr : bus_sync.add_stderr.bind(bus_sync)

@@ -52,14 +52,26 @@ onmessage = function(e) {
 };
 
 function initFS() {
-  FS.init(null, null, null);
-  FS.mkdir('/working');
+  try {
+    FS.unmount('/working');
+  } catch (e) {}
+  try {
+    FS.mkdir('/working');
+  } catch (e) {}
   if(files){
     FS.mount(WORKERFS, {
       files: files, // Array of File objects or FileList
     }, '/working');
     for (let index = 0; index < files.length; index++) {
-      if(files[index].name != expected_result) FS.symlink('/working/' + files[index].name, '/' + files[index].name.replace(" ", "_"));
+      if(files[index].name != expected_result) {
+        const linkName = '/' + files[index].name.replace(" ", "_");
+        try {
+          FS.unlink(linkName);
+        } catch (e) {}
+        try {
+          FS.symlink('/working/' + files[index].name, linkName);
+        } catch (e) {}
+      }
     }
   }
 }

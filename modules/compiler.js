@@ -7,6 +7,7 @@ class Compiler{
     this.clangModule = null;
     this.lldModule = null;
     this.initPromise = null;
+    this.workerPool = [];
 
     // Trigger pre-compilation asynchronously on startup
     setTimeout(() => this.init_wasm_cache(), 0);
@@ -23,15 +24,20 @@ class Compiler{
           fetch("./modules/lld.wasm")
         ]);
 
-        const compileClang = (typeof WebAssembly.compileStreaming === "function")
-          ? WebAssembly.compileStreaming(clangRes)
-          : clangRes.arrayBuffer().then(b => WebAssembly.compile(b));
+        const compileWasm = async (res) => {
+          try {
+            if (typeof WebAssembly.compileStreaming === "function") {
+              return await WebAssembly.compileStreaming(res.clone());
+            }
+          } catch (e) {}
+          const buf = await res.arrayBuffer();
+          return await WebAssembly.compile(buf);
+        };
 
-        const compileLld = (typeof WebAssembly.compileStreaming === "function")
-          ? WebAssembly.compileStreaming(lldRes)
-          : lldRes.arrayBuffer().then(b => WebAssembly.compile(b));
-
-        const [clangModule, lldModule] = await Promise.all([compileClang, compileLld]);
+        const [clangModule, lldModule] = await Promise.all([
+          compileWasm(clangRes),
+          compileWasm(lldRes)
+        ]);
         this.clangModule = clangModule;
         this.lldModule = lldModule;
       } catch (err) {
@@ -118,15 +124,18 @@ class Compiler{
   }
 
   async auto_compile(c_ext, asm_ext, obj_ext, elf_ext){
-    let obj_files = [];
+    let compilePromises = [];
     for (let index = 0; index < this.loaded_files.length; index++) {
       const element = this.loaded_files[index];
       if(element.name.endsWith(c_ext)) {
-        await this.cc([element.name, "-o", element.name.slice(0, -2) + obj_ext]);
+        compilePromises.push(this.cc([element.name, "-o", element.name.slice(0, -2) + obj_ext]));
       } else if(element.name.endsWith(asm_ext)) {
-        await this.as([element.name, "-o", element.name.slice(0, -2) + obj_ext]);
+        compilePromises.push(this.as([element.name, "-o", element.name.slice(0, -2) + obj_ext]));
       }
     }
+    await Promise.all(compilePromises);
+
+    let obj_files = [];
     for (let index = 0; index < this.loaded_files.length; index++) {
       const element = this.loaded_files[index];
       if(element.name.endsWith(obj_ext)) {
