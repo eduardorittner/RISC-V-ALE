@@ -40,6 +40,7 @@ class SimulatorController{
     this._executionResolve = null;
     this.whisperModule = null;
     this.initPromise = null;
+    this.idle_worker = null;
     window.__ale__ = {
       uniq_id: window.uniq_id,
       sim_status_ch: this.sim_status_ch,
@@ -48,6 +49,7 @@ class SimulatorController{
       if (!this.simulator) {
         this.startSimulator();
       }
+      this.prewarm_idle_worker();
     });
     this.stdio_ch.onmessage = function (e) {
       if(e.data.fh==0){ // stdin
@@ -87,15 +89,24 @@ class SimulatorController{
     if (this.simulator) this.simulator.postMessage({type: "interrupt", state: 1});
   }
 
-  startSimulator(){
-    this.simulator = new Worker("./modules/simulator_worker.js");
-    if (this.whisperModule) {
-      this.simulator.postMessage({
-        type: "init_modules",
-        whisperModule: this.whisperModule
-      });
+  prewarm_idle_worker() {
+    if (this.idle_worker) return;
+    try {
+      const worker = new Worker("./modules/simulator_worker.js");
+      if (this.whisperModule) {
+        worker.postMessage({
+          type: "init_modules",
+          whisperModule: this.whisperModule
+        });
+      }
+      this.idle_worker = worker;
+    } catch (e) {
+      console.warn("Failed to prewarm idle worker:", e);
     }
-    this.simulator.onmessage = function(e){
+  }
+
+  setup_simulator_listeners(worker) {
+    worker.onmessage = function(e){
       switch(e.data.type){
         case 'device_message':
           this.bus_ch.postMessage({so_emulation:true, syscall: e.data.syscall, data: e.data.message});
@@ -123,6 +134,22 @@ class SimulatorController{
           console.log("w: " + e.data);
       }
     }.bind(this);
+  }
+
+  startSimulator(){
+    if (this.idle_worker) {
+      this.simulator = this.idle_worker;
+      this.idle_worker = null;
+    } else {
+      this.simulator = new Worker("./modules/simulator_worker.js");
+      if (this.whisperModule) {
+        this.simulator.postMessage({
+          type: "init_modules",
+          whisperModule: this.whisperModule
+        });
+      }
+    }
+    this.setup_simulator_listeners(this.simulator);
     mmio.reset();
     this.mmio_write_buffer = new Uint8Array(0x10000);
     this.mmio_dirty_flags = new Uint8Array(0x10000);
@@ -130,6 +157,7 @@ class SimulatorController{
     this.mmio_dirty_count = 0;
     this.set_freq_limit(this.bus_freq_limit);
     this.set_int_freq_scale_limit(this.int_cont_freq_scale);
+    setTimeout(() => this.prewarm_idle_worker(), 0);
   }
 
   add_mmio_update(addr, size, value){
