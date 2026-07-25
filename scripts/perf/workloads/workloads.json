@@ -48,5 +48,15 @@
     "newlib": true,
     "stack_pointer": "0x7FFFFFC",
     "description": "Read a line from stdin and echo it to stdout"
+  },
+  {
+    "name": "stdout_bench",
+    "files": ["stdout.s"],
+    "stdin": "",
+    "expected_stdout": "Line of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\n",
+    "isa": "imac",
+    "newlib": true,
+    "stack_pointer": "0x7FFFFFC",
+    "description": "Repeatedly write strings to stdout in a loop (100 iterations)"
   }
 ]
