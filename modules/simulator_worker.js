@@ -226,6 +226,7 @@ class SyscallEmulator{
     try {
       this.syscalls[number] = new Function('a0', 'a1', 'a2', 'a3', 'a7', 'sendMessage', 'postMessage', code);
     } catch(e) {
+      console.warn(`Failed to pre-compile syscall ${number}, falling back to string:`, e);
       this.syscalls[number] = code;
     }
   }
