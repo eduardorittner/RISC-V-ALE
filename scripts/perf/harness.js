@@ -270,10 +270,13 @@ async function runWorkload(client, workload, workloadsDir, timeout) {
   // Read and base64-encode all files
   const filesData = [];
   for (const fileName of workload.files) {
-    const filePath = path.join(workloadsDir, fileName);
+    let filePath = path.join(workloadsDir, fileName);
+    if (!fs.existsSync(filePath)) {
+      filePath = path.join(REPO_ROOT, fileName);
+    }
     const content = fs.readFileSync(filePath);
     filesData.push({
-      name: fileName,
+      name: path.basename(fileName),
       content: base64Encode(content),
     });
   }
