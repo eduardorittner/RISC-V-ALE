@@ -1,12 +1,12 @@
 mod cli;
 mod cpu;
 mod host_imports;
-mod memory;
+pub mod memory;
 mod syscall;
 
 use cli::SimConfig;
 use cpu::Cpu;
-use memory::Memory;
+pub use memory::{Memory, MemoryOps};
 use goblin::elf::Elf;
 use wasm_bindgen::prelude::*;
 

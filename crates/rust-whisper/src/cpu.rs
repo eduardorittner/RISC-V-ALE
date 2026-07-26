@@ -1,5 +1,5 @@
 use crate::host_imports;
-use crate::memory::Memory;
+use crate::memory::MemoryOps;
 use crate::syscall::handle_ecall;
 use std::collections::HashMap;
 
@@ -47,7 +47,7 @@ impl Cpu {
         }
     }
 
-    pub fn run(&mut self, mem: &mut Memory) -> i32 {
+    pub fn run<M: MemoryOps>(&mut self, mem: &mut M) -> i32 {
         let mut inst_counter: u32 = 0;
         let mut int_delay = host_imports::js_get_int_inst_delay() as u32;
         if int_delay == 0 {
@@ -104,7 +104,7 @@ impl Cpu {
         }
     }
 
-    fn execute_inst(&mut self, inst: u32, mem: &mut Memory) -> Result<(), String> {
+    fn execute_inst<M: MemoryOps>(&mut self, inst: u32, mem: &mut M) -> Result<(), String> {
         let opcode = inst & 0x7F;
         let rd = ((inst >> 7) & 0x1F) as usize;
         let funct3 = (inst >> 12) & 0x7;
@@ -338,7 +338,7 @@ impl Cpu {
         Ok(())
     }
 
-    fn execute_c_inst(&mut self, inst: u16, mem: &mut Memory) -> Result<(), String> {
+    fn execute_c_inst<M: MemoryOps>(&mut self, inst: u16, mem: &mut M) -> Result<(), String> {
         let op = inst & 0x3;
         let funct3 = (inst >> 13) & 0x7;
         let mut next_pc = self.pc.wrapping_add(2);

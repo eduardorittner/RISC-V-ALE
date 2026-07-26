@@ -1,8 +1,8 @@
 use crate::cpu::Cpu;
 use crate::host_imports;
-use crate::memory::Memory;
+use crate::memory::MemoryOps;
 
-pub fn handle_ecall(cpu: &mut Cpu, mem: &mut Memory) {
+pub fn handle_ecall<M: MemoryOps>(cpu: &mut Cpu, mem: &mut M) {
     let a7 = cpu.read_reg(17); // Syscall number in x17/a7
     let a0 = cpu.read_reg(10); // Arg 0 / Return val in x10/a0
     let a1 = cpu.read_reg(11); // Arg 1 in x11/a1
@@ -63,9 +63,9 @@ pub fn handle_ecall(cpu: &mut Cpu, mem: &mut Memory) {
         // SYS_brk (214 or 45)
         214 | 45 => {
             if a0 != 0 {
-                mem.brk_ptr = a0;
+                mem.set_brk(a0);
             }
-            cpu.write_reg(10, mem.brk_ptr);
+            cpu.write_reg(10, mem.get_brk());
         }
 
         // SYS_close (57), SYS_lseek (62), SYS_fstat (80)
@@ -78,3 +78,4 @@ pub fn handle_ecall(cpu: &mut Cpu, mem: &mut Memory) {
         }
     }
 }
+
