@@ -98,6 +98,8 @@ const BROWSER_COMMANDS = {
       "--user-data-dir=/tmp/ale-perf-chrome-profile",
       "--disable-gpu",
       "--disable-features=ServiceWorker",
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
     ],
   },
 };
