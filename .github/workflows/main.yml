@@ -17,5 +17,5 @@ jobs:
         with:
           source_dir: ./modules
           recurse: false
-          template: ink-docstrap
+          template: minami
           output_dir: ./docs
