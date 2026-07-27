@@ -134,6 +134,14 @@ export class VisualDebuggerUI {
     this.controller.stop_execution();
     if (this.pcDisplay) this.pcDisplay.innerText = "0x00000000";
     if (this.cycleCounter) this.cycleCounter.innerText = "0";
+
+    // Enable toolbar control buttons
+    if (this.btnStepInto) this.btnStepInto.disabled = false;
+    if (this.btnStepOver) this.btnStepOver.disabled = false;
+    if (this.btnStepOut) this.btnStepOut.disabled = false;
+    if (this.btnContinue) this.btnContinue.disabled = false;
+    if (this.btnPause) this.btnPause.disabled = false;
+    if (this.btnReset) this.btnReset.classList.remove("btn-pulse-highlight");
   }
 
   updateState(snapshot) {
@@ -142,7 +150,12 @@ export class VisualDebuggerUI {
     this.currentPC = snapshot.pc;
 
     if (snapshot.is_halted) {
-      this.setStateBadge("HALTED", "badge-danger");
+      this.setStateBadge("⏹ TERMINATED", "badge-danger font-weight-bold");
+      if (this.btnStepInto) this.btnStepInto.disabled = true;
+      if (this.btnStepOver) this.btnStepOver.disabled = true;
+      if (this.btnStepOut) this.btnStepOut.disabled = true;
+      if (this.btnContinue) this.btnContinue.disabled = true;
+      if (this.btnReset) this.btnReset.classList.add("btn-pulse-highlight");
     } else if (snapshot.is_breakpoint) {
       this.setStateBadge("BREAKPOINT", "badge-info");
     } else {
@@ -175,12 +188,16 @@ export class VisualDebuggerUI {
 
     let html = "";
     let activeSymbol = null;
+    let zeroCount = 0;
 
-    items.forEach((item) => {
+    const isHalted = this.lastSnapshot && this.lastSnapshot.is_halted;
+
+    const renderItem = (item) => {
       const isPC = item.address === this.currentPC;
       const isBp = this.breakpoints.has(item.address);
-      const pcClass = isPC ? "pc-line" : "";
+      const pcClass = isPC ? (isHalted ? "pc-line pc-line-halted" : "pc-line") : "";
       const bpClass = isBp ? "active-bp" : "";
+      const pcMarker = isPC ? (isHalted ? "🛑" : "➔") : "➔";
 
       if (item.label) {
         html += `
@@ -191,10 +208,8 @@ export class VisualDebuggerUI {
         `;
       }
 
-      if (isPC) {
-        if (item.label) {
-          activeSymbol = `<${item.label}>`;
-        }
+      if (isPC && item.label) {
+        activeSymbol = `<${item.label}>`;
       }
 
       const highlightedAsm = highlightAsm(item.asm_text);
@@ -204,17 +219,49 @@ export class VisualDebuggerUI {
         <div class="editor-line ${pcClass}" data-addr="${item.address.toString(16)}">
           <div class="editor-gutter">
             <span class="gutter-bp ${bpClass}" data-bp-addr="${item.address}" title="Toggle Breakpoint">●</span>
-            <span class="gutter-pc">➔</span>
+            <span class="gutter-pc">${pcMarker}</span>
             <span class="gutter-addr">${addrHex}</span>
           </div>
           <div class="editor-content"><span class="asm-opcode">${item.opcode_hex}</span>${highlightedAsm}</div>
         </div>
       `;
+    };
+
+    items.forEach((item) => {
+      const isZeroOpcode =
+        (item.opcode_hex === "0000" || item.opcode_hex === "00000000" || item.asm_text.startsWith("c.addi4spn")) &&
+        item.address !== this.currentPC &&
+        !this.breakpoints.has(item.address) &&
+        !item.label;
+
+      if (isZeroOpcode) {
+        zeroCount++;
+      } else {
+        if (zeroCount > 0) {
+          html += `
+            <div class="editor-label-line text-muted font-italic px-3 py-1 bg-light border-bottom border-top small">
+              &lt;... ${zeroCount} uninitialized zero memory instructions omitted ...&gt;
+            </div>
+          `;
+          zeroCount = 0;
+        }
+        renderItem(item);
+      }
     });
+
+    if (zeroCount > 0) {
+      html += `
+        <div class="editor-label-line text-muted font-italic px-3 py-1 bg-light border-bottom border-top small">
+          &lt;... ${zeroCount} uninitialized zero memory instructions omitted ...&gt;
+        </div>
+      `;
+    }
 
     this.disasmBody.innerHTML = html;
 
-    if (!activeSymbol) {
+    if (isHalted) {
+      activeSymbol = `<span class="badge badge-danger">PROGRAM TERMINATED</span>`;
+    } else if (!activeSymbol) {
       for (let i = 0; i < items.length; i++) {
         if (items[i].address <= this.currentPC && items[i].label) {
           const offset = this.currentPC - items[i].address;
@@ -225,7 +272,7 @@ export class VisualDebuggerUI {
 
     const currentSymbolEl = document.getElementById("debug_current_symbol");
     if (currentSymbolEl && activeSymbol) {
-      currentSymbolEl.innerText = activeSymbol;
+      currentSymbolEl.innerHTML = activeSymbol;
     }
 
     // Attach click listener for breakpoint toggles
@@ -458,7 +505,6 @@ export class VisualDebuggerUI {
           <td>${offsetLabel}</td>
           <td class="text-primary">0x${addr.toString(16).padStart(8, "0")}</td>
           <td><code>0x00000000</code></td>
-          <td class="text-muted">${isSpRow ? 'Top of Stack' : 'Frame Slot'}</td>
         </tr>
       `;
     }
