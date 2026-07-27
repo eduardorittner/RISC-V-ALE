@@ -273,6 +273,16 @@
     background-color: #f8f9fa;
 }
 
+.debug-tab-seamless .debug-toolbar-card .card-body {
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
 .debug-tab-seamless .card {
     border-radius: 0 !important;
     border: 1px solid #d1d3e2;
@@ -289,9 +299,18 @@
 }
 
 .debug-tab-seamless .card-header {
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
     border-radius: 0 !important;
     border-bottom: 1px solid #d1d3e2;
     background-color: #eaecf4;
+    box-sizing: border-box;
 }
 
 /* Resizable Dock Layout System */
