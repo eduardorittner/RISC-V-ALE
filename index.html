@@ -42,6 +42,9 @@
                 <li class="nav-item list-group-item py-2"><a class="nav-link" href="#os">
                         <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="fab fa-linux"></i><span>Operating System</span></div>
                     </a></li>
+                <li class="nav-item list-group-item py-2" id="terminal_nav_item"><a class="nav-link" href="#terminal">
+                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="fas fa-terminal"></i><span>Terminal</span></div>
+                    </a></li>
                 <li class="nav-item list-group-item py-2" id="debug_nav_item"><a class="nav-link" href="#debug">
                         <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons">bug_report</i><span>Debugger</span></div>
                     </a></li>
@@ -70,19 +73,6 @@
             </div>
         </nav>
         <div class="d-flex flex-column" id="content-wrapper">
-            <div class="modal fade" role="dialog" tabindex="-1" id="modal_terminal" data-keyboard="false" data-backdrop="static">
-                <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h4 class="modal-title">terminal</h4><button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
-                        </div>
-                        <div class="modal-body">
-                            <div id="xterm-container" style="background: #000000;"></div>
-                        </div>
-                        <div class="modal-footer"></div>
-                    </div>
-                </div>
-            </div>
             <div class="modal fade" role="dialog" tabindex="-1" id="modal_assistant" data-keyboard="false" data-backdrop="static">
                 <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
                     <div class="modal-content">
@@ -273,6 +263,18 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Terminal Tab View -->
+            <div id="terminal_tab" class="content_area" hidden="true" style="padding: 15px;">
+                <div class="card h-100 border">
+                    <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-terminal"></i> Terminal</h6>
+                        <span class="badge badge-pill badge-danger" id="terminal_badge" hidden="true">.</span>
+                    </div>
+                    <div class="card-body p-0" style="background: #000000; min-height: calc(100vh - 180px);">
+                        <div id="xterm-container" style="background: #000000; height: calc(100vh - 180px); width: 100%;"></div>
                     </div>
                 </div>
             </div>

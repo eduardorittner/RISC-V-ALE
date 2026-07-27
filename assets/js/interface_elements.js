@@ -101,7 +101,7 @@ import { VisualDebuggerUI } from "../../modules/debugger.js";
 
 class InterfaceNavegation{
   constructor(){
-    this.tabs = ["home_tab", "hardware_tab", "os_tab", "debug_tab", "settings_tab"];
+    this.tabs = ["home_tab", "hardware_tab", "os_tab", "terminal_tab", "debug_tab", "settings_tab"];
   }
 
   addTab(name, icon, id, content){
@@ -122,14 +122,19 @@ class InterfaceNavegation{
   }
 
   hideTab(id){
-    document.getElementById(id).hidden = true;
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
   }
 
   locationHashChanged(){
     this.tabs.map(this.hideTab);
     let newHash = location.hash.slice(1) + "_tab";
     if(this.tabs.includes(newHash)){
-      document.getElementById(newHash).hidden = false;
+      const activeEl = document.getElementById(newHash);
+      if (activeEl) activeEl.hidden = false;
+      if (newHash === "terminal_tab" && web_terminal) {
+        web_terminal.openTerminal();
+      }
     }else{
       home_tab.hidden = false;
       console.log(location.hash);
@@ -423,10 +428,8 @@ run_with_debug_button.onclick = function(){
 // terminal
 
 terminal_button.onclick = function(){
-  $('#modal_terminal').modal({backdrop: false,show: true});
-  $('#modal_terminal').draggable({handle: ".modal-header"});
-  web_terminal.openTerminal();
-}
+  location.hash = "#terminal";
+};
  
 assistant_button.onclick = function () {
   $('#modal_assistant').modal({backdrop: false,show: true});
