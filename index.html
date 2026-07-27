@@ -277,9 +277,9 @@
                 </div>
             </div>
             <!-- Debugger Tab View -->
-            <div id="debug_tab" class="content_area" hidden="true" style="padding: 15px; overflow-y: auto;">
+            <div id="debug_tab" class="content_area debug-tab-seamless" hidden="true">
                 <!-- Top Debug Control & Status Toolbar -->
-                <div class="card mb-3 debug-toolbar-card">
+                <div class="card debug-toolbar-card">
                     <div class="card-body py-2 d-flex align-items-center justify-content-between">
                         <div class="btn-group" role="group" id="debug_toolbar">
                             <button class="btn btn-sm btn-primary" id="btn_debug_step_into" title="Step Into (F11)"><i class="fas fa-level-down-alt"></i> Step Into</button>
@@ -297,112 +297,124 @@
                     </div>
                 </div>
 
-                <!-- Multi-Panel Layout Grid -->
-                <div class="row">
-                    <!-- Main Left: Source View -->
-                    <div class="col-xl-6 col-lg-6 mb-3">
-                        <div class="card h-100">
-                            <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                                <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-file-code"></i> Source View</h6>
-                                <small class="text-muted font-monospace" id="debug_current_symbol">_start</small>
+                <!-- Resizable Tiled Dock Layout -->
+                <div class="debug-dock-container">
+                    <!-- Top Split Row -->
+                    <div class="dock-row" id="dock_top_row">
+                        <!-- Source View Panel -->
+                        <div class="dock-panel" id="dock_panel_source" style="width: 50%;">
+                            <div class="card h-100">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-file-code"></i> Source View</h6>
+                                    <small class="text-muted font-monospace" id="debug_current_symbol">_start</small>
+                                </div>
+                                <div class="card-body p-0 debug-panel-scrollable source-editor-view" id="debug_disasm_container">
+                                    <div class="source-editor-code" id="debug_disasm_body">
+                                        <!-- Source lines dynamically rendered here -->
+                                    </div>
+                                </div>
                             </div>
-                            <div class="card-body p-0 debug-panel-scrollable source-editor-view" id="debug_disasm_container">
-                                <div class="source-editor-code" id="debug_disasm_body">
-                                    <!-- Source lines dynamically rendered here -->
+                        </div>
+
+                        <!-- Vertical Resizer Gutter (Top Row) -->
+                        <div class="gutter-v" id="gutter_top_v" title="Drag to resize left/right panels"></div>
+
+                        <!-- Register File Panel -->
+                        <div class="dock-panel" id="dock_panel_regs" style="width: 50%;">
+                            <div class="card h-100">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-microchip"></i> Register File</h6>
+                                    <select class="form-control form-control-sm" id="debug_reg_format_select" style="width: 120px;">
+                                        <option value="hex">Hexadecimal</option>
+                                        <option value="sdec">Signed Dec</option>
+                                        <option value="udec">Unsigned Dec</option>
+                                        <option value="ascii">ASCII</option>
+                                    </select>
+                                </div>
+                                <div class="card-body p-2 debug-panel-scrollable" id="debug_register_container">
+                                    <ul class="nav nav-tabs nav-justified" id="regTab" role="tablist">
+                                        <li class="nav-item"><a class="nav-link active py-1" id="gpr-tab" data-toggle="tab" href="#gpr_panel">Integer (x0-x31)</a></li>
+                                        <li class="nav-item"><a class="nav-link py-1" id="fpr-tab" data-toggle="tab" href="#fpr_panel">Float (f0-f31)</a></li>
+                                        <li class="nav-item"><a class="nav-link py-1" id="csr-tab" data-toggle="tab" href="#csr_panel">CSRs</a></li>
+                                    </ul>
+                                    <div class="tab-content pt-2">
+                                        <div class="tab-pane fade show active" id="gpr_panel">
+                                            <div class="row no-gutters" id="gpr_grid_container">
+                                                <!-- 32 GPR cells dynamically generated -->
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="fpr_panel">
+                                            <div class="row no-gutters" id="fpr_grid_container">
+                                                <!-- 32 FPR cells dynamically generated -->
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="csr_panel">
+                                            <div class="row no-gutters" id="csr_grid_container">
+                                                <!-- CSR cells dynamically generated -->
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Main Right Top: Register File Panel -->
-                    <div class="col-xl-6 col-lg-6 mb-3">
-                        <div class="card h-100">
-                            <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                                <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-microchip"></i> Register File</h6>
-                                <select class="form-control form-control-sm" id="debug_reg_format_select" style="width: 120px;">
-                                    <option value="hex">Hexadecimal</option>
-                                    <option value="sdec">Signed Dec</option>
-                                    <option value="udec">Unsigned Dec</option>
-                                    <option value="ascii">ASCII</option>
-                                </select>
-                            </div>
-                            <div class="card-body p-2 debug-panel-scrollable" id="debug_register_container">
-                                <ul class="nav nav-tabs nav-justified" id="regTab" role="tablist">
-                                    <li class="nav-item"><a class="nav-link active py-1" id="gpr-tab" data-toggle="tab" href="#gpr_panel">Integer (x0-x31)</a></li>
-                                    <li class="nav-item"><a class="nav-link py-1" id="fpr-tab" data-toggle="tab" href="#fpr_panel">Float (f0-f31)</a></li>
-                                    <li class="nav-item"><a class="nav-link py-1" id="csr-tab" data-toggle="tab" href="#csr_panel">CSRs</a></li>
-                                </ul>
-                                <div class="tab-content pt-2">
-                                    <div class="tab-pane fade show active" id="gpr_panel">
-                                        <div class="row no-gutters" id="gpr_grid_container">
-                                            <!-- 32 GPR cells dynamically generated -->
-                                        </div>
+                    <!-- Horizontal Resizer Gutter (Between Top and Bottom Rows) -->
+                    <div class="gutter-h" id="gutter_main_h" title="Drag to resize top/bottom rows"></div>
+
+                    <!-- Bottom Split Row -->
+                    <div class="dock-row" id="dock_bottom_row">
+                        <!-- Addressable Memory Inspector Panel -->
+                        <div class="dock-panel" id="dock_panel_mem" style="width: 58%;">
+                            <div class="card h-100">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-memory"></i> Addressable Memory Inspector</h6>
+                                    <div class="form-inline">
+                                        <input type="text" class="form-control form-control-sm mr-2" id="debug_mem_jump_input" placeholder="0x80000000" style="width: 160px;">
+                                        <button class="btn btn-sm btn-outline-primary" id="btn_debug_mem_jump">Jump</button>
                                     </div>
-                                    <div class="tab-pane fade" id="fpr_panel">
-                                        <div class="row no-gutters" id="fpr_grid_container">
-                                            <!-- 32 FPR cells dynamically generated -->
-                                        </div>
-                                    </div>
-                                    <div class="tab-pane fade" id="csr_panel">
-                                        <div class="row no-gutters" id="csr_grid_container">
-                                            <!-- CSR cells dynamically generated -->
-                                        </div>
-                                    </div>
+                                </div>
+                                <div class="card-body p-0 debug-panel-scrollable" id="debug_memory_container">
+                                    <table class="table table-sm table-hover debug-mem-table" id="debug_hex_table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 120px;">Address</th>
+                                                <th style="width: 360px;">Hex Data</th>
+                                                <th>ASCII Sidecar</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="debug_hex_body">
+                                            <!-- 3-column memory rows dynamically populated -->
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- Bottom Row: Memory Inspector & Stack Visualizer -->
-                <div class="row">
-                    <!-- Bottom Left: Memory Inspector (RAM) -->
-                    <div class="col-xl-7 col-lg-7 mb-3">
-                        <div class="card h-100">
-                            <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                                <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-memory"></i> Addressable Memory Inspector</h6>
-                                <div class="form-inline">
-                                    <input type="text" class="form-control form-control-sm mr-2" id="debug_mem_jump_input" placeholder="0x80000000" style="width: 160px;">
-                                    <button class="btn btn-sm btn-outline-primary" id="btn_debug_mem_jump">Jump</button>
+                        <!-- Vertical Resizer Gutter (Bottom Row) -->
+                        <div class="gutter-v" id="gutter_bottom_v" title="Drag to resize left/right panels"></div>
+
+                        <!-- Stack Visualizer Panel -->
+                        <div class="dock-panel" id="dock_panel_stack" style="width: 42%;">
+                            <div class="card h-100">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-layer-group"></i> Stack Visualizer (sp: <span id="debug_sp_val">0x07FFFFFC</span>)</h6>
                                 </div>
-                            </div>
-                            <div class="card-body p-0 debug-panel-scrollable" id="debug_memory_container">
-                                <table class="table table-sm table-hover debug-mem-table" id="debug_hex_table">
-                                    <thead>
-                                        <tr>
-                                            <th style="width: 120px;">Address</th>
-                                            <th style="width: 360px;">Hex Data</th>
-                                            <th>ASCII Sidecar</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="debug_hex_body">
-                                        <!-- 3-column memory rows dynamically populated -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Bottom Right: Stack Visualizer -->
-                    <div class="col-xl-5 col-lg-5 mb-3">
-                        <div class="card h-100">
-                            <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                                <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-layer-group"></i> Stack Visualizer (sp: <span id="debug_sp_val">0x07FFFFFC</span>)</h6>
-                            </div>
-                            <div class="card-body p-0 debug-panel-scrollable" id="debug_stack_container">
-                                <table class="table table-sm table-striped debug-stack-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Offset</th>
-                                            <th>Address</th>
-                                            <th>Value</th>
-                                            <th>Symbol / Frame</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="debug_stack_body">
-                                        <!-- Stack frames dynamically populated -->
-                                    </tbody>
-                                </table>
+                                <div class="card-body p-0 debug-panel-scrollable" id="debug_stack_container">
+                                    <table class="table table-sm table-striped debug-stack-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Offset</th>
+                                                <th>Address</th>
+                                                <th>Value</th>
+                                                <th>Symbol / Frame</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="debug_stack_body">
+                                            <!-- Stack frames dynamically populated -->
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>

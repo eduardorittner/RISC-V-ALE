@@ -17,6 +17,7 @@ export class VisualDebuggerUI {
     this.bindEvents();
     this.bindKeyboardShortcuts();
     this.wireControllerCallbacks();
+    this.initPanelResizers();
   }
 
   initDOMReferences() {
@@ -462,6 +463,102 @@ export class VisualDebuggerUI {
     }
 
     this.stackBody.innerHTML = html;
+  }
+
+  initPanelResizers() {
+    this.setupVerticalResizer("gutter_top_v", "dock_panel_source", "dock_panel_regs", "dock_top_row");
+    this.setupVerticalResizer("gutter_bottom_v", "dock_panel_mem", "dock_panel_stack", "dock_bottom_row");
+    this.setupHorizontalResizer("gutter_main_h", "dock_top_row", "dock_bottom_row", "debug-dock-container");
+  }
+
+  setupVerticalResizer(gutterId, leftPanelId, rightPanelId, rowId) {
+    const gutter = document.getElementById(gutterId);
+    const leftPanel = document.getElementById(leftPanelId);
+    const rightPanel = document.getElementById(rightPanelId);
+    const row = document.getElementById(rowId);
+
+    if (!gutter || !leftPanel || !rightPanel || !row) return;
+
+    gutter.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      gutter.classList.add("active-dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      const startX = e.clientX;
+      const startLeftWidth = leftPanel.getBoundingClientRect().width;
+      const totalWidth = row.getBoundingClientRect().width - gutter.offsetWidth;
+
+      const onMouseMove = (moveEvt) => {
+        const dx = moveEvt.clientX - startX;
+        let newLeftWidth = startLeftWidth + dx;
+        const minWidth = 100;
+        const maxWidth = totalWidth - minWidth;
+
+        if (newLeftWidth < minWidth) newLeftWidth = minWidth;
+        if (newLeftWidth > maxWidth) newLeftWidth = maxWidth;
+
+        const leftPercent = (newLeftWidth / totalWidth) * 100;
+        leftPanel.style.width = leftPercent + "%";
+        rightPanel.style.width = (100 - leftPercent) + "%";
+      };
+
+      const onMouseUp = () => {
+        gutter.classList.remove("active-dragging");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  }
+
+  setupHorizontalResizer(gutterId, topRowId, bottomRowId, containerClass) {
+    const gutter = document.getElementById(gutterId);
+    const topRow = document.getElementById(topRowId);
+    const bottomRow = document.getElementById(bottomRowId);
+    const container = document.querySelector("." + containerClass);
+
+    if (!gutter || !topRow || !bottomRow || !container) return;
+
+    gutter.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      gutter.classList.add("active-dragging");
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+
+      const startY = e.clientY;
+      const startTopHeight = topRow.getBoundingClientRect().height;
+      const totalHeight = container.getBoundingClientRect().height - gutter.offsetHeight;
+
+      const onMouseMove = (moveEvt) => {
+        const dy = moveEvt.clientY - startY;
+        let newTopHeight = startTopHeight + dy;
+        const minHeight = 80;
+        const maxHeight = totalHeight - minHeight;
+
+        if (newTopHeight < minHeight) newTopHeight = minHeight;
+        if (newTopHeight > maxHeight) newTopHeight = maxHeight;
+
+        const topPercent = (newTopHeight / totalHeight) * 100;
+        topRow.style.height = topPercent + "%";
+        bottomRow.style.height = (100 - topPercent) + "%";
+      };
+
+      const onMouseUp = () => {
+        gutter.classList.remove("active-dragging");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
   }
 }
 

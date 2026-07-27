@@ -259,3 +259,115 @@
     z-index: 1000;
 }
 
+/* Zero-Gap Seamless IDE Dock Layout for Debugger UI */
+.debug-tab-seamless {
+    padding: 0 !important;
+    background-color: #f8f9fc;
+}
+
+.debug-tab-seamless .debug-toolbar-card {
+    border: none;
+    border-bottom: 1px solid #d1d3e2;
+    border-radius: 0;
+    margin-bottom: 0 !important;
+    background-color: #f8f9fa;
+}
+
+.debug-tab-seamless .card {
+    border-radius: 0 !important;
+    border: 1px solid #d1d3e2;
+    margin: 0 !important;
+    box-shadow: none !important;
+}
+
+.debug-tab-seamless .row.no-gutters > [class*="col-"] + [class*="col-"] .card {
+    border-left: none !important;
+}
+
+.debug-tab-seamless .row.no-gutters + .row.no-gutters .card {
+    border-top: none !important;
+}
+
+.debug-tab-seamless .card-header {
+    border-radius: 0 !important;
+    border-bottom: 1px solid #d1d3e2;
+    background-color: #eaecf4;
+}
+
+/* Resizable Dock Layout System */
+.debug-dock-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 125px);
+    width: 100%;
+    overflow: hidden;
+}
+
+.dock-row {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    overflow: hidden;
+}
+
+#dock_top_row {
+    height: 50%;
+    min-height: 100px;
+}
+
+#dock_bottom_row {
+    height: 50%;
+    min-height: 100px;
+}
+
+.dock-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 100px;
+    height: 100%;
+    overflow: hidden;
+}
+
+.dock-panel .card {
+    display: flex;
+    flex-direction: column;
+    height: 100% !important;
+    border-radius: 0 !important;
+    border: 1px solid #d1d3e2;
+    box-shadow: none !important;
+}
+
+.dock-panel .card-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+}
+
+/* Resizer Gutters */
+.gutter-v {
+    width: 6px;
+    background-color: #d1d3e2;
+    cursor: col-resize;
+    z-index: 20;
+    flex-shrink: 0;
+    user-select: none;
+    transition: background-color 0.15s ease;
+}
+
+.gutter-v:hover, .gutter-v.active-dragging {
+    background-color: #4e73df;
+}
+
+.gutter-h {
+    height: 6px;
+    background-color: #d1d3e2;
+    cursor: row-resize;
+    z-index: 20;
+    flex-shrink: 0;
+    user-select: none;
+    transition: background-color 0.15s ease;
+}
+
+.gutter-h:hover, .gutter-h.active-dragging {
+    background-color: #4e73df;
+}
+
