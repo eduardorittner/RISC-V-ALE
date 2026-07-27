@@ -371,3 +371,23 @@
     background-color: #4e73df;
 }
 
+/* Drag and Drop Panel Reordering */
+.dock-panel .card-header[draggable="true"] {
+    cursor: grab;
+    user-select: none;
+}
+
+.dock-panel .card-header[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.dock-panel.drag-over-slot {
+    outline: 2px dashed #4e73df;
+    outline-offset: -3px;
+    background-color: rgba(78, 115, 223, 0.08);
+}
+
+.card.dragging-panel {
+    opacity: 0.4;
+}
+

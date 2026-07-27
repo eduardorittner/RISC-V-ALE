@@ -18,6 +18,7 @@ export class VisualDebuggerUI {
     this.bindKeyboardShortcuts();
     this.wireControllerCallbacks();
     this.initPanelResizers();
+    this.initPanelDragAndDrop();
   }
 
   initDOMReferences() {
@@ -558,6 +559,62 @@ export class VisualDebuggerUI {
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
+    });
+  }
+
+  initPanelDragAndDrop() {
+    let draggedCardId = null;
+
+    const cardHeaders = document.querySelectorAll(".dock-panel .card-header[draggable='true']");
+    const dockPanels = document.querySelectorAll(".dock-panel");
+
+    cardHeaders.forEach((header) => {
+      header.addEventListener("dragstart", (e) => {
+        const card = header.closest(".card");
+        if (!card) return;
+        draggedCardId = card.id;
+        e.dataTransfer.setData("text/plain", card.id);
+        e.dataTransfer.effectAllowed = "move";
+        card.classList.add("dragging-panel");
+      });
+
+      header.addEventListener("dragend", (e) => {
+        const card = header.closest(".card");
+        if (card) card.classList.remove("dragging-panel");
+        dockPanels.forEach((panel) => panel.classList.remove("drag-over-slot"));
+        draggedCardId = null;
+      });
+    });
+
+    dockPanels.forEach((panel) => {
+      panel.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        panel.classList.add("drag-over-slot");
+      });
+
+      panel.addEventListener("dragleave", (e) => {
+        panel.classList.remove("drag-over-slot");
+      });
+
+      panel.addEventListener("drop", (e) => {
+        e.preventDefault();
+        panel.classList.remove("drag-over-slot");
+
+        const sourceCardId = e.dataTransfer.getData("text/plain") || draggedCardId;
+        if (!sourceCardId) return;
+
+        const sourceCard = document.getElementById(sourceCardId);
+        const targetCard = panel.querySelector(".card");
+
+        if (sourceCard && targetCard && sourceCard !== targetCard) {
+          const sourcePanel = sourceCard.parentElement;
+
+          // Swap Cards between sourcePanel and targetPanel (panel)
+          panel.appendChild(sourceCard);
+          sourcePanel.appendChild(targetCard);
+        }
+      });
     });
   }
 }
