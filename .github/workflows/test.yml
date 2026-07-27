@@ -33,14 +33,17 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - name: cargo generate-lockfile
         # enable this ci template to run regardless of whether the lockfile is checked in or not
-        if: hashFiles('Cargo.lock') == ''
-        run: cargo generate-lockfile --manifest-path crates/rust-whisper/Cargo.toml
+        if: hashFiles('crates/rust-whisper/Cargo.lock') == ''
+        working-directory: crates/rust-whisper
+        run: cargo generate-lockfile
       # https://twitter.com/jonhoo/status/1571290371124260865
       - name: cargo test --locked
-        run: cargo test --locked --all-features --all-targets --manifest-path crates/rust-whisper/Cargo.toml
+        working-directory: crates/rust-whisper
+        run: cargo test --locked --all-features --all-targets
       # https://github.com/rust-lang/cargo/issues/6669
       - name: cargo test --doc
-        run: cargo test --locked --all-features --doc --manifest-path crates/rust-whisper/Cargo.toml
+        working-directory: crates/rust-whisper
+        run: cargo test --locked --all-features --doc
   os-check:
     # run cargo test on mac and windows
     runs-on: ${{ matrix.os }}
@@ -64,10 +67,12 @@ jobs:
         with:
           toolchain: stable
       - name: cargo generate-lockfile
-        if: hashFiles('Cargo.lock') == ''
-        run: cargo generate-lockfile --manifest-path crates/rust-whisper/Cargo.toml
+        if: hashFiles('crates/rust-whisper/Cargo.lock') == ''
+        working-directory: crates/rust-whisper
+        run: cargo generate-lockfile
       - name: cargo test
-        run: cargo test --locked --all-features --all-targets --manifest-path crates/rust-whisper/Cargo.toml
+        working-directory: crates/rust-whisper
+        run: cargo test --locked --all-features --all-targets
   coverage:
     # use llvm-cov to build and collect coverage and outputs in a format that
     # is compatible with codecov.io
@@ -106,10 +111,12 @@ jobs:
         with:
           tool: cargo-llvm-cov
       - name: cargo generate-lockfile
-        if: hashFiles('Cargo.lock') == ''
-        run: cargo generate-lockfile --manifest-path crates/rust-whisper/Cargo.toml
+        if: hashFiles('crates/rust-whisper/Cargo.lock') == ''
+        working-directory: crates/rust-whisper
+        run: cargo generate-lockfile
       - name: cargo llvm-cov
-        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info --manifest-path crates/rust-whisper/Cargo.toml
+        working-directory: crates/rust-whisper
+        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
       - name: Record Rust version
         run: echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"
       - name: Upload to codecov.io
