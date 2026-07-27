@@ -9,7 +9,8 @@
 # This script:
 #   1. (Local only) Stashes uncommitted changes so the working tree is clean.
 #   2. Creates (or resets) an orphan `gh-pages` branch.
-#   3. Removes files that should not be deployed (local/, scripts/, .gitmodules).
+#   3. Removes files that should not be deployed (local/, scripts/, crates/,
+#      .gitmodules).
 #   4. De-submodules `extensions/` so GitHub Pages serves its contents.
 #   5. Adds a `.nojekyll` file so GitHub Pages doesn't strip `_`-prefixed
 #      folders/files (Jekyll processing is disabled).
@@ -83,7 +84,7 @@ git checkout --orphan "$BRANCH"
 git rm -rf --cached . >/dev/null 2>&1 || true
 
 # --- 3. Remove files that should not be deployed -----------------------------
-rm -rf local/ scripts/ .gitmodules
+rm -rf local/ scripts/ crates/ .gitmodules
 
 # --- 4. De-submodule extensions/ ---------------------------------------------
 # Remove the submodule's .git file so the extensions/ files become regular
@@ -98,6 +99,13 @@ touch .nojekyll
 
 # --- 6. Commit and push ------------------------------------------------------
 echo "==> Committing to $BRANCH"
+
+# Ensure git has an author identity (CI runners don't have one by default)
+GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-github-actions[bot]}"
+GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-github-actions[bot]@users.noreply.github.com}"
+GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$GIT_AUTHOR_NAME}"
+GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$GIT_AUTHOR_EMAIL}"
+export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 
 git add -A
 git commit -m "Deploy to GitHub Pages
