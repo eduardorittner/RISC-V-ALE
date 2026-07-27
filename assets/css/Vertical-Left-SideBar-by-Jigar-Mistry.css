@@ -6,7 +6,7 @@
 
 .main-leftsidebar-div .nav-link {
   border-radius: 0;
-  padding: 0.2rem 1rem!important;
+  padding: 0.2rem 0 !important;
 }
 
 [data-component='leftsidebar'] .leftsidebar {
@@ -29,10 +29,16 @@
 
 [data-component='leftsidebar'] .first-menu a {
   color: #041e42;
+  display: block;
 }
 
 [data-component='leftsidebar'] .first-menu i {
   font-size: 24px;
+  width: 62px;
+  min-width: 62px;
+  text-align: center;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 [data-component='leftsidebar'] .first-menu span {
@@ -42,7 +48,8 @@
   opacity: 0;
   visibility: hidden;
   transition: none !important;
-  /*display: none;*/
+  padding-left: 10px !important;
+  padding-right: 10px !important;
 }
 
 [data-component='leftsidebar'] .first-menu:hover span {
@@ -54,6 +61,8 @@
 [data-component='leftsidebar'] .first-menu .list-group-item {
   border-radius: 0;
   white-space: nowrap;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
 
 [data-component='leftsidebar'] .first-menu li:hover {
