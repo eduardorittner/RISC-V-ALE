@@ -5,7 +5,7 @@
 
 #content {
   margin-top: 70px;
-  transition: width .5s;
+  transition: none !important;
 }
 
 #content-wrapper {
@@ -89,9 +89,9 @@
 .not-expanded-leftsidebar .sub-menu-item:hover {
   width: 240px;
   background-color: #4e73df !important;
-  -webkit-filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
+  filter: none !important;
+  -webkit-filter: none !important;
   transition-delay: initial;
-  filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
 }
 
 .not-expanded-leftsidebar li:hover ul {
@@ -119,8 +119,8 @@
   height: 100%;
   transform: translateX(250px);
   overflow-y: auto;
-  -webkit-filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
-  filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
+  filter: none !important;
+  -webkit-filter: none !important;
   z-index: 1050;
 }
 
@@ -128,8 +128,8 @@
   display: block;
   width: 100%;
   background-color: rgba(78,115,223,0.56);
-  -webkit-filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
-  filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
+  filter: none !important;
+  -webkit-filter: none !important;
 }
 
 #right-nav-item-link:hover {
@@ -144,8 +144,8 @@
   top: 40%;
   padding-right: 0px;
   box-shadow: none;
-  -webkit-filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
-  filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
+  filter: none !important;
+  -webkit-filter: none !important;
 }
 
 .right-side-nav-div {
@@ -183,8 +183,8 @@
 }
 
 .topnav-search-input:focus {
-  -webkit-filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
-  filter: drop-shadow(0px 20px 10px rgba(0, 0, 0, 0.3));
+  filter: none !important;
+  -webkit-filter: none !important;
   z-index: 1050;
 }
 
@@ -204,4 +204,3 @@
 .top-nav-bar .notification-link, .indox-link, .profile-drop-link {
   height: 50px!important;
 }
-

@@ -15,6 +15,17 @@
   -moz-box-shadow: none !important;
 }
 
+/* Instant Open/Close Left Hamburger Sidebar (No Animations) */
+[data-component='leftsidebar'] .first-menu,
+[data-component='leftsidebar'] .first-menu span,
+[data-component='leftsidebar'] .submenu,
+[data-component='leftsidebar'] .sub-submenu {
+  transition: none !important;
+  -webkit-transition: none !important;
+  transition-delay: 0s !important;
+  -webkit-transition-delay: 0s !important;
+}
+
 .content_area {
   height: 100%;
   width: 100%;
