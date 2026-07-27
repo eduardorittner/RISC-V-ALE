@@ -249,3 +249,13 @@
     color: #adb5bd;
 }
 
+/* Footer Styling with Bottom Padding */
+#footer {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    background-color: #ffffff !important;
+    border-top: 1px solid #e3e6f0 !important;
+    box-shadow: none !important;
+    z-index: 1000;
+}
+
