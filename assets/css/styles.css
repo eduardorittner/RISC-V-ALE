@@ -2,6 +2,19 @@
   pointer-events: none;
 }
 
+/* Global Shadow Removal Override */
+*, ::before, ::after {
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  -moz-box-shadow: none !important;
+}
+
+.shadow, .shadow-sm, .shadow-lg, .card, .navbar, .first-menu, .submenu, .sub-submenu {
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  -moz-box-shadow: none !important;
+}
+
 .content_area {
   height: 100%;
   width: 100%;

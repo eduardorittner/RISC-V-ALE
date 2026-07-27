@@ -52,9 +52,9 @@
         </div>
     </div>
     <div id="wrapper" style="height: 100vw;">
-        <nav class="navbar navbar-light navbar-expand fixed-top shadow mb-4 topbar top-nav-bar" style="background: rgb(4,30,66);">
+        <nav class="navbar navbar-light navbar-expand fixed-top mb-4 topbar top-nav-bar" style="background: rgb(4,30,66);">
             <div class="container-fluid">
-                <div class="logodiv"><img class="img-fluid shadow main-menu-toggle" src="assets/img/Standard_2.png" href="#Home"></div>
+                <div class="logodiv"><img class="img-fluid main-menu-toggle" src="assets/img/Standard_2.png" href="#Home"></div>
                 <form class="form-inline d-none d-sm-inline-block mr-auto ml-md-5 navbar-search">
                     <div class="input-group">
                         <p class="lead" style="padding-top: 16px;color: #d29c4e;font-weight: bold;font-style: normal;font-family: 'Courier Prime', monospace;">ALE</p>
@@ -279,7 +279,7 @@
             <!-- Debugger Tab View -->
             <div id="debug_tab" class="content_area" hidden="true" style="padding: 15px; overflow-y: auto;">
                 <!-- Top Debug Control & Status Toolbar -->
-                <div class="card shadow mb-3 debug-toolbar-card">
+                <div class="card mb-3 debug-toolbar-card">
                     <div class="card-body py-2 d-flex align-items-center justify-content-between">
                         <div class="btn-group" role="group" id="debug_toolbar">
                             <button class="btn btn-sm btn-primary" id="btn_debug_step_into" title="Step Into (F11)"><i class="fas fa-level-down-alt"></i> Step Into</button>
@@ -301,7 +301,7 @@
                 <div class="row">
                     <!-- Main Left: Source View -->
                     <div class="col-xl-6 col-lg-6 mb-3">
-                        <div class="card shadow h-100">
+                        <div class="card h-100">
                             <div class="card-header py-2 d-flex justify-content-between align-items-center">
                                 <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-file-code"></i> Source View</h6>
                                 <small class="text-muted font-monospace" id="debug_current_symbol">_start</small>
@@ -316,7 +316,7 @@
 
                     <!-- Main Right Top: Register File Panel -->
                     <div class="col-xl-6 col-lg-6 mb-3">
-                        <div class="card shadow h-100">
+                        <div class="card h-100">
                             <div class="card-header py-2 d-flex justify-content-between align-items-center">
                                 <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-microchip"></i> Register File</h6>
                                 <select class="form-control form-control-sm" id="debug_reg_format_select" style="width: 120px;">
@@ -358,7 +358,7 @@
                 <div class="row">
                     <!-- Bottom Left: Memory Inspector (RAM) -->
                     <div class="col-xl-7 col-lg-7 mb-3">
-                        <div class="card shadow h-100">
+                        <div class="card h-100">
                             <div class="card-header py-2 d-flex justify-content-between align-items-center">
                                 <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-memory"></i> Addressable Memory Inspector</h6>
                                 <div class="form-inline">
@@ -385,7 +385,7 @@
 
                     <!-- Bottom Right: Stack Visualizer -->
                     <div class="col-xl-5 col-lg-5 mb-3">
-                        <div class="card shadow h-100">
+                        <div class="card h-100">
                             <div class="card-header py-2 d-flex justify-content-between align-items-center">
                                 <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-layer-group"></i> Stack Visualizer (sp: <span id="debug_sp_val">0x07FFFFFC</span>)</h6>
                             </div>
