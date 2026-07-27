@@ -32,7 +32,7 @@ export class VisualDebuggerUI {
     this.gprContainer = document.getElementById("gpr_grid_container");
     this.fprContainer = document.getElementById("fpr_grid_container");
     this.csrContainer = document.getElementById("csr_grid_container");
-    this.hexEditor = document.getElementById("debug_hex_editor");
+    this.hexBody = document.getElementById("debug_hex_body") || document.getElementById("debug_hex_editor");
     this.stackBody = document.getElementById("debug_stack_body");
     this.spValDisplay = document.getElementById("debug_sp_val");
     this.pcDisplay = document.getElementById("debug_pc_display");
@@ -370,29 +370,74 @@ export class VisualDebuggerUI {
   }
 
   renderHexEditor(baseAddr, bytes) {
-    if (!this.hexEditor || !bytes) return;
+    if (!this.hexBody || !bytes) return;
     let html = "";
+
     for (let i = 0; i < bytes.length; i += 16) {
       const rowAddr = (baseAddr + i) >>> 0;
       const rowBytes = bytes.slice(i, i + 16);
-      let hexPart = "";
-      let asciiPart = "";
+      const addrStr = "0x" + rowAddr.toString(16).padStart(8, "0");
+
+      let hexGroup1 = "";
+      let hexGroup2 = "";
+      let asciiStr = "";
 
       for (let j = 0; j < 16; j++) {
         if (j < rowBytes.length) {
           const b = rowBytes[j];
-          hexPart += `<span class="hex-byte" data-addr="${rowAddr + j}">${b.toString(16).padStart(2, "0")}</span> `;
-          asciiPart += b >= 32 && b <= 126 ? String.fromCharCode(b) : ".";
+          const hex = b.toString(16).padStart(2, "0").toUpperCase();
+          const zeroClass = b === 0 ? "zero-byte" : "";
+          const byteHtml = `<span class="hex-byte ${zeroClass}" data-addr="${rowAddr + j}" title="Double-click to edit byte at 0x${(rowAddr + j).toString(16)}">${hex}</span>`;
+
+          if (j < 8) {
+            hexGroup1 += byteHtml + " ";
+          } else {
+            hexGroup2 += byteHtml + " ";
+          }
+
+          if (b >= 32 && b <= 126) {
+            asciiStr += escapeHtml(String.fromCharCode(b));
+          } else {
+            asciiStr += `<span class="ascii-nonprint">.</span>`;
+          }
         } else {
-          hexPart += "   ";
-          asciiPart += " ";
+          if (j < 8) {
+            hexGroup1 += "   ";
+          } else {
+            hexGroup2 += "   ";
+          }
+          asciiStr += " ";
         }
       }
 
-      html += `0x${rowAddr.toString(16).padStart(8, "0")}:  ${hexPart} |${asciiPart}|\n`;
+      html += `
+        <tr>
+          <td class="mem-col-addr">${addrStr}</td>
+          <td class="mem-col-hex">
+            <span class="hex-group">${hexGroup1}</span>
+            <span class="hex-group">${hexGroup2}</span>
+          </td>
+          <td class="mem-col-ascii">
+            <span class="ascii-sidecar">|${asciiStr}|</span>
+          </td>
+        </tr>
+      `;
     }
 
-    this.hexEditor.innerHTML = html;
+    this.hexBody.innerHTML = html;
+
+    // Attach dblclick event handler to hex-byte elements for inline RAM editing
+    this.hexBody.querySelectorAll(".hex-byte").forEach((elem) => {
+      elem.ondblclick = () => {
+        const addr = parseInt(elem.getAttribute("data-addr"), 10);
+        const currentHex = elem.innerText.trim();
+        const newVal = prompt(`Edit RAM byte at 0x${addr.toString(16)}:`, "0x" + currentHex);
+        if (newVal !== null) {
+          const parsed = parseInt(newVal, 16) || parseInt(newVal, 10) || 0;
+          this.controller.debugPokeMemory(addr, parsed & 0xff);
+        }
+      };
+    });
   }
 
   renderStack(sp) {

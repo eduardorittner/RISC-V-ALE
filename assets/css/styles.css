@@ -152,3 +152,76 @@
     margin-right: 12px;
 }
 
+/* Classic Three-Column Raw Memory Inspector */
+.debug-mem-table {
+    font-family: 'Fira Code', 'Cascadia Code', 'Courier Prime', monospace;
+    font-size: 0.82rem;
+    margin-bottom: 0;
+}
+
+.debug-mem-table th {
+    background-color: #f8f9fa;
+    color: #495057;
+    font-weight: 600;
+    border-bottom: 2px solid #dee2e6;
+    padding: 6px 10px;
+}
+
+.debug-mem-table td {
+    padding: 4px 10px;
+    vertical-align: middle;
+    border-top: 1px solid #e9ecef;
+}
+
+.mem-col-addr {
+    color: #4e73df;
+    font-weight: 600;
+    user-select: all;
+}
+
+.mem-col-hex {
+    white-space: nowrap;
+}
+
+.hex-group {
+    display: inline-block;
+}
+
+.hex-group + .hex-group {
+    margin-left: 12px;
+}
+
+.hex-byte {
+    display: inline-block;
+    padding: 1px 3px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.hex-byte:hover {
+    background-color: #4e73df;
+    color: #ffffff;
+}
+
+.hex-byte.zero-byte {
+    color: #adb5bd;
+}
+
+.mem-col-ascii {
+    white-space: pre;
+    color: #2b2b2b;
+}
+
+.ascii-sidecar {
+    background-color: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid #e9ecef;
+    color: #2b2b2b;
+}
+
+.ascii-nonprint {
+    color: #adb5bd;
+}
+

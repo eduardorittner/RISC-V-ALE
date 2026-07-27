@@ -366,10 +366,19 @@
                                     <button class="btn btn-sm btn-outline-primary" id="btn_debug_mem_jump">Jump</button>
                                 </div>
                             </div>
-                            <div class="card-body p-2 debug-panel-scrollable" id="debug_memory_container">
-                                <div class="font-monospace text-monospace debug-hex-editor" id="debug_hex_editor">
-                                    <!-- 16-byte hex rows rendered here -->
-                                </div>
+                            <div class="card-body p-0 debug-panel-scrollable" id="debug_memory_container">
+                                <table class="table table-sm table-hover debug-mem-table" id="debug_hex_table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 120px;">Address</th>
+                                            <th style="width: 360px;">Hex Data</th>
+                                            <th>ASCII Sidecar</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="debug_hex_body">
+                                        <!-- 3-column memory rows dynamically populated -->
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
