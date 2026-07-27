@@ -56,10 +56,7 @@ jobs:
           components: clippy
       - name: cargo clippy
         working-directory: crates/rust-whisper
-        uses: giraffate/clippy-action@v1.0.1
-        with:
-          reporter: 'github-pr-check'
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo clippy --all-targets --all-features -- -D warnings
   semver:
     runs-on: ubuntu-latest
     name: semver
@@ -73,8 +70,9 @@ jobs:
           toolchain: stable
           components: rustfmt
       - name: cargo-semver-checks
-        working-directory: crates/rust-whisper
         uses: obi1kenobi/cargo-semver-checks-action@v2.9
+        with:
+          package: rust-whisper
   doc:
     # run docs generation on nightly rather than stable. This enables features like
     # https://doc.rust-lang.org/beta/unstable-book/language-features/doc-cfg.html which allows an
