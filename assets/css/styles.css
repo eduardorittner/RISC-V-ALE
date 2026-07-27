@@ -328,6 +328,23 @@
     box-sizing: border-box;
 }
 
+.debug-tab-seamless .card-header .form-control,
+.debug-tab-seamless .card-header .form-control-sm,
+.debug-tab-seamless .card-header .btn,
+.debug-tab-seamless .card-header .btn-sm {
+    height: 30px !important;
+    max-height: 30px !important;
+    padding-top: 0.125rem !important;
+    padding-bottom: 0.125rem !important;
+    line-height: 1.2 !important;
+    font-size: 0.8rem !important;
+    box-sizing: border-box !important;
+}
+
+.debug-tab-seamless .card-header .form-inline {
+    margin: 0 !important;
+}
+
 /* Resizable Dock Layout System */
 .debug-dock-container {
     display: flex;
