@@ -247,7 +247,7 @@ export class VisualDebuggerUI {
       const addr = parseInt(row.getAttribute("data-addr"), 16);
       if (addr === pc) {
         row.classList.add("pc-line");
-        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        row.scrollIntoView({ behavior: "auto", block: "nearest" });
       } else {
         row.classList.remove("pc-line");
       }

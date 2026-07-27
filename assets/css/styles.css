@@ -75,7 +75,7 @@
 
 .editor-line {
     display: table-row;
-    transition: background-color 0.15s ease;
+    transition: none !important;
 }
 
 .editor-line:hover {
