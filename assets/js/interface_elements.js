@@ -95,11 +95,13 @@ var assistant = new Assistant(document.getElementById('assistant_container'), do
 
 // load plugins
 
+import { VisualDebuggerUI } from "../../modules/debugger.js";
+
 // navegation
 
 class InterfaceNavegation{
   constructor(){
-    this.tabs = ["home_tab", "hardware_tab", "os_tab", "settings_tab"];
+    this.tabs = ["home_tab", "hardware_tab", "os_tab", "debug_tab", "settings_tab"];
   }
 
   addTab(name, icon, id, content){
@@ -413,7 +415,10 @@ async function run_simulator(debug) {
 }
 
 run_button.onclick = function(){run_simulator(false);};
-run_with_debug_button.onclick = function(){run_simulator(true);};
+run_with_debug_button.onclick = function(){
+  location.hash = "#debug";
+  run_simulator(true);
+};
 
 // terminal
 

@@ -129,6 +129,19 @@ class SimulatorController{
         case 'sync':
           this.bus_sync(e.data);
           break;
+        case 'debug_state':
+          if (typeof this.onDebugState === 'function') this.onDebugState(e.data.state);
+          this.sim_status_ch.postMessage({ type: 'debug_state', state: e.data.state });
+          break;
+        case 'debug_mem_data':
+          if (typeof this.onDebugMemData === 'function') this.onDebugMemData(e.data.addr, e.data.bytes);
+          break;
+        case 'debug_disasm_data':
+          if (typeof this.onDebugDisasmData === 'function') this.onDebugDisasmData(e.data.items);
+          break;
+        case 'debug_bp_updated':
+          if (typeof this.onDebugBpUpdated === 'function') this.onDebugBpUpdated(e.data.addr, e.data.active);
+          break;
           
         default:
           console.log("w: " + e.data);
@@ -272,6 +285,58 @@ class SimulatorController{
 
   stop_execution(){
     this.restart_simulator();
+  }
+
+  debugEnable(enabled = true) {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_enable", enabled });
+  }
+
+  debugStep() {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_step" });
+  }
+
+  debugStepOver() {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_step_over" });
+  }
+
+  debugStepOut() {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_step_out" });
+  }
+
+  debugContinue() {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_continue" });
+  }
+
+  debugPause() {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_pause" });
+  }
+
+  debugToggleBreakpoint(addr, active) {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_set_bp", addr: addr, active: active });
+  }
+
+  debugClearBreakpoints() {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_clear_bps" });
+  }
+
+  debugFetchMemory(addr, len) {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_read_mem", addr: addr, len: len });
+  }
+
+  debugPokeRegister(reg, val) {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_poke_reg", reg: reg, val: val });
+  }
+
+  debugPokeMemory(addr, val) {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_poke_mem", addr: addr, val: val });
+  }
+
+  debugFetchDisassembly(addr, len) {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_disasm", addr: addr, len: len });
+  }
+
+  debugGetSnapshot() {
+    if (this.simulator) this.simulator.postMessage({ type: "debug_get_snapshot" });
   }
 }
 

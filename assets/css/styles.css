@@ -22,3 +22,133 @@
   width: 100%;
 }
 
+/* Debugger Layout Styles */
+.debug-container {
+    background-color: #f8f9fc;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.debug-panel-scrollable {
+    max-height: 380px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Read-Only Source Text Editor View */
+.source-editor-view {
+    background-color: #fafbfc;
+    font-family: 'Fira Code', 'Cascadia Code', 'Courier Prime', SFMono-Regular, Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    user-select: text;
+}
+
+.source-editor-code {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.editor-line {
+    display: table-row;
+    transition: background-color 0.15s ease;
+}
+
+.editor-line:hover {
+    background-color: #f1f3f5;
+}
+
+.editor-line.pc-line {
+    background-color: #fff9db !important;
+    border-left: 3px solid #f59f00;
+}
+
+.editor-gutter {
+    display: table-cell;
+    vertical-align: middle;
+    user-select: none;
+    text-align: right;
+    white-space: nowrap;
+    padding-right: 8px;
+    padding-left: 6px;
+    background-color: #f8f9fa;
+    border-right: 1px solid #e9ecef;
+}
+
+.gutter-bp {
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+    cursor: pointer;
+    color: #ced4da;
+    font-size: 0.75rem;
+}
+
+.gutter-bp.active-bp {
+    color: #e03131;
+}
+
+.gutter-pc {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: #f59f00;
+    font-weight: bold;
+    visibility: hidden;
+}
+
+.editor-line.pc-line .gutter-pc {
+    visibility: visible;
+}
+
+.gutter-addr {
+    display: inline-block;
+    color: #adb5bd;
+    font-size: 0.78rem;
+    padding-left: 4px;
+}
+
+.editor-content {
+    display: table-cell;
+    vertical-align: middle;
+    padding: 2px 10px;
+    white-space: pre;
+}
+
+.editor-label-line {
+    display: table-row;
+    background-color: #e9ecef;
+}
+
+.editor-label-line .editor-content {
+    color: #1971c2;
+    font-weight: bold;
+    padding-top: 6px;
+    padding-bottom: 2px;
+}
+
+/* Minimal Assembly Syntax Highlighting */
+.asm-inst {
+    color: #7048e8;
+    font-weight: 600;
+}
+
+.asm-reg {
+    color: #e8590c;
+}
+
+.asm-imm {
+    color: #0c8599;
+}
+
+.asm-sym-ref {
+    color: #1971c2;
+    font-weight: 500;
+}
+
+.asm-opcode {
+    color: #868e96;
+    font-size: 0.78rem;
+    margin-right: 12px;
+}
+

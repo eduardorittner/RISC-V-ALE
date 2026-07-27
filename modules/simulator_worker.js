@@ -83,6 +83,103 @@ onmessage = function(e) {
     case "set_int_delay":
       simulator_int_inst_delay = e.data.value;
       break;
+
+    case "debug_enable":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        wasmSimulator.set_debug_mode(e.data.enabled);
+      }
+      self.debugModeActive = e.data.enabled;
+      postMessage({ type: "debug_status", enabled: e.data.enabled });
+      break;
+
+    case "debug_step":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.debug_step();
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_step_over":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.debug_step_over();
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_step_out":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.debug_step_out();
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_continue":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.run_until_breakpoint();
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_pause":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.get_snapshot_js(false, 0);
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_set_bp":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        if (e.data.active) {
+          wasmSimulator.add_breakpoint(e.data.addr);
+        } else {
+          wasmSimulator.remove_breakpoint(e.data.addr);
+        }
+        postMessage({ type: "debug_bp_updated", addr: e.data.addr, active: e.data.active });
+      }
+      break;
+
+    case "debug_clear_bps":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        wasmSimulator.clear_breakpoints();
+      }
+      break;
+
+    case "debug_read_mem":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let bytes = wasmSimulator.read_memory_range(e.data.addr, e.data.len);
+        postMessage({ type: "debug_mem_data", addr: e.data.addr, bytes: Array.from(bytes) });
+      }
+      break;
+
+    case "debug_poke_reg":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        wasmSimulator.write_register(e.data.reg, e.data.val);
+        let state = wasmSimulator.get_snapshot_js(false, 0);
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_poke_mem":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        wasmSimulator.write_memory_byte(e.data.addr, e.data.val);
+        let bytes = wasmSimulator.read_memory_range(e.data.addr, 64);
+        postMessage({ type: "debug_mem_data", addr: e.data.addr, bytes: Array.from(bytes) });
+      }
+      break;
+
+    case "debug_disasm":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let items = wasmSimulator.disassemble_range(e.data.addr, e.data.len);
+        postMessage({ type: "debug_disasm_data", items: items });
+      }
+      break;
+
+    case "debug_get_snapshot":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.get_snapshot_js(false, 0);
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
   }
 };
 
