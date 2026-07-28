@@ -164,7 +164,7 @@
 }
 
 .top-nav-bar {
-  height: 49px;
+  min-height: 49px;
   background-color: #041E42 !important;
 }
 

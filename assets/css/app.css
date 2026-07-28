@@ -32,6 +32,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: var(--app-font-family);
@@ -72,6 +76,13 @@ img {
   padding-left: 15px;
   margin-right: auto;
   margin-left: auto;
+}
+
+.navbar > .container-fluid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
 }
 
 /* ========================================================================
@@ -436,7 +447,6 @@ img {
   line-height: 1.5;
   border-radius: 0.25rem;
   cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .btn:hover {
@@ -781,7 +791,6 @@ img {
   background-clip: padding-box;
   border: 1px solid #ced4da;
   border-radius: 0.25rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .form-control:focus {
@@ -949,7 +958,6 @@ legend {
   height: calc(1rem - 4px);
   border-radius: 50%;
   background-color: #fff;
-  transition: transform 0.15s ease;
 }
 
 .custom-switch .custom-control-input:checked ~ .custom-control-label::before {
@@ -1087,15 +1095,6 @@ legend {
   display: block;
 }
 
-.modal.fade .modal-dialog {
-  transition: transform 0.3s ease-out;
-  transform: translate(0, -50px);
-}
-
-.modal.show .modal-dialog {
-  transform: none;
-}
-
 .modal-dialog {
   position: relative;
   width: auto;
@@ -1224,14 +1223,6 @@ legend {
   display: block;
 }
 
-.tab-content > .tab-pane.fade {
-  opacity: 0;
-  transition: opacity 0.15s linear;
-}
-
-.tab-content > .tab-pane.fade.show {
-  opacity: 1;
-}
 
 /* ========================================================================
    Spinner
@@ -1273,7 +1264,6 @@ legend {
 }
 
 .topbar {
-  box-shadow: 0 0.15rem 1.75rem 0 rgba(58,59,69,0.15);
 }
 
 .copyright {
