@@ -64,7 +64,7 @@
   outline: none;
 }
 
-.expanded-leftsidebar #search-nav-item, input {
+.expanded-leftsidebar #search-nav-item input {
   width: 240px;
   display: block;
   margin: 7px 2px 2px 2px;

@@ -21,11 +21,21 @@
   width: 62px;
   top: 65px;
   padding-top: 0.5rem;
+  padding-left: 0 !important;
+  margin: 0 !important;
+  list-style: none !important;
+  list-style-type: none !important;
   border-color: white;
   border-right: 1px solid #e3e6f0;
   box-shadow: none;
   overflow: hidden;
   transition: none !important;
+}
+
+[data-component='leftsidebar'] .first-menu li {
+  list-style: none !important;
+  list-style-type: none !important;
+  margin: 0 !important;
 }
 
 [data-component='leftsidebar'] .first-menu a {
