@@ -55,14 +55,10 @@
         </nav>
     </aside>
     <div id="wrapper" style="height: 100vh;">
-        <header class="navbar navbar-light navbar-expand fixed-top mb-4 topbar top-nav-bar" style="background: rgb(4,30,66);" id="topbar">
-            <div class="container-fluid">
-                <div class="logodiv"><a href="#home" class="logo-link"><img class="img-fluid main-menu-toggle" src="assets/img/Standard_2.png" alt="RISC-V ALE Logo"></a></div>
-                <div class="d-none d-sm-inline-block mr-auto ml-md-5 navbar-search">
-                    <div class="input-group">
-                        <h1 class="lead m-0" style="padding-top: 16px;color: #d29c4e;font-weight: bold;font-style: normal;font-family: 'Courier Prime', monospace;">ALE</h1>
-                    </div>
-                </div>
+        <header class="navbar navbar-light navbar-expand fixed-top mb-4 topbar top-nav-bar" id="topbar">
+            <nav class="container-fluid" aria-label="Top Bar Navigation">
+                <a href="#home" class="logodiv logo-link"><img class="img-fluid main-menu-toggle" src="assets/img/Standard_2.png" alt="RISC-V ALE Logo"></a>
+                <h1 class="lead m-0 d-none d-sm-inline-block mr-auto ml-md-5" style="padding-top: 16px;color: #d29c4e;font-weight: bold;font-style: normal;font-family: 'Courier Prime', monospace;">ALE</h1>
                 <ul class="navbar-nav float-right flex-nowrap ml-auto">
                     <li class="nav-item dropdown no-arrow mx-1"><input class="d-none" type="file" id="codeSelector" multiple=""><button class="btn btn-warning" id="terminal_button" type="button" title="Terminal" style="height: 49px;width: 63px;"><i class="fas fa-terminal"></i><span class="badge badge-pill badge-danger" id="terminal_badge" hidden="true">.</span></button><button class="btn btn-info" id="file_select_button" type="button" title="Load File" style="height: 49px;width: 63px;"><i class="fas fa-file-upload"></i></button>
                         <div class="btn-group" id="run_button_group" style="height: 49px;"><button class="btn btn-primary" id="run_button" type="button" style="background: #ffffff;color: #041e42;">&nbsp;RUN</button><button class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-toggle="dropdown" aria-expanded="false" id="run_options_selector" type="button" style="background: #ffffff;color: #041e42;"></button>
@@ -70,7 +66,7 @@
                         </div>
                     </li>
                 </ul>
-            </div>
+            </nav>
         </header>
         <main class="d-flex flex-column" id="content-wrapper">
             <div class="modal fade" role="dialog" tabindex="-1" id="modal_assistant" data-keyboard="false" data-backdrop="static">
@@ -89,18 +85,18 @@
                     </div>
                 </div>
             </div>
-            <div id="home_tab" class="content_area" hidden="true">
+            <section id="home_tab" class="content_area" hidden="true">
                 <div class="container" style="height: 100%;width: 100%;">
                     <div class="row" id="home_header">
                         <div class="col-md-12" style="padding-bottom: 10px;border-color: #ffc72c;">
-                            <div class="card">
-                                <div class="card-header">
+                            <article class="card">
+                                <header class="card-header">
                                     <h5 class="mb-0">welcome</h5>
-                                </div>
+                                </header>
                                 <div class="card-body" style="border-color: #ffc72c;">
                                     <p class="card-text">Select an activity or tutorial below to start learning RISC-V&nbsp;assembly language!</p>
                                 </div>
-                            </div>
+                            </article>
                         </div>
                     </div>
                     <div class="row" id="content_selection">
@@ -113,8 +109,8 @@
                     </div>
                     <div class="row" id="selected_content" hidden="true" style="height: 100%;width: 100%;"></div>
                 </div>
-            </div>
-            <div id="hardware_tab" class="content_area">
+            </section>
+            <section id="hardware_tab" class="content_area">
                 <div class="container">
                     <div class="row">
                         <div class="col-md-6">
@@ -182,8 +178,8 @@
                         </div>
                     </div>
                 </div>
-            </div>
-            <div id="os_tab" class="content_area" hidden="true">
+            </section>
+            <section id="os_tab" class="content_area" hidden="true">
                 <div class="container">
                     <div class="row">
                         <div class="col text-center">
@@ -234,8 +230,8 @@
                         </div>
                     </div>
                 </div>
-            </div>
-            <div id="settings_tab" class="content_area" hidden="true">
+            </section>
+            <section id="settings_tab" class="content_area" hidden="true">
                 <div class="container">
                     <div class="row">
                         <div class="col">
@@ -266,9 +262,9 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
             <!-- Terminal Tab View -->
-            <div id="terminal_tab" class="content_area" hidden="true" style="padding: 15px;">
+            <section id="terminal_tab" class="content_area" hidden="true" style="padding: 15px;">
                 <div class="card h-100 border">
                     <div class="card-header py-2 d-flex justify-content-between align-items-center">
                         <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-terminal"></i> Terminal</h6>
@@ -278,9 +274,9 @@
                         <div id="xterm-container" style="background: #000000; height: calc(100vh - 180px); width: 100%;"></div>
                     </div>
                 </div>
-            </div>
+            </section>
             <!-- Debugger Tab View -->
-            <div id="debug_tab" class="content_area debug-tab-seamless" hidden="true">
+            <section id="debug_tab" class="content_area debug-tab-seamless" hidden="true">
                 <!-- Top Debug Control & Status Toolbar -->
                 <div class="card debug-toolbar-card">
                     <div class="card-body py-2 d-flex align-items-center justify-content-between">
@@ -421,7 +417,7 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
         </main>
         <footer class="bg-white d-flex justify-content-between align-items-center copyright fixed-bottom py-2 px-4 border-top" id="footer">
             <div class="flex-grow-1"></div>
