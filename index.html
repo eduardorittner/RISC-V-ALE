@@ -58,7 +58,7 @@
         <header class="navbar navbar-light navbar-expand fixed-top mb-4 topbar top-nav-bar" id="topbar">
             <nav class="container-fluid" aria-label="Top Bar Navigation">
                 <a href="#home" class="logodiv logo-link"><img class="img-fluid main-menu-toggle" src="assets/img/Standard_2.png" alt="RISC-V ALE Logo"></a>
-                <h1 class="lead m-0 d-none d-sm-inline-block mr-auto ml-md-5" style="padding-top: 16px;color: #d29c4e;font-weight: bold;font-style: normal;font-family: 'Courier Prime', monospace;">ALE</h1>
+                <h1 class="lead m-0 d-none d-sm-inline-block mr-auto ml-md-5" style="color: #d29c4e;font-weight: bold;font-style: normal;font-family: 'Courier Prime', monospace;">ALE</h1>
                 <ul class="navbar-nav float-right flex-nowrap ml-auto">
                     <li class="nav-item dropdown no-arrow mx-1"><input class="d-none" type="file" id="codeSelector" multiple=""><button class="btn btn-warning" id="terminal_button" type="button" title="Terminal" style="height: 49px;width: 63px;"><i class="fas fa-terminal"></i><span class="badge badge-pill badge-danger" id="terminal_badge" hidden="true">.</span></button><button class="btn btn-info" id="file_select_button" type="button" title="Load File" style="height: 49px;width: 63px;"><i class="fas fa-file-upload"></i></button>
                         <div class="btn-group" id="run_button_group" style="height: 49px;"><button class="btn btn-primary" id="run_button" type="button" style="background: #ffffff;color: #041e42;">&nbsp;RUN</button><button class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-toggle="dropdown" aria-expanded="false" id="run_options_selector" type="button" style="background: #ffffff;color: #041e42;"></button>
@@ -89,14 +89,6 @@
                 </div>
             </div>
             <section id="home_tab" class="content_area tab-panel" hidden>
-                <article class="card" id="home_header">
-                    <header class="card-header">
-                        <h5 class="mb-0">welcome</h5>
-                    </header>
-                    <div class="card-body" style="border-color: #ffc72c;">
-                        <p class="card-text">Select an activity or tutorial below to start learning RISC-V assembly language!</p>
-                    </div>
-                </article>
                 <div class="split-view" id="content_selection">
                     <div>
                         <h2>Tutorials</h2>
@@ -304,8 +296,8 @@
                         <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-terminal"></i> Terminal</h6>
                         <span class="badge badge-pill badge-danger" id="terminal_badge" hidden="true">.</span>
                     </header>
-                    <div class="card-body p-0" style="background: #000000; min-height: calc(100vh - 180px);">
-                        <div id="xterm-container" style="background: #000000; height: calc(100vh - 180px); width: 100%;"></div>
+                    <div class="card-body p-0">
+                        <div id="xterm-container"></div>
                     </div>
                 </article>
             </section>
@@ -313,7 +305,7 @@
             <section id="debug_tab" class="content_area debug-tab-seamless" hidden>
                 <!-- Top Debug Control & Status Toolbar -->
                 <div class="card debug-toolbar-card">
-                    <div class="card-body py-2 d-flex align-items-center justify-content-between">
+                    <div class="card-body d-flex align-items-center justify-content-between">
                         <div class="btn-group" role="group" id="debug_toolbar">
                             <button class="btn btn-sm btn-primary" id="btn_debug_step_into" title="Step Into (F11)"><i class="fas fa-level-down-alt"></i> Step Into</button>
                             <button class="btn btn-sm btn-info" id="btn_debug_step_over" title="Step Over (F10)"><i class="fas fa-redo"></i> Step Over</button>
@@ -398,7 +390,7 @@
                     <!-- Bottom Split Row -->
                     <div class="dock-row" id="dock_bottom_row">
                         <!-- Addressable Memory Inspector Panel -->
-                        <div class="dock-panel" id="dock_panel_mem" style="width: 58%;">
+                        <div class="dock-panel" id="dock_panel_mem" style="width: 50%;">
                             <div class="card h-100" id="card_memory_inspector">
                                 <div class="card-header py-2 d-flex justify-content-between align-items-center" draggable="true" title="Drag header to swap position with another panel">
                                     <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-grip-vertical text-muted mr-2"></i><i class="fas fa-memory"></i> Memory</h6>
@@ -428,7 +420,7 @@
                         <div class="gutter-v" id="gutter_bottom_v" title="Drag to resize left/right panels"></div>
 
                         <!-- Stack Visualizer Panel -->
-                        <div class="dock-panel" id="dock_panel_stack" style="width: 42%;">
+                        <div class="dock-panel" id="dock_panel_stack" style="width: 50%;">
                             <div class="card h-100" id="card_stack_visualizer">
                                 <div class="card-header py-2 d-flex justify-content-between align-items-center" draggable="true" title="Drag header to swap position with another panel">
                                     <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-grip-vertical text-muted mr-2"></i><i class="fas fa-layer-group"></i> Stack</h6>
