@@ -175,14 +175,14 @@
                 </div>
             </section>
             <section id="os_tab" class="content_area tab-panel" hidden>
-                <div class="switch-option centered">
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="enable_so_checkbox" checked>
-                        <span>Enable Operating System</span>
-                    </label>
-                </div>
                 <div class="panel-grid">
                     <div class="panel-column">
+                        <div class="switch-option">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enable_so_checkbox" checked>
+                                <span>Enable Operating System</span>
+                            </label>
+                        </div>
                         <form class="panel-card">
                             <fieldset>
                                 <legend>Startup Configuration</legend>
@@ -209,7 +209,7 @@
                                     <button class="btn btn-primary" id="os_tab_stdio_download" type="button"><i class="material-icons">file_download</i></button>
                                 </div>
                             </div>
-                            <textarea class="form-control-lg" id="os_tab_stdio_textarea" style="width: 100%;min-height: 40vh;margin-top: 10px;" rows="20"></textarea>
+                            <textarea class="form-control" id="os_tab_stdio_textarea" rows="6" style="width: 100%; height: 180px; max-height: 30vh; margin-top: 8px; overflow-y: auto; resize: vertical;"></textarea>
                         </section>
                     </div>
                     <div class="panel-column">

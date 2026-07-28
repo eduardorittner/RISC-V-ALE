@@ -719,7 +719,11 @@
 }
 
 .switch-option {
-  margin-bottom: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.panel-column > .switch-option {
+  margin-bottom: -0.75rem;
 }
 
 .switch-option.centered {
@@ -746,6 +750,16 @@
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
+}
+
+#os_tab_stdio_textarea {
+  width: 100%;
+  height: 180px;
+  max-height: 30vh;
+  margin-top: 8px;
+  overflow-y: auto;
+  resize: vertical;
+  box-sizing: border-box;
 }
 
 .button-group {
