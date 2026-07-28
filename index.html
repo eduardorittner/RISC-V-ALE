@@ -1,19 +1,18 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
     <title>RISC-V ALE</title>
     <meta name="description" content="Learn RISC-V Assembly Language with this online interactive learning environment.">
-    <meta property="og:type" content="">
+    <meta property="og:type" content="website">
     <meta property="og:image" content="assets/img/logo_square.png">
     <link rel="icon" type="image/png" sizes="883x877" href="assets/img/logo_square.png">
     <link rel="icon" type="image/png" sizes="1240x1236" href="assets/img/logo_circle.png">
     <link rel="stylesheet" href="assets/bootstrap/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600&amp;display=swap">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Courier+Prime">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Nunito+Sans">
     <link rel="stylesheet" href="assets/fonts/fontawesome-all.min.css">
     <link rel="stylesheet" href="assets/fonts/material-icons.min.css">
     <link rel="stylesheet" href="assets/css/BrightTheme.css">
@@ -30,49 +29,49 @@
 </head>
 
 <body style="overflow: hidden;color: #041e42;">
-    <div class="main-leftsidebar-div" data-component="leftsidebar">
-        <div class="leftsidebar">
+    <aside class="main-leftsidebar-div" data-component="leftsidebar" aria-label="Sidebar Navigation">
+        <nav class="leftsidebar">
             <ul class="nav list-group flex-column d-inline-block first-menu scrollbar-indigo thin first-main-menu">
                 <li class="nav-item list-group-item py-2"><a class="nav-link" href="#home">
-                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons">home</i><span>Home</span></div>
+                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons" aria-hidden="true">home</i><span>Home</span></div>
                     </a></li>
                 <li class="nav-item list-group-item py-2"><a class="nav-link" href="#hardware">
-                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons">memory</i><span>Hardware</span></div>
+                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons" aria-hidden="true">memory</i><span>Hardware</span></div>
                     </a></li>
                 <li class="nav-item list-group-item py-2"><a class="nav-link" href="#os">
-                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="fab fa-linux"></i><span>Operating System</span></div>
+                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="fab fa-linux" aria-hidden="true"></i><span>Operating System</span></div>
                     </a></li>
                 <li class="nav-item list-group-item py-2" id="terminal_nav_item"><a class="nav-link" href="#terminal">
-                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="fas fa-terminal"></i><span>Terminal</span></div>
+                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="fas fa-terminal" aria-hidden="true"></i><span>Terminal</span></div>
                     </a></li>
                 <li class="nav-item list-group-item py-2" id="debug_nav_item"><a class="nav-link" href="#debug">
-                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons">bug_report</i><span>Debugger</span></div>
+                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons" aria-hidden="true">bug_report</i><span>Debugger</span></div>
                     </a></li>
                 <li class="nav-item list-group-item py-2" id="settings_nav_item"><a class="nav-link" href="#settings">
-                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons">settings</i><span>Settings</span></div>
+                        <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="material-icons" aria-hidden="true">settings</i><span>Settings</span></div>
                     </a></li>
             </ul>
-        </div>
-    </div>
-    <div id="wrapper" style="height: 100vw;">
-        <nav class="navbar navbar-light navbar-expand fixed-top mb-4 topbar top-nav-bar" style="background: rgb(4,30,66);">
+        </nav>
+    </aside>
+    <div id="wrapper" style="height: 100vh;">
+        <header class="navbar navbar-light navbar-expand fixed-top mb-4 topbar top-nav-bar" style="background: rgb(4,30,66);" id="topbar">
             <div class="container-fluid">
-                <div class="logodiv"><img class="img-fluid main-menu-toggle" src="assets/img/Standard_2.png" href="#Home"></div>
-                <form class="form-inline d-none d-sm-inline-block mr-auto ml-md-5 navbar-search">
+                <div class="logodiv"><a href="#home" class="logo-link"><img class="img-fluid main-menu-toggle" src="assets/img/Standard_2.png" alt="RISC-V ALE Logo"></a></div>
+                <div class="d-none d-sm-inline-block mr-auto ml-md-5 navbar-search">
                     <div class="input-group">
-                        <p class="lead" style="padding-top: 16px;color: #d29c4e;font-weight: bold;font-style: normal;font-family: 'Courier Prime', monospace;">ALE</p>
+                        <h1 class="lead m-0" style="padding-top: 16px;color: #d29c4e;font-weight: bold;font-style: normal;font-family: 'Courier Prime', monospace;">ALE</h1>
                     </div>
-                </form>
+                </div>
                 <ul class="navbar-nav float-right flex-nowrap ml-auto">
-                    <li class="nav-item dropdown no-arrow mx-1"><input class="d-none" type="file" id="codeSelector" multiple=""><button class="btn btn-warning" data-toggle="tooltip" data-bss-tooltip="" data-placement="bottom" id="terminal_button" type="button" title="Terminal" style="height: 49px;width: 63px;"><i class="fas fa-terminal"></i><span class="badge badge-pill badge-danger" id="terminal_badge" hidden="true">.</span></button><button class="btn btn-info" data-toggle="tooltip" data-bss-tooltip="" data-placement="bottom" id="file_select_button" type="button" title="Load File" style="height: 49px;width: 63px;"><i class="fas fa-file-upload"></i></button>
+                    <li class="nav-item dropdown no-arrow mx-1"><input class="d-none" type="file" id="codeSelector" multiple=""><button class="btn btn-warning" id="terminal_button" type="button" title="Terminal" style="height: 49px;width: 63px;"><i class="fas fa-terminal"></i><span class="badge badge-pill badge-danger" id="terminal_badge" hidden="true">.</span></button><button class="btn btn-info" id="file_select_button" type="button" title="Load File" style="height: 49px;width: 63px;"><i class="fas fa-file-upload"></i></button>
                         <div class="btn-group" id="run_button_group" style="height: 49px;"><button class="btn btn-primary" id="run_button" type="button" style="background: #ffffff;color: #041e42;">&nbsp;RUN</button><button class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-toggle="dropdown" aria-expanded="false" id="run_options_selector" type="button" style="background: #ffffff;color: #041e42;"></button>
                             <div class="dropdown-menu"><a class="dropdown-item pointer" id="run_with_debug_button" style="color: #041e42;"><i class="fas fa-bug"></i>&nbsp;Debug</a><a class="dropdown-item pointer" id="assistant_button" style="color: #041e42;"><i class="fas fa-hands-helping"></i>&nbsp;Assistant</a></div>
                         </div>
                     </li>
                 </ul>
             </div>
-        </nav>
-        <div class="d-flex flex-column" id="content-wrapper">
+        </header>
+        <main class="d-flex flex-column" id="content-wrapper">
             <div class="modal fade" role="dialog" tabindex="-1" id="modal_assistant" data-keyboard="false" data-backdrop="static">
                 <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
                     <div class="modal-content">
@@ -104,10 +103,10 @@
                         </div>
                     </div>
                     <div class="row" id="content_selection">
-                        <div class="col-md-6" style="/*overflow-y: auto;*/"><span>Tutorials</span>
+                        <div class="col-md-6" style="/*overflow-y: auto;*/"><h2>Tutorials</h2>
                             <ul class="list-group" id="home_tab_tutorials_list" style="max-height: 75vh;overflow-y: auto;"></ul>
                         </div>
-                        <div class="col-md-6" style="/*overflow-y: auto;*/"><span>RISC-V Resources</span>
+                        <div class="col-md-6" style="/*overflow-y: auto;*/"><h2>RISC-V Resources</h2>
                             <ul class="list-group" id="home_tab_resources_list" style="max-height: 75vh;overflow-y: auto;"></ul>
                         </div>
                     </div>
@@ -123,7 +122,7 @@
                                     <form>
                                         <fieldset>
                                             <legend>SoC</legend>
-                                            <div class="form-group"><label>Device:&nbsp;</label><select class="custom-select d-inline-flex flex-row flex-grow-1" readonly="" style="width: 219px;">
+                                            <div class="form-group"><label for="soc_device_select">Device:&nbsp;</label><select id="soc_device_select" class="custom-select d-inline-flex flex-row flex-grow-1" readonly="" style="width: 219px;">
                                                     <option value="12" selected="">Western Digital SweRV</option>
                                                 </select></div>
                                             <div class="form-group text-monospace"><label>ISAs:</label>
@@ -136,16 +135,16 @@
                                                 <div class="custom-control custom-control-inline custom-checkbox" style="width: 34px;"><input class="custom-control-input" type="checkbox" id="config_isaS" checked=""><label class="custom-control-label" for="config_isaS">S</label></div>
                                                 <div class="custom-control custom-control-inline custom-checkbox" style="width: 34px;"><input class="custom-control-input" type="checkbox" id="config_isaU" checked=""><label class="custom-control-label" for="config_isaU">U</label></div>
                                             </div>
-                                            <div class="form-group"><label class="d-inline-block">Bus Frequency Scaling:&nbsp;&nbsp;</label><input class="custom-range d-inline-block" type="range" id="int_freq_range" min="0" max="32" step="1" value="25" style="width: 230px;padding-top: 14px;" name="bus_freq"><small class="form-text text-monospace text-muted d-inline" id="int_freq_range_indicator">1/∞<br></small></div>
+                                            <div class="form-group"><label for="int_freq_range" class="d-inline-block">Bus Frequency Scaling:&nbsp;&nbsp;</label><input class="custom-range d-inline-block" type="range" id="int_freq_range" min="0" max="32" step="1" value="25" style="width: 230px;padding-top: 14px;" name="bus_freq"><output class="form-text text-monospace text-muted d-inline" id="int_freq_range_indicator" for="int_freq_range">1/&infin;</output></div>
                                         </fieldset>
                                     </form>
                                 </div>
                             </div>
                             <div class="row">
                                 <div class="col">
-                                    <fieldset>
-                                        <legend>Memory Map</legend>
-                                    </fieldset>
+                                    <section class="panel-header">
+                                        <h3 class="h5">Memory Map</h3>
+                                    </section>
                                     <div style="overflow: auto;">
                                         <div class="table-responsive table-bordered" style="max-height: 35vh;">
                                             <table class="table table-bordered table-hover table-sm">
@@ -163,9 +162,9 @@
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <fieldset>
-                                <legend>External Devices</legend>
-                            </fieldset>
+                            <section class="panel-header">
+                                <h3 class="h5">External Devices</h3>
+                            </section>
                             <div id="table_devices_toolbar"><button class="btn btn-info d-xl-flex align-items-xl-center" type="button"><i class="material-icons d-inline-block">add</i><span class="d-inline-block" style="padding: 0px;">New</span>&nbsp;</button></div>
                             <div class="table-responsive d-inline-block" style="max-height: 75vh;overflow-y: auto;">
                                 <table class="table" id="table_devices" data-pagination="true" data-search="true" data-show-refresh="true" data-url="./data/devices.json" data-toolbar="#table_devices_toolbar" data-click-to-select="true" data-show-footer="true" data-id-field="id" data-page-list="[5, 10, 25, 50, 100, all]" data-page-size="5">
@@ -197,17 +196,16 @@
                                     <form>
                                         <fieldset>
                                             <legend>Startup Configuration</legend>
-                                            <div class="form-group"><label class="d-inline-block">Stack Pointer:&nbsp;&nbsp;</label><input class="form-control form-control-sm d-inline-flex" type="text" id="so_stack_pointer_value" value="0x7FFFFFC" style="width: 126px;"></div>
+                                            <div class="form-group"><label for="so_stack_pointer_value" class="d-inline-block">Stack Pointer:&nbsp;&nbsp;</label><input class="form-control form-control-sm d-inline-flex" type="text" id="so_stack_pointer_value" value="0x7FFFFFC" style="width: 126px;"></div>
                                         </fieldset>
-                                        <fieldset></fieldset>
                                     </form>
                                 </div>
                             </div>
                             <div class="row">
                                 <div class="col">
-                                    <fieldset>
-                                        <legend>Standard IO</legend>
-                                    </fieldset><input type="file" id="stdio_file_input" hidden="true">
+                                    <section class="panel-header">
+                                        <h3 class="h5">Standard IO</h3>
+                                    </section><input type="file" id="stdio_file_input" hidden="true">
                                     <div class="custom-control custom-control-inline custom-radio" style="padding-top: 13px;"><input class="custom-control-input" type="radio" id="os_tab_stdin_radio" name="stdio_select" value="stdin" checked=""><label class="custom-control-label" for="os_tab_stdin_radio">STDIN</label></div>
                                     <div class="custom-control custom-control-inline custom-radio"><input class="custom-control-input" type="radio" id="os_tab_stdout_radio" name="stdio_select" value="stdout" disabled=""><label class="custom-control-label" for="os_tab_stdout_radio">STDOUT</label></div>
                                     <div class="custom-control custom-control-inline custom-radio"><input class="custom-control-input" type="radio" id="os_tab_stderr_radio" name="stdio_select" value="stderr" disabled=""><label class="custom-control-label" for="os_tab_stderr_radio">STDERR</label></div>
@@ -216,9 +214,9 @@
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <fieldset>
-                                <legend>Syscalls</legend>
-                            </fieldset>
+                            <section class="panel-header">
+                                <h3 class="h5">Syscalls</h3>
+                            </section>
                             <div id="table_syscalls_toolbar"><button class="btn btn-info d-xl-flex align-items-xl-center" type="button"><i class="material-icons d-inline-block">add</i><span class="d-inline-block" style="padding: 0px;">New</span>&nbsp;</button></div>
                             <div class="table-responsive d-inline-block" style="max-height: 75vh;overflow-y: auto;">
                                 <table class="table" id="table_syscalls" data-pagination="true" data-search="true" data-show-refresh="true" data-url="./data/syscalls.json" data-toolbar="#table_syscalls_toolbar" data-click-to-select="true" data-show-footer="true" data-id-field="id" data-page-list="[5, 10, 25, 50, 100, all]" data-page-size="5">
@@ -243,23 +241,25 @@
                             <form>
                                 <fieldset>
                                     <legend>Configuration Export</legend>
+                                    <div class="form-group"><label for="conf_export_desc_url">Home URL:&nbsp;</label><input class="d-inline" type="text" id="conf_export_desc_url"></div>
+                                    <div class="form-group"><label for="conf_export_assistant_script">Assistant Script:&nbsp;</label><input class="d-inline" type="file" id="conf_export_assistant_script"></div>
+                                    <div class="btn-group float-right justify-content-xl-end" role="group"><button class="btn btn-primary" id="settings_tab_conf_generate" type="button">generate LINK</button><button class="btn btn-primary" id="settings_tab_conf_export" type="button">copy to clipboard</button></div><textarea class="d-block" id="settings_tab_conf_export_desc" style="width: 100%;height: 40vh;" readonly=""></textarea>
                                 </fieldset>
                             </form>
-                            <div class="form-group"><label>Home URL:&nbsp;</label><input class="d-inline" type="text" id="conf_export_desc_url"></div>
-                            <div class="form-group"><label>Assistant Script:&nbsp;</label><input class="d-inline" type="file" id="conf_export_assistant_script"></div>
-                            <div class="btn-group float-right justify-content-xl-end" role="group"><button class="btn btn-primary" id="settings_tab_conf_generate" type="button">generate LINK</button><button class="btn btn-primary" id="settings_tab_conf_export" type="button">copy to clipboard</button></div><textarea class="d-block" id="settings_tab_conf_export_desc" style="width: 100%;height: 40vh;" readonly=""></textarea>
                         </div>
                         <div class="col">
                             <div class="row">
                                 <div class="col text-justify">
-                                    <fieldset>
-                                        <legend>Auto-compile options</legend>
-                                    </fieldset>
-                                    <div class="form-group text-truncate"><label>C code extension:&nbsp;</label><input class="d-inline" type="text" id="c_ext" value=".c"></div>
-                                    <div class="form-group"><label>Asm code extension:&nbsp;</label><input class="d-inline" type="text" id="asm_ext" value=".s"></div>
-                                    <div class="form-group"><label>Object file extension:&nbsp;</label><input class="d-inline" type="text" id="obj_ext" value=".o"></div>
-                                    <div class="form-group"><label>ELF extension:&nbsp;</label><input class="d-inline" type="text" id="elf_ext" value=".x"></div>
-                                    <div class="custom-control text-center custom-switch"><input class="custom-control-input" type="checkbox" id="auto_compile" checked=""><label class="custom-control-label" for="formCheck-1">Enable Auto-Compile</label></div>
+                                    <form>
+                                        <fieldset>
+                                            <legend>Auto-compile options</legend>
+                                            <div class="form-group text-truncate"><label for="c_ext">C code extension:&nbsp;</label><input class="d-inline" type="text" id="c_ext" value=".c"></div>
+                                            <div class="form-group"><label for="asm_ext">Asm code extension:&nbsp;</label><input class="d-inline" type="text" id="asm_ext" value=".s"></div>
+                                            <div class="form-group"><label for="obj_ext">Object file extension:&nbsp;</label><input class="d-inline" type="text" id="obj_ext" value=".o"></div>
+                                            <div class="form-group"><label for="elf_ext">ELF extension:&nbsp;</label><input class="d-inline" type="text" id="elf_ext" value=".x"></div>
+                                            <div class="custom-control text-center custom-switch"><input class="custom-control-input" type="checkbox" id="auto_compile" checked=""><label class="custom-control-label" for="auto_compile">Enable Auto-Compile</label></div>
+                                        </fieldset>
+                                    </form>
                                 </div>
                             </div>
                         </div>
@@ -421,18 +421,14 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </main>
         <footer class="bg-white d-flex justify-content-between align-items-center copyright fixed-bottom py-2 px-4 border-top" id="footer">
-            <div class="container-fluid p-0">
-                <div class="row align-items-center m-0">
-                    <div class="col-md-4"></div>
-                    <div class="col-md-4 text-center">
-                        <span class="text-muted small">Copyright 2021 - University of Campinas</span>
-                    </div>
-                    <div class="col-md-4 text-right">
-                        <a href="https://riscv-programming.org/contact.html" target="_blank" class="small">Feedback</a>
-                    </div>
-                </div>
+            <div class="flex-grow-1"></div>
+            <div class="text-center flex-grow-1">
+                <span class="text-muted small">Copyright 2021 - University of Campinas</span>
+            </div>
+            <div class="text-right flex-grow-1">
+                <a href="https://riscv-programming.org/contact.html" target="_blank" class="small">Feedback</a>
             </div>
         </footer>
     </div>
