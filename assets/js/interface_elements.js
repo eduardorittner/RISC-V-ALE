@@ -153,8 +153,12 @@ window.onhashchange = navegation.locationHashChanged.bind(navegation);
 
 
 // tables
-$(function() {$('#table_devices').bootstrapTable()})
-$(function() {$('#table_syscalls').bootstrapTable()})
+var table_devices, table_syscalls;
+document.addEventListener('DOMContentLoaded', function() {
+  table_devices = new DataTable('#table_devices');
+  table_syscalls = new DataTable('#table_syscalls');
+});
+
 
 class ConfigurationManager{
   constructor(){
@@ -297,12 +301,13 @@ sim_status_ch.onmessage = function (ev) {
         run_button.onclick = function(){
           simulator_controller.restart_simulator();
         };
-        if(!($("#modal_terminal").data('bs.modal') || {})._isShown){
-          $('#modal_terminal').modal({backdrop: false,show: true});
-          $('#modal_terminal').draggable({handle: ".modal-header"});
+        if(!Modal.isOpen('#modal_terminal')){
+          Modal.open('#modal_terminal', {backdrop: false});
+          Modal.makeDraggable('#modal_terminal', '.modal-header');
           web_terminal.openTerminal();
         }
       }else if(ev.data.status.stopping || ev.data.status.finish){
+
         run_button.innerHTML = 'Run';
         run_button.setAttribute("class", "btn btn-outline-success");
         run_button.style.background = "#FFFFFF";
@@ -322,12 +327,13 @@ sim_status_ch.onmessage = function (ev) {
 
     case "clang_status":
       if(ev.data.status.starting){
-        if(!($("#modal_terminal").data('bs.modal') || {})._isShown){
-          $('#modal_terminal').modal({backdrop: false,show: true});
-          $('#modal_terminal').draggable({handle: ".modal-header"});
+        if(!Modal.isOpen('#modal_terminal')){
+          Modal.open('#modal_terminal', {backdrop: false});
+          Modal.makeDraggable('#modal_terminal', '.modal-header');
           web_terminal.openTerminal();
         }
       }else{
+
         run_button.onclick = function(){run_simulator(false);};
       }
       break;
@@ -432,9 +438,10 @@ terminal_button.onclick = function(){
 };
  
 assistant_button.onclick = function () {
-  $('#modal_assistant').modal({backdrop: false,show: true});
-  $('#modal_assistant').draggable({handle: ".modal-header"});
+  Modal.open('#modal_assistant', {backdrop: false});
+  Modal.makeDraggable('#modal_assistant', '.modal-header');
 }
+
 
 
 // home tab
@@ -511,17 +518,18 @@ window.load_syscall = function(value) {
 }
 
 function add_syscall_to_table(number, desc, code) {
-  var rowId = $("#table_syscalls >tbody >tr").length;
-  rowId = 0// rowId + 1;
-  $('#table_syscalls').bootstrapTable('insertRow',{
-      index: rowId,
+  if (table_syscalls) {
+    table_syscalls.insertRow({
+      index: 0,
       row: {
         "number": number,
         "desc": desc,
         "action": {builtin: false, number, code, checked:"checked"}
       }
-  });
+    });
+  }
 }
+
 
 window.syscall_action_formatter = function(value) {
   if(value.builtin){
