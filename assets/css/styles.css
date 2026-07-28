@@ -26,6 +26,15 @@
   -webkit-transition-delay: 0s !important;
 }
 
+[data-component='leftsidebar'] .leftsidebar,
+[data-component='leftsidebar'] .first-menu {
+  z-index: 1040 !important;
+}
+
+#content-wrapper {
+  margin: 0px 0px 50px 65px !important;
+}
+
 .content_area {
   height: 100%;
   width: 100%;
