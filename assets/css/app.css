@@ -458,6 +458,20 @@ img {
   cursor: not-allowed;
 }
 
+.btn .material-icons {
+  vertical-align: middle;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.btn .material-icons + span {
+  vertical-align: middle;
+}
+
+.material-icons.pointer {
+  cursor: pointer;
+}
+
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;

@@ -182,6 +182,14 @@ class ConfigurationManager{
     this.currentConfig.devices[name] = {slot: slot};
   }
 
+  remove_device(name){
+    if(this.currentConfig.devices[name]){
+      mmio_manager.releaseSlot(this.currentConfig.devices[name].slot);
+      delete this.currentConfig.devices[name];
+    }
+  }
+
+
   add_syscall(id, code){
     this.currentConfig.syscalls[id] = code;
   }
@@ -488,10 +496,12 @@ window.load_device = async function (name, slot){
   if(slot == undefined){
     slot = mmio_manager.getFreeSlot();
   }
+  const rowId = "mapped_device_" + name.replace(/[^a-zA-Z0-9_]/g, "_");
   document.getElementById("mapped_devices_table").insertAdjacentHTML('beforeend', 
-    `<tr>
-    <td>0xFFFF${slot.toString(16).padStart(4, '0')} - <br />0xFFFF${(slot + mmio_manager.slot_size).toString(16).padStart(4, '0')}<br /><br /></td>
+    `<tr id="${rowId}">
+    <td>0xFFFF${slot.toString(16).padStart(4, '0')}<br />0xFFFF${(slot + mmio_manager.slot_size).toString(16).padStart(4, '0')}<br /><br /></td>
     <td>${name}</td>
+    <td><a onclick="window.remove_device('${name}');"><i class="material-icons pointer">remove</i></a></td>
     </tr>
     `
   );
@@ -500,9 +510,25 @@ window.load_device = async function (name, slot){
   module.default.setBaseAddress(slot);
 }
 
+window.remove_device = function (name){
+  config.remove_device(name);
+  const rowId = "mapped_device_" + name.replace(/[^a-zA-Z0-9_]/g, "_");
+  const row = document.getElementById(rowId);
+  if(row){
+    row.remove();
+  }
+  PNotify.info({
+    title: 'Device removed',
+    text: name,
+    sticker: false,
+    stack: window.stackBottomRight
+  });
+}
+
 window.device_action_formatter = function(value) {
   return `<a onclick="window.load_device('${value}');this.hidden = true;"><i class="material-icons pointer">add</i></a>`;
 }
+
 
 // os tab
 

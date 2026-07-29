@@ -10,6 +10,13 @@ export class MMIO_Manager{
     this.slots.push(slot);
   }
 
+  releaseSlot(slot){
+    const index = this.slots.indexOf(slot);
+    if(index !== -1){
+      this.slots.splice(index, 1);
+    }
+  }
+
   getFreeSlot(){
     while(this.slots.includes(this.next_slot)){
       this.next_slot += this.slot_size;
@@ -21,3 +28,4 @@ export class MMIO_Manager{
     return -1;
   }
 }
+
