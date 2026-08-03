@@ -16,18 +16,20 @@
 }
 
 /* Instant Open/Close Left Hamburger Sidebar (No Animations) */
-[data-component='leftsidebar'] .first-menu,
-[data-component='leftsidebar'] .first-menu span,
-[data-component='leftsidebar'] .submenu,
-[data-component='leftsidebar'] .sub-submenu {
+aside nav,
+aside nav ul,
+aside nav span,
+aside nav ul ul,
+aside nav ul ul ul {
   transition: none !important;
   -webkit-transition: none !important;
   transition-delay: 0s !important;
   -webkit-transition-delay: 0s !important;
 }
 
-[data-component='leftsidebar'] .leftsidebar,
-[data-component='leftsidebar'] .first-menu {
+aside,
+aside nav,
+aside nav > ul {
   z-index: 1040 !important;
 }
 
@@ -491,7 +493,7 @@
    ======================================================================== */
 
 /* App Topbar Header */
-#topbar, .app-topbar {
+header, header.top-nav-bar {
   display: flex;
   align-items: center;
   position: fixed;
@@ -504,7 +506,7 @@
   padding: 0;
 }
 
-#topbar > nav {
+header nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -512,12 +514,13 @@
   padding: 0 15px;
 }
 
-#topbar .logodiv img {
+header nav > a img,
+header nav img {
   height: 35px;
   width: auto;
 }
 
-#topbar h1 {
+header nav h1 {
   margin: 0;
   margin-left: 1.5rem;
   margin-right: auto;
@@ -528,8 +531,7 @@
   line-height: 1;
 }
 
-#topbar .topbar-actions,
-#topbar ul.navbar-nav {
+header nav ul {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -893,7 +895,7 @@
 }
 
 /* Topbar Header Alignment Overrides */
-#topbar.top-nav-bar {
+header, header nav {
   min-height: 49px !important;
   height: 49px !important;
   max-height: 49px !important;
@@ -902,7 +904,7 @@
   align-items: center !important;
 }
 
-#topbar h1 {
+header nav h1 {
   padding-top: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
