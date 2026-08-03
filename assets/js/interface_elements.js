@@ -301,6 +301,20 @@ sim_status_ch.onmessage = function (ev) {
         run_button.style.background = "#FFFFFF";
         run_options_selector.removeAttribute("disabled", "");
         run_button.onclick = function(){run_simulator(false);};
+
+        if (ev.data.status.finish && ev.data.status.stats) {
+          const s = ev.data.status.stats;
+          console.log("[Toast Execution Complete]", s);
+          const timeFormatted = s.elapsedTimeMs >= 1000 
+            ? (s.elapsedTimeMs / 1000).toFixed(3) + " s"
+            : s.elapsedTimeMs.toFixed(2) + " ms";
+          const instFormatted = (s.totalInstructions || 0).toLocaleString();
+          Toast.success({
+            title: 'Execution Complete',
+            text: `Time: ${timeFormatted} | Instructions: ${instFormatted}\nSpeed: ${s.mips || 0} MIPS | Exit Code: ${s.exitCode}`,
+            delay: 6000
+          });
+        }
       }
       if(ev.data.status.starting){
         config.load_syscalls();

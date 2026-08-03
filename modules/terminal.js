@@ -76,10 +76,33 @@ export class WebTerminal{
             this.enter_input_mode();
           }
         }
-        if((e.data.status.stopping || e.data.status.finish) && this.running_mode){
+        if(e.data.status.stopping || e.data.status.finish){
           this.flush_render();
-          this.term.pop();
-          this.running_mode = false;
+          if (e.data.status.finish && e.data.status.stats) {
+            const s = e.data.status.stats;
+            console.log("[RISC-V ALE Stats]", s);
+            const timeFormatted = s.elapsedTimeMs >= 1000 
+              ? (s.elapsedTimeMs / 1000).toFixed(3) + " s"
+              : s.elapsedTimeMs.toFixed(2) + " ms";
+            const instFormatted = (s.totalInstructions || 0).toLocaleString();
+            const ipsFormatted = (s.ips || 0).toLocaleString();
+            const mipsFormatted = s.mips || 0;
+            
+            this.term.echo(`--------------------------------------------------`);
+            this.term.echo(`Program Execution Complete`);
+            this.term.echo(`  • Time Elapsed:       ${timeFormatted}`);
+            this.term.echo(`  • Total Instructions: ${instFormatted}`);
+            this.term.echo(`  • Execution Speed:    ${mipsFormatted} MIPS (${ipsFormatted} inst/sec)`);
+            if (s.finalPC) {
+              this.term.echo(`  • Final PC:           0x${s.finalPC}`);
+            }
+            this.term.echo(`  • Exit Code (a0):     ${s.exitCode}`);
+            this.term.echo(`--------------------------------------------------`);
+          }
+          if (this.running_mode) {
+            this.term.pop();
+            this.running_mode = false;
+          }
         }
         if(e.data.status.starting_exec){
           this.flush_render();

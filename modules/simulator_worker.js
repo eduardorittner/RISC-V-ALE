@@ -41,6 +41,8 @@ onmessage = function(e) {
       break;
     case "start":
       console.log(e.data.args);
+      self.execFinished = false;
+      self.executionStartTime = performance.now();
       Module.arguments = e.data.args;
       if(e.data.args.includes("--interactive")){
         postMessage({type:"status", status:{running:true, debugging:true}});
@@ -414,8 +416,40 @@ function initFS() {
 }
 
 function finishExec() {
+  if (self.execFinished) return;
+  self.execFinished = true;
   bus_sync.sync();
-  postMessage({type:"status", status:{finish:true}});
+  let executionEndTime = performance.now();
+  let elapsedTimeMs = executionEndTime - (self.executionStartTime || executionEndTime);
+
+  let snapshot = null;
+  if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+    try {
+      snapshot = wasmSimulator.get_snapshot_js(false, 0);
+    } catch(e) {}
+  }
+
+  let totalInstructions = snapshot ? (snapshot.step_count || 0) : 0;
+  let elapsedSeconds = elapsedTimeMs / 1000;
+  let ips = elapsedSeconds > 0 ? Math.round(totalInstructions / elapsedSeconds) : 0;
+  let mips = elapsedSeconds > 0 ? Number((totalInstructions / (elapsedSeconds * 1000000)).toFixed(3)) : 0;
+  let finalPC = snapshot ? (snapshot.pc >>> 0).toString(16).padStart(8, '0') : null;
+  let exitCode = (snapshot && snapshot.gpr) ? (snapshot.gpr[10] >>> 0) : 0;
+
+  postMessage({
+    type: "status",
+    status: {
+      finish: true,
+      stats: {
+        elapsedTimeMs,
+        totalInstructions,
+        ips,
+        mips,
+        finalPC,
+        exitCode
+      }
+    }
+  });
 }
 
 var xhr = new XMLHttpRequest();

@@ -468,6 +468,7 @@
       postMessage({ type: "debug_state", state: snapshot });
     } else {
       self.wasmSimulator.run_full();
+      if (typeof finishExec === 'function') finishExec();
     }
   } catch (e) {
     console.error("Rust Whisper execution failure:", e);

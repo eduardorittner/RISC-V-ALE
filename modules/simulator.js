@@ -115,6 +115,7 @@ class SimulatorController{
           this.sim_status_ch.postMessage(e.data);
           break;
         case "status":
+          this.sim_status_ch.postMessage(e.data);
           if(e.data.status.finish){
             if(this._executionResolve){
               const resolve = this._executionResolve;
@@ -122,8 +123,6 @@ class SimulatorController{
               resolve();
             }
             this.restart_simulator();
-          }else{
-            this.sim_status_ch.postMessage(e.data);
           }
           break;
         case 'sync':
