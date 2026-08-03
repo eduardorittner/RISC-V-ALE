@@ -1,0 +1,25 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Deploy to gh-pages
+        run: ./scripts/deploy_gh_pages.sh
+        env:
+          GH_PAGES_CI: 1
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

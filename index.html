@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <title>RISC-V ALE</title>
+    <meta name="description" content="Learn RISC-V Assembly Language with this online interactive learning environment.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="assets/img/logo_square.png">
+    <link rel="icon" type="image/png" sizes="883x877" href="assets/img/logo_square.png">
+    <link rel="icon" type="image/png" sizes="1240x1236" href="assets/img/logo_circle.png">
+    <link rel="stylesheet" href="assets/css/app.css">
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600&amp;display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Courier+Prime">
+    <link rel="stylesheet" href="assets/fonts/fontawesome-all.min.css">
+    <link rel="stylesheet" href="assets/fonts/material-icons.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.5.2/animate.min.css">
+    <link rel="stylesheet" href="assets/css/jquery.terminal.min.css">
+    <link rel="stylesheet" href="assets/css/toast.css">
+    <link rel="stylesheet" href="assets/css/styles.css">
+    <link rel="stylesheet" href="assets/css/Top--Right--Left-Navigation-by-Jigar-Mistry.css">
+    <link rel="stylesheet" href="assets/css/Vertical-Left-SideBar-by-Jigar-Mistry.css">
+<link rel="manifest" href="manifest.json">
+<script> window.uniq_id = performance.now(); </script>
+</head>
+
+<body style="overflow: hidden;color: #041e42;">
+    <aside aria-label="Sidebar Navigation">
+        <nav>
+            <ul>
+                <li id="home_nav_item"><a href="#home">
+                        <div><i class="material-icons" aria-hidden="true">home</i><span>Home</span></div>
+                    </a></li>
+                <li id="hardware_nav_item"><a href="#hardware">
+                        <div><i class="material-icons" aria-hidden="true">memory</i><span>Hardware</span></div>
+                    </a></li>
+                <li id="os_nav_item"><a href="#os">
+                        <div><i class="fab fa-linux" aria-hidden="true"></i><span>Operating System</span></div>
+                    </a></li>
+                <li id="terminal_nav_item"><a href="#terminal">
+                        <div><i class="fas fa-terminal" aria-hidden="true"></i><span>Terminal</span></div>
+                    </a></li>
+                <li id="debug_nav_item"><a href="#debug">
+                        <div><i class="material-icons" aria-hidden="true">bug_report</i><span>Debugger</span></div>
+                    </a></li>
+                <li id="settings_nav_item"><a href="#settings">
+                        <div><i class="material-icons" aria-hidden="true">settings</i><span>Settings</span></div>
+                    </a></li>
+            </ul>
+        </nav>
+    </aside>
+    <div id="wrapper" style="height: 100vh;">
+        <header id="topbar">
+            <nav aria-label="Top Bar Navigation">
+                <a href="#home"><img src="assets/img/Standard_2.png" alt="RISC-V ALE Logo"></a>
+                <h1>ALE</h1>
+                <ul>
+                    <li>
+                        <input class="d-none" type="file" id="codeSelector" multiple="">
+                        <button class="btn btn-info" id="file_select_button" type="button" title="Load File"><i class="fas fa-file-upload"></i></button>
+                        <div class="btn-group" id="run_button_group"><button class="btn btn-primary" id="run_button" type="button">&nbsp;RUN</button><button class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-toggle="dropdown" aria-expanded="false" id="run_options_selector" type="button"></button>
+                            <div class="dropdown-menu"><a class="dropdown-item pointer" id="run_with_debug_button"><i class="fas fa-bug"></i>&nbsp;Debug</a><a class="dropdown-item pointer" id="assistant_button"><i class="fas fa-hands-helping"></i>&nbsp;Assistant</a></div>
+                        </div>
+                    </li>
+                </ul>
+            </nav>
+        </header>
+        <main class="d-flex flex-column" id="content-wrapper">
+            <div class="modal fade" role="dialog" tabindex="-1" id="modal_assistant" data-keyboard="false" data-backdrop="static">
+                <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h4 class="modal-title">Assistant</h4>
+                            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+                        </div>
+                        <div class="modal-body" style="overflow-x: auto;">
+                            <div id="assistant_container">
+                                <p id="assistant_intro">Nothing here</p>
+                                <ol id="assistant_test_list"></ol>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-primary" id="assistant_run_button" type="button">run tests</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <section id="home_tab" class="content_area tab-panel" hidden>
+                <div class="split-view" id="content_selection">
+                    <div>
+                        <h2>Tutorials</h2>
+                        <ul class="item-list" id="home_tab_tutorials_list" style="max-height: 75vh;overflow-y: auto;"></ul>
+                    </div>
+                    <div>
+                        <h2>RISC-V Resources</h2>
+                        <ul class="item-list" id="home_tab_resources_list" style="max-height: 75vh;overflow-y: auto;"></ul>
+                    </div>
+                </div>
+                <div id="selected_content" hidden style="height: 100%;width: 100%;"></div>
+            </section>
+            <section id="hardware_tab" class="content_area tab-panel">
+                <div class="panel-grid">
+                    <div class="panel-column">
+                        <form class="panel-card">
+                            <fieldset>
+                                <legend>SoC</legend>
+                                <div class="form-row">
+                                    <label for="soc_device_select">Device:&nbsp;</label>
+                                    <select id="soc_device_select" readonly style="width: 219px;">
+                                        <option value="12" selected>Western Digital SweRV</option>
+                                    </select>
+                                </div>
+                                <div class="isa-options">
+                                    <label>ISAs:</label>
+                                    <label><input type="checkbox" id="config_isaA" checked> A</label>
+                                    <label><input type="checkbox" id="config_isaC" checked> C</label>
+                                    <label><input type="checkbox" id="config_isaD" checked> D</label>
+                                    <label><input type="checkbox" id="config_isaF" checked> F</label>
+                                    <label><input type="checkbox" id="config_isaI" checked disabled> I</label>
+                                    <label><input type="checkbox" id="config_isaM" checked> M</label>
+                                    <label><input type="checkbox" id="config_isaS" checked> S</label>
+                                    <label><input type="checkbox" id="config_isaU" checked> U</label>
+                                </div>
+                                <div class="form-row">
+                                    <label for="int_freq_range">Bus Frequency Scaling:&nbsp;&nbsp;</label>
+                                    <input type="range" id="int_freq_range" min="0" max="32" step="1" value="25" style="width: 230px;padding-top: 14px;" name="bus_freq">
+                                    <output id="int_freq_range_indicator" for="int_freq_range">1/&infin;</output>
+                                </div>
+                            </fieldset>
+                        </form>
+                        <section class="panel-section">
+                            <header class="panel-header">
+                                <h3 class="h5">Memory Map</h3>
+                            </header>
+                            <div class="table-container" style="overflow: auto;">
+                                <div style="max-height: 35vh;">
+                                    <table class="table table-bordered table-hover table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Memory slot</th>
+                                                <th>Device</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="mapped_devices_table"></tbody>
+
+                                    </table>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="panel-column">
+                        <section class="panel-section">
+                            <header class="panel-header">
+                                <h3 class="h5">External Devices</h3>
+                            </header>
+                            <div id="table_devices_toolbar">
+                                <button class="btn btn-info" type="button"><i class="material-icons">add</i><span>New</span></button>
+                            </div>
+                            <div class="table-container" style="max-height: 75vh;overflow-y: auto;">
+                                <table class="table" id="table_devices" data-pagination="true" data-search="true" data-show-refresh="true" data-url="./data/devices.json" data-toolbar="#table_devices_toolbar" data-click-to-select="true" data-show-footer="true" data-id-field="id" data-page-list="[5, 10, 25, 50, 100, all]" data-page-size="5">
+                                    <thead>
+                                        <tr>
+                                            <th data-sortable="true" data-field="name">Name</th>
+                                            <th data-sortable="true" data-field="desc">Description</th>
+                                            <th data-sortable="true" data-field="action" data-formatter="window.device_action_formatter"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </section>
+            <section id="os_tab" class="content_area tab-panel" hidden>
+                <div class="panel-grid">
+                    <div class="panel-column">
+                        <div class="switch-option">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enable_so_checkbox" checked>
+                                <span>Enable Operating System</span>
+                            </label>
+                        </div>
+                        <form class="panel-card">
+                            <fieldset>
+                                <legend>Startup Configuration</legend>
+                                <div class="form-row">
+                                    <label for="so_stack_pointer_value">Stack Pointer:&nbsp;&nbsp;</label>
+                                    <input type="text" class="form-control form-control-sm" id="so_stack_pointer_value" value="0x7FFFFFC" style="width: 126px;">
+                                </div>
+                            </fieldset>
+                        </form>
+                        <section class="panel-section">
+                            <header class="panel-header">
+                                <h3 class="h5">Standard IO</h3>
+                            </header>
+                            <input type="file" id="stdio_file_input" hidden>
+                            <div class="stdio-controls">
+                                <div class="radio-options">
+                                    <label><input type="radio" id="os_tab_stdin_radio" name="stdio_select" value="stdin" checked> STDIN</label>
+                                    <label><input type="radio" id="os_tab_stdout_radio" name="stdio_select" value="stdout" disabled> STDOUT</label>
+                                    <label><input type="radio" id="os_tab_stderr_radio" name="stdio_select" value="stderr" disabled> STDERR</label>
+                                </div>
+                                <div class="button-group right" role="group">
+                                    <button class="btn btn-primary" id="os_tab_stdio_refresh" type="button"><i class="material-icons">refresh</i></button>
+                                    <button class="btn btn-primary" id="os_tab_stdio_upload" type="button"><i class="material-icons">file_upload</i></button>
+                                    <button class="btn btn-primary" id="os_tab_stdio_download" type="button"><i class="material-icons">file_download</i></button>
+                                </div>
+                            </div>
+                            <textarea class="form-control" id="os_tab_stdio_textarea" rows="6" style="width: 100%; height: 180px; max-height: 30vh; margin-top: 8px; overflow-y: auto; resize: vertical;"></textarea>
+                        </section>
+                    </div>
+                    <div class="panel-column">
+                        <section class="panel-section">
+                            <header class="panel-header">
+                                <h3 class="h5">Syscalls</h3>
+                            </header>
+                            <div id="table_syscalls_toolbar">
+                                <button class="btn btn-info" type="button"><i class="material-icons">add</i><span>New</span></button>
+                            </div>
+                            <div class="table-container" style="max-height: 75vh;overflow-y: auto;">
+                                <table class="table" id="table_syscalls" data-pagination="true" data-search="true" data-show-refresh="true" data-url="./data/syscalls.json" data-toolbar="#table_syscalls_toolbar" data-click-to-select="true" data-show-footer="true" data-id-field="id" data-page-list="[5, 10, 25, 50, 100, all]" data-page-size="5">
+                                    <thead>
+                                        <tr>
+                                            <th data-sortable="true" data-field="number">number</th>
+                                            <th data-sortable="true" data-field="desc">Description</th>
+                                            <th data-sortable="true" data-field="action" data-formatter="window.syscall_action_formatter"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </section>
+            <section id="settings_tab" class="content_area tab-panel" hidden>
+                <div class="panel-grid">
+                    <div class="panel-column">
+                        <form class="panel-card">
+                            <fieldset>
+                                <legend>Configuration Export</legend>
+                                <div class="form-row">
+                                    <label for="conf_export_desc_url">Home URL:&nbsp;</label>
+                                    <input type="text" id="conf_export_desc_url">
+                                </div>
+                                <div class="form-row">
+                                    <label for="conf_export_assistant_script">Assistant Script:&nbsp;</label>
+                                    <input type="file" id="conf_export_assistant_script">
+                                </div>
+                                <div class="button-group right" role="group">
+                                    <button class="btn btn-primary" id="settings_tab_conf_generate" type="button">generate LINK</button>
+                                    <button class="btn btn-primary" id="settings_tab_conf_export" type="button">copy to clipboard</button>
+                                </div>
+                                <textarea id="settings_tab_conf_export_desc" style="width: 100%;height: 40vh;" readonly></textarea>
+                            </fieldset>
+                        </form>
+                    </div>
+                    <div class="panel-column">
+                        <form class="panel-card">
+                            <fieldset>
+                                <legend>Auto-compile options</legend>
+                                <div class="form-row">
+                                    <label for="c_ext">C code extension:&nbsp;</label>
+                                    <input type="text" id="c_ext" value=".c">
+                                </div>
+                                <div class="form-row">
+                                    <label for="asm_ext">Asm code extension:&nbsp;</label>
+                                    <input type="text" id="asm_ext" value=".s">
+                                </div>
+                                <div class="form-row">
+                                    <label for="obj_ext">Object file extension:&nbsp;</label>
+                                    <input type="text" id="obj_ext" value=".o">
+                                </div>
+                                <div class="form-row">
+                                    <label for="elf_ext">ELF extension:&nbsp;</label>
+                                    <input type="text" id="elf_ext" value=".x">
+                                </div>
+                                <div class="switch-option centered">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="auto_compile" checked>
+                                        <span>Enable Auto-Compile</span>
+                                    </label>
+                                </div>
+                            </fieldset>
+                        </form>
+                    </div>
+                </div>
+            </section>
+            <!-- Terminal Tab View -->
+            <section id="terminal_tab" class="content_area tab-panel" hidden style="padding: 15px;">
+                <article class="card h-100 border">
+                    <header class="card-header py-2 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-terminal"></i> Terminal</h6>
+                        <span class="badge badge-pill badge-danger" id="terminal_badge" hidden="true">.</span>
+                    </header>
+                    <div class="card-body p-0">
+                        <div id="xterm-container"></div>
+                    </div>
+                </article>
+            </section>
+            <!-- Debugger Tab View -->
+            <section id="debug_tab" class="content_area debug-tab-seamless" hidden>
+                <!-- Top Debug Control & Status Toolbar -->
+                <div class="card debug-toolbar-card">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                        <div class="btn-group" role="group" id="debug_toolbar">
+                            <button class="btn btn-sm btn-primary" id="btn_debug_step_into" title="Step Into (F11)"><i class="fas fa-level-down-alt"></i> Step Into</button>
+                            <button class="btn btn-sm btn-info" id="btn_debug_step_over" title="Step Over (F10)"><i class="fas fa-redo"></i> Step Over</button>
+                            <button class="btn btn-sm btn-secondary" id="btn_debug_step_out" title="Shift+F11"><i class="fas fa-level-up-alt"></i> Step Out</button>
+                            <button class="btn btn-sm btn-success" id="btn_debug_continue" title="Continue (F5)"><i class="fas fa-play"></i> Continue</button>
+                            <button class="btn btn-sm btn-warning" id="btn_debug_pause" title="Pause (F6)"><i class="fas fa-pause"></i> Pause</button>
+                            <button class="btn btn-sm btn-danger" id="btn_debug_reset" title="Reset (Ctrl+R)"><i class="fas fa-undo"></i> Reset</button>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <span class="badge badge-dark p-2 mr-2" id="debug_state_badge">PAUSED</span>
+                            <span class="text-muted small">Cycles: <strong id="debug_cycle_counter">0</strong></span>
+                            <span class="text-muted small ml-3">PC: <strong id="debug_pc_display">0x00000000</strong></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resizable Tiled Dock Layout -->
+                <div class="debug-dock-container">
+                    <!-- Top Split Row -->
+                    <div class="dock-row" id="dock_top_row">
+                        <!-- Source View Panel -->
+                        <div class="dock-panel" id="dock_panel_source" style="width: 50%;">
+                            <div class="card h-100" id="card_source_view">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center" draggable="true" title="Drag header to swap position with another panel">
+                                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-grip-vertical text-muted mr-2"></i><i class="fas fa-file-code"></i> Source View</h6>
+                                    <small class="text-muted font-monospace" id="debug_current_symbol">_start</small>
+                                </div>
+                                <div class="card-body p-0 debug-panel-scrollable source-editor-view" id="debug_disasm_container">
+                                    <div class="source-editor-code" id="debug_disasm_body">
+                                        <!-- Source lines dynamically rendered here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Vertical Resizer Gutter (Top Row) -->
+                        <div class="gutter-v" id="gutter_top_v" title="Drag to resize left/right panels"></div>
+
+                        <!-- Register File Panel -->
+                        <div class="dock-panel" id="dock_panel_regs" style="width: 50%;">
+                            <div class="card h-100" id="card_register_file">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center" draggable="true" title="Drag header to swap position with another panel">
+                                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-grip-vertical text-muted mr-2"></i><i class="fas fa-microchip"></i> Registers</h6>
+                                    <select class="form-control form-control-sm" id="debug_reg_format_select" style="width: 150px;">
+                                        <option value="hex">Hexadecimal</option>
+                                        <option value="sdec">Signed Dec</option>
+                                        <option value="udec">Unsigned Dec</option>
+                                        <option value="ascii">ASCII</option>
+                                    </select>
+                                </div>
+                                <div class="card-body p-2 debug-panel-scrollable" id="debug_register_container">
+                                    <ul class="nav nav-tabs nav-justified" id="regTab" role="tablist">
+                                        <li class="nav-item"><a class="nav-link active py-1" id="gpr-tab" data-toggle="tab" href="#gpr_panel">Integer (x0-x31)</a></li>
+                                        <li class="nav-item"><a class="nav-link py-1" id="fpr-tab" data-toggle="tab" href="#fpr_panel">Float (f0-f31)</a></li>
+                                        <li class="nav-item"><a class="nav-link py-1" id="csr-tab" data-toggle="tab" href="#csr_panel">CSRs</a></li>
+                                    </ul>
+                                    <div class="tab-content pt-2">
+                                        <div class="tab-pane fade show active" id="gpr_panel">
+                                            <div class="row no-gutters" id="gpr_grid_container">
+                                                <!-- 32 GPR cells dynamically generated -->
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="fpr_panel">
+                                            <div class="row no-gutters" id="fpr_grid_container">
+                                                <!-- 32 FPR cells dynamically generated -->
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="csr_panel">
+                                            <div class="row no-gutters" id="csr_grid_container">
+                                                <!-- CSR cells dynamically generated -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Horizontal Resizer Gutter (Between Top and Bottom Rows) -->
+                    <div class="gutter-h" id="gutter_main_h" title="Drag to resize top/bottom rows"></div>
+
+                    <!-- Bottom Split Row -->
+                    <div class="dock-row" id="dock_bottom_row">
+                        <!-- Addressable Memory Inspector Panel -->
+                        <div class="dock-panel" id="dock_panel_mem" style="width: 50%;">
+                            <div class="card h-100" id="card_memory_inspector">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center" draggable="true" title="Drag header to swap position with another panel">
+                                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-grip-vertical text-muted mr-2"></i><i class="fas fa-memory"></i> Memory</h6>
+                                    <div class="form-inline">
+                                        <input type="text" class="form-control form-control-sm mr-2" id="debug_mem_jump_input" placeholder="0x80000000" style="width: 160px;">
+                                        <button class="btn btn-sm btn-outline-primary" id="btn_debug_mem_jump">Jump</button>
+                                    </div>
+                                </div>
+                                <div class="card-body p-0 debug-panel-scrollable" id="debug_memory_container">
+                                    <table class="table table-sm table-hover debug-mem-table" id="debug_hex_table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 120px;">Address</th>
+                                                <th style="width: 360px;">Hex Data</th>
+                                                <th>ASCII Sidecar</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="debug_hex_body">
+                                            <!-- 3-column memory rows dynamically populated -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Vertical Resizer Gutter (Bottom Row) -->
+                        <div class="gutter-v" id="gutter_bottom_v" title="Drag to resize left/right panels"></div>
+
+                        <!-- Stack Visualizer Panel -->
+                        <div class="dock-panel" id="dock_panel_stack" style="width: 50%;">
+                            <div class="card h-100" id="card_stack_visualizer">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center" draggable="true" title="Drag header to swap position with another panel">
+                                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-grip-vertical text-muted mr-2"></i><i class="fas fa-layer-group"></i> Stack</h6>
+                                </div>
+                                <div class="card-body p-0 debug-panel-scrollable" id="debug_stack_container">
+                                    <table class="table table-sm table-striped debug-stack-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Offset</th>
+                                                <th>Address</th>
+                                                <th>Value</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="debug_stack_body">
+                                            <!-- Stack frames dynamically populated -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+        <footer class="bg-white d-flex justify-content-between align-items-center copyright fixed-bottom py-2 px-4 border-top" id="footer">
+            <div class="flex-grow-1"></div>
+            <div class="text-center flex-grow-1">
+                <span class="text-muted small">Copyright 2021 - University of Campinas</span>
+            </div>
+            <div class="text-right flex-grow-1">
+                <a href="https://riscv-programming.org/contact.html" target="_blank" class="small">Feedback</a>
+            </div>
+        </footer>
+    </div>
+    <script src="assets/js/jquery.min.js"></script>
+    <script src="assets/js/jquery.terminal.min.js"></script>
+    <script src="assets/js/modal.js"></script>
+    <script src="assets/js/dropdown.js"></script>
+    <script src="assets/js/tabs.js"></script>
+    <script src="assets/js/data_table.js"></script>
+    <script src="assets/js/toast.js"></script>
+    <script type="module" src="assets/js/interface_elements.js"></script>
+
+    <script src="assets/js/lz-string.min.js"></script>
+    <script src="assets/js/z-worker.js"></script>
+    <script src="assets/js/zip.min.js"></script>
+</body>
+
+</html>

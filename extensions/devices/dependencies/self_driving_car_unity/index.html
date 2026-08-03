@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Unity WebGL Player | Self-Driving Car</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+    <link rel="stylesheet" href="../../../../assets/bootstrap/css/bootstrap.min.css">
+    <script src="../../../../assets/js/jquery.min.js"></script>
+    <script src="../../../../assets/bootstrap/js/bootstrap.min.js"></script>
+    <script>
+      var carLogCallBack = function(msg){console.log(msg)};
+      window.setCallbacks = function(status, sensor, camera, collision, loaded){
+        carStatusCallBack = status;
+        carSensorCallBack = sensor;
+        carCameraCallBack = camera;
+        collision_callback = collision;
+        unity_loaded = loaded;
+      }
+      setUoliLogCallback = function(log){
+        carLogCallBack = log;
+      }
+    </script>
+  </head>
+  <body>
+    <div id="unity-container" style="width: 100%; height: 100%;" class="unity-desktop">
+      <canvas id="unity-canvas" style="width: 100%; height: 100%;"></canvas>
+      <div id="unity-loading-bar">
+        <div id="unity-logo"></div>
+        <div id="unity-progress-bar-empty">
+          <div id="unity-progress-bar-full"></div>
+        </div>
+      </div>
+      <div id="unity-footer">
+        <div id="unity-webgl-logo"></div>
+        <button type="button" class="btn btn-link" data-toggle="modal" data-target="#modal_car_config">Settings</button>
+        <div id="unity-fullscreen-button"></div>
+        <div id="unity-build-title">Self-Driving Car</div>
+      </div>
+    </div>
+    <div class="modal fade" id="modal_car_config" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="exampleModalLabel">Car settings</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <label>Graphic Quality:</label>
+            <div class="btn-group btn-group-toggle" data-toggle="buttons">
+              <label class="btn btn-secondary">
+                <input type="radio" name="quality_radio" id="option1" autocomplete="off" value=0> Very Low
+              </label>
+              <label class="btn btn-secondary">
+                <input type="radio" name="quality_radio" id="option2" autocomplete="off" value=1 checked> Low
+              </label>
+              <label class="btn btn-secondary">
+                <input type="radio" name="quality_radio" id="option3" autocomplete="off" value=2> Medium
+              </label>
+              <label class="btn btn-secondary active">
+                <input type="radio" name="quality_radio" id="option4" autocomplete="off" value=3> High
+              </label>
+              <label class="btn btn-secondary">
+                <input type="radio" name="quality_radio" id="option5" autocomplete="off" value=4> Very High
+              </label>
+              <label class="btn btn-secondary">
+                <input type="radio" name="quality_radio" id="option6" autocomplete="off" value=5> Ultra
+              </label>
+            </div>
+            <div class="custom-control custom-switch custom-control-inline">
+              <input type="checkbox" class="custom-control-input" id="distance_switch" checked>
+              <label class="custom-control-label" for="distance_switch">Show Ultrasonic Sensor</label>
+            </div>
+            <div class="custom-control custom-switch custom-control-inline">
+              <input type="checkbox" class="custom-control-input" id="controls_switch">
+              <label class="custom-control-label" for="controls_switch">Enable debug controls</label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/self_driving_car_unity.loader.js";
+      var config = {
+        dataUrl: buildUrl + "/self_driving_car_unity.data",
+        frameworkUrl: buildUrl + "/self_driving_car_unity.framework.js",
+        codeUrl: buildUrl + "/self_driving_car_unity.wasm",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "DefaultCompany",
+        productName: "Self-Driving Car 2",
+        productVersion: "0.1",
+      };
+
+      var container = document.querySelector("#unity-container");
+      var canvas = document.querySelector("#unity-canvas");
+      var loadingBar = document.querySelector("#unity-loading-bar");
+      var progressBarFull = document.querySelector("#unity-progress-bar-full");
+      var fullscreenButton = document.querySelector("#unity-fullscreen-button");
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        container.className = "unity-mobile";
+        config.devicePixelRatio = 1;
+      } else {
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+      }
+      loadingBar.style.display = "block";
+
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        createUnityInstance(canvas, config, (progress) => {
+          progressBarFull.style.width = 100 * progress + "%";
+        }).then((unityInstance) => {
+          window.unityInstance = unityInstance;
+          loadingBar.style.display = "none";
+          fullscreenButton.onclick = () => {
+            unityInstance.SetFullscreen(1);
+          };
+          setTimeout(unity_loaded, 100);
+        }).catch((message) => {
+          alert(message);
+        });
+      };
+      document.body.appendChild(script);
+      document.getElementById("distance_switch").onchange = function(){
+        if(document.getElementById("distance_switch").checked){
+          window.unityInstance.SendMessage("car", "drawDistanceSensors", 1);
+        }else{
+          window.unityInstance.SendMessage("car", "drawDistanceSensors", 0);
+        }
+      };
+
+      document.getElementById("controls_switch").onchange = function(){
+        if(document.getElementById("controls_switch").checked){
+          window.unityInstance.SendMessage("Control", "setControls", 1);
+        }else{
+          window.unityInstance.SendMessage("Control", "setControls", 3);
+        }
+      };
+
+      $('input[name="quality_radio"]').on('click change', function(e) {
+        var q_value = document.querySelector('input[name="quality_radio"]:checked').value;
+        window.unityInstance.SendMessage("Control", "setQuality", parseInt(q_value));
+      });
+    </script>
+  </body>
+</html>

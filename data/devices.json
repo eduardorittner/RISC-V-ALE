@@ -1,0 +1,34 @@
+{
+  "rows": [
+    {
+      "name": "Uóli",
+      "desc": "Simulador de robo Uóli",
+      "action": "uoli_robot.js"
+    },
+    {
+      "name": "Sound Synthesizer",
+      "desc": "16-channel MIDI sound synthesizer",
+      "action": "midi_synthesizer.js"
+    },
+    {
+      "name": "Self-Driving Car",
+      "desc": "A self-driving car in a city",
+      "action": "self_driving_car.js"
+    },
+    {
+      "name": "GPT",
+      "desc": "General Purpose Timer",
+      "action": "general_purpose_timer.js"
+    },
+    {
+      "name": "Canvas",
+      "desc": "Canvas for drawing and displaying images",
+      "action": "canvas.js"
+    },
+    {
+      "name": "Serial IO",
+      "desc": "Serial port for text input and output.",
+      "action": "serial_port.js"
+    }
+  ]
+}

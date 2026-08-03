@@ -1,0 +1,47 @@
+# Runs the performance harness (`make perf`) on every pull request and posts
+# the results as a comment on the PR.  The comment is updated on subsequent
+# pushes so the PR doesn't accumulate duplicate comments.
+name: perf
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install perf dependencies
+        working-directory: scripts/perf
+        run: npm install
+
+      - name: Run make perf
+        id: perf
+        run: |
+          set -o pipefail
+          make perf BROWSER=chrome DRY=1 2>&1 | tee perf_output.txt
+        continue-on-error: true
+
+      - name: Post perf results as PR comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/perf/post_pr_comment.py perf_output.txt

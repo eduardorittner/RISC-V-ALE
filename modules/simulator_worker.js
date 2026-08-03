@@ -1,0 +1,512 @@
+/*jshint esversion: 6 */
+
+var stdinBuffer = new Uint8Array([]);
+var non_blocking_io = false;
+var interactiveBufferString = "";
+var syscall_delay = 0;
+var simulator_sleep = [0, 0, 0]; // int, read, write
+var simulator_int_inst_delay = 1000;
+var precompiledWhisperModule = null;
+
+onmessage = function(e) {
+  switch(e.data.type){
+    case "init_modules":
+      precompiledWhisperModule = e.data.whisperModule;
+      break;
+    case "code_load":
+      files = e.data.code;
+      break;
+    case "start_sim":  
+      importScripts("whisper.js");
+      break;
+    case "stdin":
+      let new_stdin = new TextEncoder("utf-8").encode(e.data.stdin);
+      let new_stdin_buffer = new Uint8Array(new_stdin.length + stdinBuffer.length);
+      new_stdin_buffer.set(stdinBuffer)
+      new_stdin_buffer.set(new_stdin, stdinBuffer.length)
+      stdinBuffer = new_stdin_buffer;
+      console.log(stdinBuffer);
+      break;
+    case "non_blocking_io":
+      non_blocking_io = e.data.value;
+      break;
+    case "interactive":
+      interactiveBufferString += e.data.cmd;
+      break;
+    case "interrupt":
+      intController.changeState(e.data.state);
+      break;
+    case "add_files":
+      files = e.data.files;
+      break;
+    case "start":
+      console.log(e.data.args);
+      self.execFinished = false;
+      self.executionStartTime = performance.now();
+      Module.arguments = e.data.args;
+      if(e.data.args.includes("--interactive")){
+        postMessage({type:"status", status:{running:true, debugging:true}});
+      }else{
+        postMessage({type:"status", status:{running:true}});
+      } 
+      importScripts("whisper.js");
+      break;
+
+    case 'sync':
+      bus_sync.merge(e.data.buffer);
+      break;
+
+    case "load_syscall":
+      syscall_emulator.register(parseInt(e.data.number), e.data.code);
+      break;
+
+    case "disable_syscall":
+      syscall_emulator.unregister(parseInt(e.data.number));
+      break;
+
+    case 'interrupt_enabled':
+      intController.interrupt_enabled = e.data.value;
+      break;
+    
+    case 'set_freq_limit':
+      let value = e.data.value;
+      if(value >= 1000){
+        simulator_sleep[0] = 0;
+        simulator_sleep[1] = 0;
+        simulator_sleep[2] = 0;
+        syscall_delay = 0;
+      }else{
+        simulator_sleep[0] = 1000*(1/value);
+        simulator_sleep[1] = 1000*(1/value);
+        simulator_sleep[2] = 1000*(1/value);
+        syscall_delay = 30;
+      } 
+      break;
+    case "set_int_delay":
+      simulator_int_inst_delay = e.data.value;
+      break;
+
+    case "debug_enable":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        wasmSimulator.set_debug_mode(e.data.enabled);
+      }
+      self.debugModeActive = e.data.enabled;
+      postMessage({ type: "debug_status", enabled: e.data.enabled });
+      break;
+
+    case "debug_step":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.debug_step();
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_step_over":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.debug_step_over();
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_step_out":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.debug_step_out();
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_continue":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.run_until_breakpoint();
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_pause":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.get_snapshot_js(false, 0);
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_set_bp":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        if (e.data.active) {
+          wasmSimulator.add_breakpoint(e.data.addr);
+        } else {
+          wasmSimulator.remove_breakpoint(e.data.addr);
+        }
+        postMessage({ type: "debug_bp_updated", addr: e.data.addr, active: e.data.active });
+      }
+      break;
+
+    case "debug_clear_bps":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        wasmSimulator.clear_breakpoints();
+      }
+      break;
+
+    case "debug_read_mem":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let bytes = wasmSimulator.read_memory_range(e.data.addr, e.data.len);
+        postMessage({ type: "debug_mem_data", addr: e.data.addr, bytes: Array.from(bytes) });
+      }
+      break;
+
+    case "debug_poke_reg":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        wasmSimulator.write_register(e.data.reg, e.data.val);
+        let state = wasmSimulator.get_snapshot_js(false, 0);
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+
+    case "debug_poke_mem":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        wasmSimulator.write_memory_byte(e.data.addr, e.data.val);
+        let bytes = wasmSimulator.read_memory_range(e.data.addr, 64);
+        postMessage({ type: "debug_mem_data", addr: e.data.addr, bytes: Array.from(bytes) });
+      }
+      break;
+
+    case "debug_disasm":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let items = wasmSimulator.disassemble_range(e.data.addr, e.data.len);
+        postMessage({ type: "debug_disasm_data", items: items });
+      }
+      break;
+
+    case "debug_get_snapshot":
+      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+        let state = wasmSimulator.get_snapshot_js(false, 0);
+        postMessage({ type: "debug_state", state: state });
+      }
+      break;
+  }
+};
+
+class MMIO{
+  constructor(size){
+    this.sharedBuffer = new ArrayBuffer(size);
+    this.memory = [];
+    this.memory[1] = new Uint8Array(this.sharedBuffer);
+    this.memory[2] = new Uint16Array(this.sharedBuffer);
+    this.memory[4] = new Uint32Array(this.sharedBuffer);
+    this.size = this.sharedBuffer.byteLength;
+  }
+
+  load(addr, size){
+    addr &= 0xFFFF;
+    if(addr > this.size){
+      postMessage({type: "sim_log", subtype: "error", msg: "MMIO Access Error"});
+    }
+    return this.memory[size][(addr/size) | 0];
+  }
+
+  store(addr, size, value){
+    addr &= 0xFFFF;
+    if(addr > this.size){
+      postMessage({type: "sim_log", subtype: "error", msg: "MMIO Access Error"});
+    }
+    this.memory[size][(addr/size) | 0] = value;
+    bus_sync.add_mmio_update(addr, size, value);
+  }
+
+  update_store(addr, size, value){
+    addr &= 0xFFFF;
+    this.memory[size][(addr/size) | 0] = value;
+  }
+}
+
+var mmio = new MMIO(0x10000);
+
+class BusSync{
+  constructor(mmio){
+    this.mmio = mmio;
+    this.stdout_buffer = "";
+    this.stderr_buffer = "";
+    this.mmio_buffer = new Uint8Array(0x10000);
+    this.dirty_flags = new Uint8Array(0x10000);
+    this.dirty_indices = new Uint32Array(0x10000);
+    this.dirty_count = 0;
+    this.is_dirty = false;
+    this.last_flush_time = performance.now();
+    this.flush_interval_ms = 16;
+    this.max_buffer_size = 4096;
+  }
+
+  add_mmio_update(addr, size, value){
+    for (let i = 0; i < size; i++) {
+      const idx = (addr + i) & 0xFFFF;
+      this.mmio_buffer[idx] = (value >> (i*8)) & 0xFF;
+      if (this.dirty_flags[idx] === 0) {
+        this.dirty_flags[idx] = 1;
+        this.dirty_indices[this.dirty_count++] = idx;
+      }
+    }
+    this.is_dirty = true;
+  }
+
+  add_stdout(text){
+    this.stdout_buffer += `${text}\n`; 
+    this.is_dirty = true;
+    this.check_auto_flush();
+  }
+
+  add_stderr(text){
+    this.stderr_buffer += `${text}\n`; 
+    this.is_dirty = true;
+    this.check_auto_flush();
+  }
+
+  check_auto_flush(){
+    const now = performance.now();
+    const buffer_len = this.stdout_buffer.length + this.stderr_buffer.length;
+    if (buffer_len >= this.max_buffer_size || (now - this.last_flush_time >= this.flush_interval_ms)) {
+      this.sync();
+    }
+  }
+
+  merge(extern_mmio_buffer){
+    if (!extern_mmio_buffer) return;
+    const keys = Object.keys(extern_mmio_buffer);
+    for (let k = 0; k < keys.length; k++) {
+      const idx = keys[k];
+      const value = extern_mmio_buffer[idx];
+      if (this.dirty_flags[idx] === 0) { // processor priority
+        this.mmio.memory[1][idx] = value;
+      }
+    }
+  }
+
+  sync(){
+    if (!this.is_dirty && this.stdout_buffer.length === 0 && this.stderr_buffer.length === 0 && this.dirty_count === 0) {
+      return;
+    }
+    let mmio_updates = null;
+    if (this.dirty_count > 0) {
+      mmio_updates = {};
+      for (let i = 0; i < this.dirty_count; i++) {
+        const idx = this.dirty_indices[i];
+        mmio_updates[idx] = this.mmio_buffer[idx];
+        this.dirty_flags[idx] = 0;
+      }
+      this.dirty_count = 0;
+    }
+    postMessage({
+      type: "sync",
+      mmio_buffer: mmio_updates,
+      stdout: this.stdout_buffer,
+      stderr: this.stderr_buffer
+    });
+    this.stdout_buffer = "";
+    this.stderr_buffer = "";
+    this.is_dirty = false;
+    this.last_flush_time = performance.now();
+  }
+
+}
+
+var bus_sync = new BusSync(mmio);
+
+class InterruptionController{
+  constructor(){
+    this.state = 0;
+    this.interrupt_enabled = 1;
+  }
+
+  changeState(state){
+    this.state = state;
+  }
+
+  get interrupt(){
+    let res = this.state;
+    this.state = 0;
+    return res;
+  }
+
+  get interruptEnabled(){
+    return this.interrupt_enabled;
+  }
+}
+
+class SyscallEmulator{
+  constructor(){
+    this.syscalls = {};
+  }
+
+  register(number, code){
+    try {
+      this.syscalls[number] = new Function('a0', 'a1', 'a2', 'a3', 'a7', 'sendMessage', 'postMessage', code);
+    } catch(e) {
+      console.warn(`Failed to pre-compile syscall ${number}, falling back to string:`, e);
+      this.syscalls[number] = code;
+    }
+  }
+
+  unregister(number){
+    delete this.syscalls[number];
+  }
+
+  run(a0, a1, a2, a3, a7){
+    const fn = this.syscalls[a7];
+    if(fn !== undefined){
+      var sendMessage = function(msg){
+        postMessage({type: "device_message", syscall: a7, message: msg});
+        if(syscall_delay){
+          let start = performance.now();
+          while(performance.now() - start < syscall_delay);
+        }
+      };
+      if (typeof fn === 'function') {
+        fn(a0, a1, a2, a3, a7, sendMessage, postMessage);
+      } else {
+        eval(fn);
+      }
+      return a0;
+    }else{
+      var text = "Invalid syscall: " + a7;
+      postMessage({type: "sim_log", subtype: "error", msg: text});
+      return 0;
+    }
+  }
+}
+
+var syscall_emulator = new SyscallEmulator();
+var intController = new InterruptionController();
+
+
+function getStdin (count){
+  if(stdinBuffer.length == 0 && !non_blocking_io){
+    wait_for_input_alert();
+    return -1;
+  }
+  var res = stdinBuffer.slice(0, count);
+  stdinBuffer = stdinBuffer.slice(count);
+  return res;
+}
+
+var last_wait_for_input_alert_sent = 0;
+function wait_for_input_alert(){
+  bus_sync.sync();
+  if(performance.now() - last_wait_for_input_alert_sent > 5000){
+    postMessage({type: "sim_log", subtype: "info", msg: "Waiting for Input..."});
+    last_wait_for_input_alert_sent = performance.now();
+  }
+}
+
+function getInteractiveCommand (){
+  let res = interactiveBufferString;
+  interactiveBufferString = "";
+  return res;
+}
+
+function initFS() {
+  console.log(files);
+  FS.init(null, null, null);
+  FS.mkdir('/working');
+  if(files){
+    FS.mount(WORKERFS, {
+      files: files, // Array of File objects or FileList
+    }, '/working');
+    for (let index = 0; index < files.length; index++) {
+      FS.symlink('/working/' + files[index].name, '/' + files[index].name.replace(" ", "_"));
+    }
+  }
+}
+
+function finishExec() {
+  if (self.execFinished) return;
+  self.execFinished = true;
+  bus_sync.sync();
+  let executionEndTime = performance.now();
+  let elapsedTimeMs = executionEndTime - (self.executionStartTime || executionEndTime);
+
+  let snapshot = null;
+  if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+    try {
+      snapshot = wasmSimulator.get_snapshot_js(false, 0);
+    } catch(e) {}
+  }
+
+  let totalInstructions = snapshot ? (snapshot.step_count || 0) : 0;
+  let elapsedSeconds = elapsedTimeMs / 1000;
+  let ips = elapsedSeconds > 0 ? Math.round(totalInstructions / elapsedSeconds) : 0;
+  let mips = elapsedSeconds > 0 ? Number((totalInstructions / (elapsedSeconds * 1000000)).toFixed(3)) : 0;
+  let finalPC = snapshot ? (snapshot.pc >>> 0).toString(16).padStart(8, '0') : null;
+  let exitCode = (snapshot && snapshot.gpr) ? (snapshot.gpr[10] >>> 0) : 0;
+
+  postMessage({
+    type: "status",
+    status: {
+      finish: true,
+      stats: {
+        elapsedTimeMs,
+        totalInstructions,
+        ips,
+        mips,
+        finalPC,
+        exitCode
+      }
+    }
+  });
+}
+
+var xhr = new XMLHttpRequest();
+function getDebugMsg(){
+  postGDBWaiting = 1;
+  while(1){
+    try{
+      xhr.open("GET", "http://127.0.0.1:5689/gdbInput", false);  // synchronous request
+      xhr.send(null);
+      if(xhr.status === 200){
+        return xhr.responseText;
+      }
+    }catch(e){
+      if(postGDBWaiting){
+        postMessage({type: "sim_log", subtype: "info", msg: "Waiting for GDB..."});
+        postGDBWaiting = 0;
+      }
+    }
+  }
+}
+
+var xhrS = new XMLHttpRequest();
+function sendDebugMsg(msg){
+  postGDBWaiting = 1;
+  while(1){
+    try {
+      xhrS.open("POST", "http://127.0.0.1:5689/gdbInput", false);  // synchronous request
+      xhrS.send(msg);
+      if(xhrS.status === 200){
+        return;
+      }
+    } catch (error) {
+      if(postGDBWaiting){
+        postMessage({type: "sim_log", subtype: "info", msg: "Waiting for GDB..."});
+        postGDBWaiting = 0;
+      }
+    }
+  }
+}
+
+var Module = {
+  // arguments : ["--version"],
+  arguments : ["--newlib", "/working/ex2", "--isa", "acdfimsu", "--setreg", "sp=0x10000"],
+  instantiateWasm: function(imports, successCallback) {
+    if (precompiledWhisperModule) {
+      WebAssembly.instantiate(precompiledWhisperModule, imports).then(function(instance) {
+        successCallback(instance, precompiledWhisperModule);
+      }).catch(function(err) {
+        console.error("Precompiled Whisper WASM instantiation error:", err);
+      });
+      return {};
+    }
+    return false;
+  },
+  preRun : [initFS],
+  print : bus_sync.add_stdout.bind(bus_sync),
+  printErr : bus_sync.add_stderr.bind(bus_sync)
+};
+
+postMessage({type:"status", status:{starting:true}});
