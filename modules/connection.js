@@ -87,30 +87,17 @@ class Window_postMessage extends Connection{
     }
   }
 
-  confirmation_dialog(name, origin, operation, cmd){
-    const notice = PNotify.notice({
+  async confirmation_dialog(name, origin, operation, cmd){
+    const confirmed = await Toast.confirm({
       title: `Remote Command Received`,
-      text: `${name} is trying to execute a remote command in the simulator. Do you wish to proceed? \n \n Operation: ${operation} \n Origin: ${origin}`,
+      text: `${name} is trying to execute a remote command in the simulator. Do you wish to proceed?\n\nOperation: ${operation}\nOrigin: ${origin}`,
       icon: 'fas fa-exclamation-triangle',
-      hide: false,
-      closer: false,
-      sticker: false,
-      destroy: true,
-      stack: new PNotify.Stack({
-        dir1: 'down',
-        modal: true,
-        firstpos1: 25,
-        overlayClose: false
-      }),
-      modules: new Map([
-        ...PNotify.defaultModules,
-        [PNotifyConfirm, {
-          confirm: true
-        }]
-      ])
+      okText: 'Proceed',
+      cancelText: 'Cancel'
     });
-    notice.on('pnotify:confirm', () => this.run_remote_cmd(cmd));
-    notice.on('pnotify:cancel', () => "");
+    if (confirmed) {
+      this.run_remote_cmd(cmd);
+    }
   }
 
   send(data){

@@ -1,23 +1,8 @@
 /*jshint esversion: 9*/
 
-// Notification stacks
-window.stackBottomRight = new PNotify.Stack({
-  dir1: 'up',
-  dir2: 'left',
-  firstpos1: 25,
-  firstpos2: 25,
-  modal: false,
-  maxOpen: Infinity
-});
-
-window.stackBarTop = new PNotify.Stack({
-  modal: false,
-  dir1: 'down',
-  firstpos1: 0,
-  spacing1: 0,
-  push: 'top',
-  maxOpen: Infinity
-});
+// Notification stacks (backward compatibility alias)
+window.stackBottomRight = window.Toast;
+window.stackBarTop = window.Toast;
 
 
 // register service worker
@@ -28,34 +13,26 @@ if ('serviceWorker' in navigator) {
         let newWorker = reg.installing;
         newWorker.addEventListener("statechange", function () {
           if(newWorker.state == "installed" && navigator.serviceWorker.controller){
-            const update_notice = PNotify.info({
+            const update_notice = Toast.info({
               title: 'Update received',
               text: 'A new version of RISC-V ALE is available. Click to update.',
-              sticker: false,
               delay: Infinity,
-              stack: window.stackBottomRight
-            });
-            update_notice.refs.elem.style.cursor = 'pointer';
-            update_notice.on('click', e => {
-              if ([...update_notice.refs.elem.querySelectorAll('.pnotify-closer *, .pnotify-sticker *')].indexOf(e.target) !== -1) {
-                return;
+              onClick: (e, { update }) => {
+                newWorker.postMessage({ action: 'skipWaiting' });
+                update({
+                  text: 'Please Wait',
+                  icon: 'fas fa-spinner fa-pulse'
+                });
               }
-              newWorker.postMessage({ action: 'skipWaiting' });
-              update_notice.update({
-                text: 'Please Wait',
-                icon: 'fas fa-spinner fa-pulse',
-              });
             });
           }
         })
       })
   }).catch(function(err) {
-    PNotify.error({
+    Toast.error({
       title: 'Service Worker',
       text: 'Error while registering service worker ' + err,
-      sticker: false,
-      delay: Infinity,
-      stack: window.stackBottomRight
+      delay: Infinity
     });
   });
 
@@ -66,11 +43,9 @@ if ('serviceWorker' in navigator) {
     refreshing = true;
   });
 }else{
-  PNotify.error({
+  Toast.error({
     title: 'Service Worker',
-    text: 'Failed to register Service Worker.',
-    sticker: false,
-    stack: window.stackBottomRight
+    text: 'Failed to register Service Worker.'
   });
 }
 
@@ -283,15 +258,20 @@ const sim_status_ch = new BroadcastChannel('simulator_status' + window.uniq_id);
 
 sim_status_ch.onmessage = function (ev) {
   if(ev.data.type == "message"){
-    let msgTypes = {success: PNotify.success, info: PNotify.info, error: PNotify.error, notice: PNotify.notice};
+    let msgTypes = {
+      success: (opts) => Toast.success(opts),
+      info: (opts) => Toast.info(opts),
+      error: (opts) => Toast.error(opts),
+      notice: (opts) => Toast.notice(opts)
+    };
     var delay = 8000;
     if(ev.data.msg.delay){ 
       delay = ev.data.msg.delay;
     }
-    msgTypes[ev.data.msg.type]({
+    const fn = msgTypes[ev.data.msg.type] || msgTypes.info;
+    fn({
       title: ev.data.msg.title,
       text: ev.data.msg.text,
-      stack: window.stackBottomRight,
       delay
     });
   }
@@ -347,11 +327,9 @@ sim_status_ch.onmessage = function (ev) {
       break;
 
     case "load_file":
-      PNotify.info({
+      Toast.info({
         title: 'File Loaded',
-        text: 'Name: ' + ev.data.name + '\n (' + ev.data.size + ' bytes)',
-        sticker: false,
-        stack: window.stackBottomRight
+        text: 'Name: ' + ev.data.name + '\n (' + ev.data.size + ' bytes)'
       });
       break;
 
@@ -402,11 +380,9 @@ async function auto_compile() {
 
 async function run_simulator(debug) {
   if(simulator_controller.last_loaded_files.length == 0){
-    PNotify.notice({
+    Toast.notice({
       title: 'No input files',
-      text: 'Select at least one input file to run or compile',
-      sticker: false,
-      stack: window.stackBottomRight
+      text: 'Select at least one input file to run or compile'
     });
     return false;
   }
@@ -512,11 +488,9 @@ window.remove_device = function (name){
   if(row){
     row.remove();
   }
-  PNotify.info({
+  Toast.info({
     title: 'Device removed',
-    text: name,
-    sticker: false,
-    stack: window.stackBottomRight
+    text: name
   });
 }
 
@@ -562,11 +536,9 @@ window.syscall_action_formatter = function(value) {
 os_tab_stdio_refresh.onclick = function() {
   if(os_tab_stdin_radio.checked){
     web_terminal.setSTDIN(os_tab_stdio_textarea.value)
-    PNotify.info({
+    Toast.info({
       title: 'Text loaded to STDIN',
-      text: `${os_tab_stdio_textarea.value.length} chars loaded.`,
-      sticker: false,
-      stack: window.stackBottomRight
+      text: `${os_tab_stdio_textarea.value.length} chars loaded.`
     });
   }else if(os_tab_stdout_radio.checked){
     os_tab_stdio_textarea.value = web_terminal.getSTDOUT()
@@ -630,10 +602,8 @@ settings_tab_conf_generate.onclick = generate_config_link;
 settings_tab_conf_export.onclick = function () {
   generate_config_link();
   navigator.clipboard.writeText(settings_tab_conf_export_desc.value).then(function() {
-    PNotify.info({
-      title: 'Link copied to clipboard',
-      sticker: false,
-      stack: window.stackBottomRight
+    Toast.info({
+      title: 'Link copied to clipboard'
     });
   }, function(err) {
     console.error('Could not copy text: ', err);
