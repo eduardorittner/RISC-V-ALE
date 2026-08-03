@@ -439,12 +439,7 @@ run_with_debug_button.onclick = function(){
   run_simulator(true);
 };
 
-// terminal
 
-terminal_button.onclick = function(){
-  location.hash = "#terminal";
-};
- 
 assistant_button.onclick = function () {
   Modal.open('#modal_assistant', {backdrop: false});
   Modal.makeDraggable('#modal_assistant', '.modal-header');

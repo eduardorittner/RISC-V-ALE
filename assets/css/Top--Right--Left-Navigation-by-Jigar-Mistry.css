@@ -163,12 +163,12 @@
   white-space: nowrap;
 }
 
-header, header nav {
+header#topbar, header#topbar nav {
   min-height: 49px;
   background-color: #041E42 !important;
 }
 
-header nav .fa.fa-search {
+header#topbar nav .fa.fa-search {
   font-size: larger;
   position: absolute;
   z-index: 1;
@@ -176,7 +176,7 @@ header nav .fa.fa-search {
   margin: 9px;
 }
 
-header nav > a {
+header#topbar nav > a {
   width: 200px;
   height: 35px;
   margin: 5px 0px;
@@ -188,11 +188,11 @@ header nav > a {
   z-index: 1050;
 }
 
-header nav .fa.fa-bell {
+header#topbar nav .fa.fa-bell {
   color: white;
 }
 
-header nav .fa.fa-envelope {
+header#topbar nav .fa.fa-envelope {
   color: white;
 }
 
@@ -201,6 +201,6 @@ header nav .fa.fa-envelope {
   font-size: small;
 }
 
-header nav .notification-link, .indox-link, .profile-drop-link {
+header#topbar nav .notification-link, .indox-link, .profile-drop-link {
   height: 50px!important;
 }

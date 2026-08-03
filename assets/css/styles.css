@@ -493,7 +493,7 @@ aside nav > ul {
    ======================================================================== */
 
 /* App Topbar Header */
-header, header.top-nav-bar {
+header#topbar {
   display: flex;
   align-items: center;
   position: fixed;
@@ -506,7 +506,7 @@ header, header.top-nav-bar {
   padding: 0;
 }
 
-header nav {
+header#topbar nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -514,13 +514,13 @@ header nav {
   padding: 0 15px;
 }
 
-header nav > a img,
-header nav img {
+header#topbar nav > a img,
+header#topbar nav img {
   height: 35px;
   width: auto;
 }
 
-header nav h1 {
+header#topbar nav h1 {
   margin: 0;
   margin-left: 1.5rem;
   margin-right: auto;
@@ -531,7 +531,7 @@ header nav h1 {
   line-height: 1;
 }
 
-header nav ul {
+header#topbar nav ul {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -549,14 +549,6 @@ header nav ul {
   justify-content: center;
   font-family: inherit;
   font-size: 0.9rem;
-}
-
-#terminal_button {
-  height: 49px;
-  width: 63px;
-  background-color: #ffc72c;
-  color: #041e42;
-  position: relative;
 }
 
 #file_select_button {
@@ -895,7 +887,7 @@ header nav ul {
 }
 
 /* Topbar Header Alignment Overrides */
-header, header nav {
+header#topbar, header#topbar nav {
   min-height: 49px !important;
   height: 49px !important;
   max-height: 49px !important;
@@ -904,7 +896,7 @@ header, header nav {
   align-items: center !important;
 }
 
-header nav h1 {
+header#topbar nav h1 {
   padding-top: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
