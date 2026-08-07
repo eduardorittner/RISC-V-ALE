@@ -103,7 +103,13 @@ class InterfaceNavegation{
 
   locationHashChanged(){
     this.tabs.map(this.hideTab);
-    let newHash = location.hash.slice(1) + "_tab";
+    let targetId = location.hash.slice(1);
+    let newHash = targetId + "_tab";
+
+    document.querySelectorAll("aside nav ul li").forEach(li => li.classList.remove("active"));
+    const activeNavItem = document.getElementById(targetId + "_nav_item");
+    if (activeNavItem) activeNavItem.classList.add("active");
+
     if(this.tabs.includes(newHash)){
       const activeEl = document.getElementById(newHash);
       if (activeEl) activeEl.hidden = false;
@@ -112,6 +118,8 @@ class InterfaceNavegation{
       }
     }else{
       home_tab.hidden = false;
+      const homeNav = document.getElementById("home_nav_item");
+      if (homeNav) homeNav.classList.add("active");
       console.log(location.hash);
       if(location.hash.slice(0, 15) == "#select_content"){
         config.load_content(location.hash.split("=")[1]);
@@ -289,10 +297,9 @@ sim_status_ch.onmessage = function (ev) {
         run_button.onclick = function(){
           simulator_controller.restart_simulator();
         };
-        if(!Modal.isOpen('#modal_terminal')){
-          Modal.open('#modal_terminal', {backdrop: false});
-          Modal.makeDraggable('#modal_terminal', '.modal-header');
-          web_terminal.openTerminal();
+        if(!ev.data.status.debugging){
+          location.hash = "#terminal";
+          navegation.locationHashChanged();
         }
       }else if(ev.data.status.stopping || ev.data.status.finish){
 
@@ -400,6 +407,10 @@ async function run_simulator(debug) {
     });
     return false;
   }
+  if (!debug) {
+    location.hash = "#terminal";
+    navegation.locationHashChanged();
+  }
   run_button.onclick = function () {console.log("Repeated click");};
   var filename = await auto_compile();
   if(!filename){
@@ -411,7 +422,24 @@ async function run_simulator(debug) {
       }
     }
   }
-  if(!filename) filename = simulator_controller.last_loaded_files[0].name;
+  if(!filename){
+    const firstFile = simulator_controller.last_loaded_files[0];
+    const elfExt = document.getElementById("elf_ext").value;
+    if (firstFile && (firstFile.name.endsWith(elfExt) || firstFile.name.endsWith(".elf") || firstFile.name.endsWith(".x") || firstFile.name.endsWith(".bin"))) {
+      filename = firstFile.name;
+    } else {
+      Toast.error({
+        title: 'Compilation Error',
+        text: 'Failed to generate RISC-V ELF executable binary.'
+      });
+      run_button.innerHTML = 'Run';
+      run_button.setAttribute("class", "btn btn-outline-success");
+      run_button.style.background = "#FFFFFF";
+      run_options_selector.removeAttribute("disabled", "");
+      run_button.onclick = function(){run_simulator(false);};
+      return false;
+    }
+  }
   var args = [];
   args.push('/' + filename.replace(" ", "_"));
   if(enable_so_checkbox.checked) {

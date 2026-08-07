@@ -122,7 +122,7 @@ class SimulatorController{
               this._executionResolve = null;
               resolve();
             }
-            this.restart_simulator();
+            setTimeout(() => this.restart_simulator(), 50);
           }
           break;
         case 'sync':

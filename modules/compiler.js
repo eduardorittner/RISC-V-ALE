@@ -127,10 +127,12 @@ class Compiler{
     let compilePromises = [];
     for (let index = 0; index < this.loaded_files.length; index++) {
       const element = this.loaded_files[index];
+      const dotIdx = element.name.lastIndexOf('.');
+      const baseName = dotIdx !== -1 ? element.name.slice(0, dotIdx) : element.name;
       if(element.name.endsWith(c_ext)) {
-        compilePromises.push(this.cc([element.name, "-o", element.name.slice(0, -2) + obj_ext]));
+        compilePromises.push(this.cc([element.name, "-o", baseName + obj_ext]));
       } else if(element.name.endsWith(asm_ext)) {
-        compilePromises.push(this.as([element.name, "-o", element.name.slice(0, -2) + obj_ext]));
+        compilePromises.push(this.as([element.name, "-o", baseName + obj_ext]));
       }
     }
     await Promise.all(compilePromises);

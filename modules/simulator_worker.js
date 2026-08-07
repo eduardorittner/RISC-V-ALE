@@ -423,10 +423,13 @@ function finishExec() {
   let elapsedTimeMs = executionEndTime - (self.executionStartTime || executionEndTime);
 
   let snapshot = null;
-  if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+  const wasmSim = self.wasmSimulator || (typeof wasmSimulator !== 'undefined' ? wasmSimulator : null);
+  if (wasmSim) {
     try {
-      snapshot = wasmSimulator.get_snapshot_js(false, 0);
-    } catch(e) {}
+      snapshot = wasmSim.get_snapshot_js(false, 0);
+    } catch(e) {
+      console.warn("Failed to get WASM simulator snapshot:", e);
+    }
   }
 
   let totalInstructions = snapshot ? (snapshot.step_count || 0) : 0;
