@@ -18,6 +18,17 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@wasm-pack
+
+      - name: Build project and update service worker cache
+        run: make build
+
       - name: Deploy to gh-pages
         run: ./scripts/deploy_gh_pages.sh
         env:
