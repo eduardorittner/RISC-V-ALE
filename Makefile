@@ -1,4 +1,4 @@
-.PHONY: build format gh-pages perf HEAD
+.PHONY: build format perf HEAD
 
 build:
 	wasm-pack build --target no-modules --out-dir ../../modules/pkg crates/rust-whisper
@@ -63,5 +63,3 @@ perf:
 	node scripts/perf/harness.js $(PERF_ARGS)
 endif
 
-gh-pages:
-	./scripts/deploy_gh_pages.sh

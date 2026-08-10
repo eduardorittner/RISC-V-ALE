@@ -32,5 +32,4 @@ jobs:
       - name: Deploy to gh-pages
         run: ./scripts/deploy_gh_pages.sh
         env:
-          GH_PAGES_CI: 1
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
