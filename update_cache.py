@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
 
-import sys,os
+import sys, os, re
 
 sw_file = open("service_worker.js", "r")
-sw_data = sw_file.readlines()
+content = sw_file.read()
 sw_file.close()
 
 files_to_cache = ["./"]
+IGNORED_DIRS = {".git", "node_modules", "crates", "scripts", "mc404", "local", ".githooks"}
 
 for path, subdirs, files in os.walk("."):
+  subdirs[:] = [d for d in subdirs if d not in IGNORED_DIRS]
   for name in files:
-    if(".git" not in os.path.join(path, name)):
-      files_to_cache.append("" + os.path.join(path, name))
-      print(files_to_cache[-1])
+    filepath = os.path.join(path, name)
+    if not any(ignored in filepath for ignored in IGNORED_DIRS):
+      files_to_cache.append("" + filepath)
 
-files_to_cache.remove("./service_worker.js")
-files_to_cache.remove("./update_cache.py")
+if "./service_worker.js" in files_to_cache:
+  files_to_cache.remove("./service_worker.js")
+if "./update_cache.py" in files_to_cache:
+  files_to_cache.remove("./update_cache.py")
 
 # update cache number
-cache_number_pos = sw_data[2].index(":") + 1
-sw_data[2] = sw_data[2][:cache_number_pos] + str(int(sw_data[2][cache_number_pos:-3]) + 1) + "';\n"
+def inc_cache(match):
+  num = int(match.group(1))
+  return f"var cacheName = 'RISC-V_ALE_v0.2:{num + 1}';"
+
+content = re.sub(r"var cacheName = ['\"]RISC-V_ALE_v0\.2:(\d+)['\"];", inc_cache, content)
 
 # update files
-sw_data[3] = "var urlsToCache = " + str(files_to_cache) + ";\n"
+content = re.sub(r"var urlsToCache = \[[\s\S]*?\];", f"var urlsToCache = {files_to_cache};", content)
 
-# write back
 sw_file = open("service_worker.js", "w")
-sw_file.write("".join(sw_data))
+sw_file.write(content)
+sw_file.close()

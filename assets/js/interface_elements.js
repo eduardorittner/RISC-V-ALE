@@ -371,8 +371,8 @@ function load_file(){
     run_button.setAttribute("class", "btn btn-outline-success");
     simulator_controller.load_files(codeSelector.files);
     compiler.set_file_array(simulator_controller.last_loaded_files);
-    setTimeout(function(){
-      codeSelector.value = null;
+    setTimeout(function () {
+      codeSelector.value = "";
     }, 100);
     // run_button.style.background = "";
   }else{

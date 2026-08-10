@@ -8,22 +8,24 @@ var simulator_sleep = [0, 0, 0]; // int, read, write
 var simulator_int_inst_delay = 1000;
 var precompiledWhisperModule = null;
 
-onmessage = function(e) {
-  switch(e.data.type){
+onmessage = function (e) {
+  switch (e.data.type) {
     case "init_modules":
       precompiledWhisperModule = e.data.whisperModule;
       break;
     case "code_load":
       files = e.data.code;
       break;
-    case "start_sim":  
-      importScripts("whisper.js");
+    case "start_sim":
+      runSimulation();
       break;
     case "stdin":
       let new_stdin = new TextEncoder("utf-8").encode(e.data.stdin);
-      let new_stdin_buffer = new Uint8Array(new_stdin.length + stdinBuffer.length);
-      new_stdin_buffer.set(stdinBuffer)
-      new_stdin_buffer.set(new_stdin, stdinBuffer.length)
+      let new_stdin_buffer = new Uint8Array(
+        new_stdin.length + stdinBuffer.length,
+      );
+      new_stdin_buffer.set(stdinBuffer);
+      new_stdin_buffer.set(new_stdin, stdinBuffer.length);
       stdinBuffer = new_stdin_buffer;
       console.log(stdinBuffer);
       break;
@@ -44,15 +46,18 @@ onmessage = function(e) {
       self.execFinished = false;
       self.executionStartTime = performance.now();
       Module.arguments = e.data.args;
-      if(e.data.args.includes("--interactive")){
-        postMessage({type:"status", status:{running:true, debugging:true}});
-      }else{
-        postMessage({type:"status", status:{running:true}});
-      } 
-      importScripts("whisper.js");
+      if (e.data.args.includes("--interactive")) {
+        postMessage({
+          type: "status",
+          status: { running: true, debugging: true },
+        });
+      } else {
+        postMessage({ type: "status", status: { running: true } });
+      }
+      runSimulation();
       break;
 
-    case 'sync':
+    case "sync":
       bus_sync.merge(e.data.buffer);
       break;
 
@@ -64,30 +69,30 @@ onmessage = function(e) {
       syscall_emulator.unregister(parseInt(e.data.number));
       break;
 
-    case 'interrupt_enabled':
+    case "interrupt_enabled":
       intController.interrupt_enabled = e.data.value;
       break;
-    
-    case 'set_freq_limit':
+
+    case "set_freq_limit":
       let value = e.data.value;
-      if(value >= 1000){
+      if (value >= 1000) {
         simulator_sleep[0] = 0;
         simulator_sleep[1] = 0;
         simulator_sleep[2] = 0;
         syscall_delay = 0;
-      }else{
-        simulator_sleep[0] = 1000*(1/value);
-        simulator_sleep[1] = 1000*(1/value);
-        simulator_sleep[2] = 1000*(1/value);
+      } else {
+        simulator_sleep[0] = 1000 * (1 / value);
+        simulator_sleep[1] = 1000 * (1 / value);
+        simulator_sleep[2] = 1000 * (1 / value);
         syscall_delay = 30;
-      } 
+      }
       break;
     case "set_int_delay":
       simulator_int_inst_delay = e.data.value;
       break;
 
     case "debug_enable":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         wasmSimulator.set_debug_mode(e.data.enabled);
       }
       self.debugModeActive = e.data.enabled;
@@ -95,66 +100,74 @@ onmessage = function(e) {
       break;
 
     case "debug_step":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         let state = wasmSimulator.debug_step();
         postMessage({ type: "debug_state", state: state });
       }
       break;
 
     case "debug_step_over":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         let state = wasmSimulator.debug_step_over();
         postMessage({ type: "debug_state", state: state });
       }
       break;
 
     case "debug_step_out":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         let state = wasmSimulator.debug_step_out();
         postMessage({ type: "debug_state", state: state });
       }
       break;
 
     case "debug_continue":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         let state = wasmSimulator.run_until_breakpoint();
         postMessage({ type: "debug_state", state: state });
       }
       break;
 
     case "debug_pause":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         let state = wasmSimulator.get_snapshot_js(false, 0);
         postMessage({ type: "debug_state", state: state });
       }
       break;
 
     case "debug_set_bp":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         if (e.data.active) {
           wasmSimulator.add_breakpoint(e.data.addr);
         } else {
           wasmSimulator.remove_breakpoint(e.data.addr);
         }
-        postMessage({ type: "debug_bp_updated", addr: e.data.addr, active: e.data.active });
+        postMessage({
+          type: "debug_bp_updated",
+          addr: e.data.addr,
+          active: e.data.active,
+        });
       }
       break;
 
     case "debug_clear_bps":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         wasmSimulator.clear_breakpoints();
       }
       break;
 
     case "debug_read_mem":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         let bytes = wasmSimulator.read_memory_range(e.data.addr, e.data.len);
-        postMessage({ type: "debug_mem_data", addr: e.data.addr, bytes: Array.from(bytes) });
+        postMessage({
+          type: "debug_mem_data",
+          addr: e.data.addr,
+          bytes: Array.from(bytes),
+        });
       }
       break;
 
     case "debug_poke_reg":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         wasmSimulator.write_register(e.data.reg, e.data.val);
         let state = wasmSimulator.get_snapshot_js(false, 0);
         postMessage({ type: "debug_state", state: state });
@@ -162,22 +175,26 @@ onmessage = function(e) {
       break;
 
     case "debug_poke_mem":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         wasmSimulator.write_memory_byte(e.data.addr, e.data.val);
         let bytes = wasmSimulator.read_memory_range(e.data.addr, 64);
-        postMessage({ type: "debug_mem_data", addr: e.data.addr, bytes: Array.from(bytes) });
+        postMessage({
+          type: "debug_mem_data",
+          addr: e.data.addr,
+          bytes: Array.from(bytes),
+        });
       }
       break;
 
     case "debug_disasm":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         let items = wasmSimulator.disassemble_range(e.data.addr, e.data.len);
         postMessage({ type: "debug_disasm_data", items: items });
       }
       break;
 
     case "debug_get_snapshot":
-      if (typeof wasmSimulator !== 'undefined' && wasmSimulator) {
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         let state = wasmSimulator.get_snapshot_js(false, 0);
         postMessage({ type: "debug_state", state: state });
       }
@@ -185,8 +202,8 @@ onmessage = function(e) {
   }
 };
 
-class MMIO{
-  constructor(size){
+class MMIO {
+  constructor(size) {
     this.sharedBuffer = new ArrayBuffer(size);
     this.memory = [];
     this.memory[1] = new Uint8Array(this.sharedBuffer);
@@ -195,33 +212,41 @@ class MMIO{
     this.size = this.sharedBuffer.byteLength;
   }
 
-  load(addr, size){
-    addr &= 0xFFFF;
-    if(addr > this.size){
-      postMessage({type: "sim_log", subtype: "error", msg: "MMIO Access Error"});
+  load(addr, size) {
+    addr &= 0xffff;
+    if (addr > this.size) {
+      postMessage({
+        type: "sim_log",
+        subtype: "error",
+        msg: "MMIO Access Error",
+      });
     }
-    return this.memory[size][(addr/size) | 0];
+    return this.memory[size][(addr / size) | 0];
   }
 
-  store(addr, size, value){
-    addr &= 0xFFFF;
-    if(addr > this.size){
-      postMessage({type: "sim_log", subtype: "error", msg: "MMIO Access Error"});
+  store(addr, size, value) {
+    addr &= 0xffff;
+    if (addr > this.size) {
+      postMessage({
+        type: "sim_log",
+        subtype: "error",
+        msg: "MMIO Access Error",
+      });
     }
-    this.memory[size][(addr/size) | 0] = value;
+    this.memory[size][(addr / size) | 0] = value;
     bus_sync.add_mmio_update(addr, size, value);
   }
 
-  update_store(addr, size, value){
-    addr &= 0xFFFF;
-    this.memory[size][(addr/size) | 0] = value;
+  update_store(addr, size, value) {
+    addr &= 0xffff;
+    this.memory[size][(addr / size) | 0] = value;
   }
 }
 
 var mmio = new MMIO(0x10000);
 
-class BusSync{
-  constructor(mmio){
+class BusSync {
+  constructor(mmio) {
     this.mmio = mmio;
     this.stdout_buffer = "";
     this.stderr_buffer = "";
@@ -235,10 +260,10 @@ class BusSync{
     this.max_buffer_size = 4096;
   }
 
-  add_mmio_update(addr, size, value){
+  add_mmio_update(addr, size, value) {
     for (let i = 0; i < size; i++) {
-      const idx = (addr + i) & 0xFFFF;
-      this.mmio_buffer[idx] = (value >> (i*8)) & 0xFF;
+      const idx = (addr + i) & 0xffff;
+      this.mmio_buffer[idx] = (value >> (i * 8)) & 0xff;
       if (this.dirty_flags[idx] === 0) {
         this.dirty_flags[idx] = 1;
         this.dirty_indices[this.dirty_count++] = idx;
@@ -247,40 +272,49 @@ class BusSync{
     this.is_dirty = true;
   }
 
-  add_stdout(text){
-    this.stdout_buffer += `${text}\n`; 
+  add_stdout(text) {
+    this.stdout_buffer += `${text}\n`;
     this.is_dirty = true;
     this.check_auto_flush();
   }
 
-  add_stderr(text){
-    this.stderr_buffer += `${text}\n`; 
+  add_stderr(text) {
+    this.stderr_buffer += `${text}\n`;
     this.is_dirty = true;
     this.check_auto_flush();
   }
 
-  check_auto_flush(){
+  check_auto_flush() {
     const now = performance.now();
     const buffer_len = this.stdout_buffer.length + this.stderr_buffer.length;
-    if (buffer_len >= this.max_buffer_size || (now - this.last_flush_time >= this.flush_interval_ms)) {
+    if (
+      buffer_len >= this.max_buffer_size ||
+      now - this.last_flush_time >= this.flush_interval_ms
+    ) {
       this.sync();
     }
   }
 
-  merge(extern_mmio_buffer){
+  merge(extern_mmio_buffer) {
     if (!extern_mmio_buffer) return;
     const keys = Object.keys(extern_mmio_buffer);
     for (let k = 0; k < keys.length; k++) {
       const idx = keys[k];
       const value = extern_mmio_buffer[idx];
-      if (this.dirty_flags[idx] === 0) { // processor priority
+      if (this.dirty_flags[idx] === 0) {
+        // processor priority
         this.mmio.memory[1][idx] = value;
       }
     }
   }
 
-  sync(){
-    if (!this.is_dirty && this.stdout_buffer.length === 0 && this.stderr_buffer.length === 0 && this.dirty_count === 0) {
+  sync() {
+    if (
+      !this.is_dirty &&
+      this.stdout_buffer.length === 0 &&
+      this.stderr_buffer.length === 0 &&
+      this.dirty_count === 0
+    ) {
       return;
     }
     let mmio_updates = null;
@@ -297,76 +331,87 @@ class BusSync{
       type: "sync",
       mmio_buffer: mmio_updates,
       stdout: this.stdout_buffer,
-      stderr: this.stderr_buffer
+      stderr: this.stderr_buffer,
     });
     this.stdout_buffer = "";
     this.stderr_buffer = "";
     this.is_dirty = false;
     this.last_flush_time = performance.now();
   }
-
 }
 
 var bus_sync = new BusSync(mmio);
 
-class InterruptionController{
-  constructor(){
+class InterruptionController {
+  constructor() {
     this.state = 0;
     this.interrupt_enabled = 1;
   }
 
-  changeState(state){
+  changeState(state) {
     this.state = state;
   }
 
-  get interrupt(){
+  get interrupt() {
     let res = this.state;
     this.state = 0;
     return res;
   }
 
-  get interruptEnabled(){
+  get interruptEnabled() {
     return this.interrupt_enabled;
   }
 }
 
-class SyscallEmulator{
-  constructor(){
+class SyscallEmulator {
+  constructor() {
     this.syscalls = {};
   }
 
-  register(number, code){
+  register(number, code) {
     try {
-      this.syscalls[number] = new Function('a0', 'a1', 'a2', 'a3', 'a7', 'sendMessage', 'postMessage', code);
-    } catch(e) {
-      console.warn(`Failed to pre-compile syscall ${number}, falling back to string:`, e);
+      this.syscalls[number] = new Function(
+        "a0",
+        "a1",
+        "a2",
+        "a3",
+        "a7",
+        "sendMessage",
+        "postMessage",
+        code,
+      );
+    } catch (e) {
+      console.warn(
+        `Failed to pre-compile syscall ${number}, falling back to string:`,
+        e,
+      );
       this.syscalls[number] = code;
     }
   }
 
-  unregister(number){
+  unregister(number) {
     delete this.syscalls[number];
   }
 
-  run(a0, a1, a2, a3, a7){
+  run(a0, a1, a2, a3, a7) {
     const fn = this.syscalls[a7];
-    if(fn !== undefined){
-      var sendMessage = function(msg){
-        postMessage({type: "device_message", syscall: a7, message: msg});
-        if(syscall_delay){
+    if (fn !== undefined) {
+      var sendMessage = function (msg) {
+        postMessage({ type: "device_message", syscall: a7, message: msg });
+        if (syscall_delay) {
           let start = performance.now();
-          while(performance.now() - start < syscall_delay);
+          while (performance.now() - start < syscall_delay);
         }
       };
-      if (typeof fn === 'function') {
+      if (typeof fn === "function") {
         fn(a0, a1, a2, a3, a7, sendMessage, postMessage);
       } else {
         eval(fn);
       }
       return a0;
-    }else{
+    } else {
       var text = "Invalid syscall: " + a7;
-      postMessage({type: "sim_log", subtype: "error", msg: text});
+      postMessage({ type: "sim_log", subtype: "error", msg: text });
       return 0;
     }
   }
@@ -375,9 +420,8 @@ class SyscallEmulator{
 var syscall_emulator = new SyscallEmulator();
 var intController = new InterruptionController();
 
-
-function getStdin (count){
-  if(stdinBuffer.length == 0 && !non_blocking_io){
+function getStdin(count) {
+  if (stdinBuffer.length == 0 && !non_blocking_io) {
     wait_for_input_alert();
     return -1;
   }
@@ -387,57 +431,217 @@ function getStdin (count){
 }
 
 var last_wait_for_input_alert_sent = 0;
-function wait_for_input_alert(){
+function wait_for_input_alert() {
   bus_sync.sync();
-  if(performance.now() - last_wait_for_input_alert_sent > 5000){
-    postMessage({type: "sim_log", subtype: "info", msg: "Waiting for Input..."});
+  if (performance.now() - last_wait_for_input_alert_sent > 5000) {
+    postMessage({
+      type: "sim_log",
+      subtype: "info",
+      msg: "Waiting for Input...",
+    });
     last_wait_for_input_alert_sent = performance.now();
   }
 }
 
-function getInteractiveCommand (){
+function getInteractiveCommand() {
   let res = interactiveBufferString;
   interactiveBufferString = "";
   return res;
 }
 
-function initFS() {
-  console.log(files);
-  FS.init(null, null, null);
-  FS.mkdir('/working');
-  if(files){
-    FS.mount(WORKERFS, {
-      files: files, // Array of File objects or FileList
-    }, '/working');
-    for (let index = 0; index < files.length; index++) {
-      FS.symlink('/working/' + files[index].name, '/' + files[index].name.replace(" ", "_"));
-    }
+function customSyscall(a0, a1, a2, a3, a7) {
+  if (
+    typeof syscall_emulator !== "undefined" &&
+    syscall_emulator.syscalls &&
+    syscall_emulator.syscalls[a7] !== undefined
+  ) {
+    var ret = syscall_emulator.run(a0, a1, a2, a3, a7);
+    return ret !== undefined ? ret : 1;
+  }
+  return 0;
+}
+
+function jsExternalInterrupt() {
+  return typeof intController !== "undefined" ? intController.interrupt : 0;
+}
+
+function jsInterruptEnabled() {
+  return typeof intController !== "undefined"
+    ? intController.interruptEnabled
+    : 1;
+}
+
+function jsGetIntInstDelay() {
+  return typeof simulator_int_inst_delay !== "undefined"
+    ? simulator_int_inst_delay
+    : 1000;
+}
+
+function jsGetSleepDuration(type) {
+  return typeof simulator_sleep !== "undefined" ? simulator_sleep[type] : 0;
+}
+
+function jsReadMMIO(addr, size) {
+  return typeof mmio !== "undefined" ? mmio.load(addr, size) : 0;
+}
+
+function jsWriteMMIO(addr, size, val) {
+  if (typeof mmio !== "undefined") mmio.store(addr, size, val);
+}
+
+function jsSimStop(snapshot) {
+  if (typeof finishExec === "function") finishExec(snapshot);
+}
+
+function readFromStdin(buf_ptr, count) {
+  if (typeof getStdin !== "function") return -1;
+  var input = getStdin(count);
+  if (input === -1 || !input) return -1;
+  if (typeof self.wasmMemory !== "undefined") {
+    new Uint8Array(self.wasmMemory.buffer).set(input, buf_ptr);
+  }
+  return input.length;
+}
+
+function readInteractiveCommand(pstr) {
+  if (typeof getInteractiveCommand !== "function") return 0;
+  var cmd = getInteractiveCommand();
+  if (!cmd) return 0;
+  if (typeof self.wasmMemory !== "undefined") {
+    var encoder = new TextEncoder();
+    var bytes = encoder.encode(cmd + "\0");
+    new Uint8Array(self.wasmMemory.buffer).set(bytes, pstr);
+  }
+  return 1;
+}
+
+function jsPrint(msg) {
+  var currentMod = self.Module || {};
+  if (typeof currentMod.print === "function") {
+    if (msg.endsWith("\n")) msg = msg.slice(0, -1);
+    currentMod.print(msg);
+  } else {
+    console.log(msg);
   }
 }
 
-function finishExec() {
+function jsPrintErr(msg) {
+  var currentMod = self.Module || {};
+  if (typeof currentMod.printErr === "function") {
+    if (msg.endsWith("\n")) msg = msg.slice(0, -1);
+    currentMod.printErr(msg);
+  } else {
+    console.warn(msg);
+  }
+}
+
+function getBinaryBytes() {
+  var filename = null;
+  var currentMod = self.Module || {};
+  if (currentMod.arguments && currentMod.arguments.length > 0) {
+    for (var i = 0; i < currentMod.arguments.length; i++) {
+      var arg = currentMod.arguments[i];
+      if (
+        !arg.startsWith("-") &&
+        arg !== "/working" &&
+        !arg.startsWith("/working/")
+      ) {
+        filename = arg;
+        break;
+      }
+    }
+  }
+  if (typeof files !== "undefined" && files && files.length > 0) {
+    var reader = new FileReaderSync();
+    if (filename) {
+      for (var j = 0; j < files.length; j++) {
+        var fname = files[j].name;
+        if (
+          fname === filename ||
+          fname.replace(/ /g, "_") === filename ||
+          filename.endsWith(fname)
+        ) {
+          return new Uint8Array(reader.readAsArrayBuffer(files[j]));
+        }
+      }
+    }
+    return new Uint8Array(reader.readAsArrayBuffer(files[0]));
+  }
+  return new Uint8Array([]);
+}
+
+function runSimulation() {
+  try {
+    importScripts("pkg/rust_whisper.js");
+    const bindgen =
+      typeof wasm_bindgen !== "undefined" ? wasm_bindgen : self.wasm_bindgen;
+    const { Simulator, initSync } = bindgen;
+
+    var wasmModule = self.precompiledWhisperModule;
+    if (!wasmModule) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", "pkg/rust_whisper_bg.wasm", false);
+      xhr.responseType = "arraybuffer";
+      xhr.send(null);
+      wasmModule = new WebAssembly.Module(xhr.response);
+    }
+    const wasmExports = initSync(wasmModule);
+    self.wasmMemory = wasmExports.memory;
+
+    var binaryBytes = getBinaryBytes();
+    var currentMod = self.Module || {};
+    var args = currentMod.arguments || [];
+
+    self.wasmSimulator = new Simulator();
+    let entryPoint = self.wasmSimulator.load_binary(binaryBytes, args);
+
+    if (args.includes("--interactive") || self.debugModeActive) {
+      self.wasmSimulator.set_debug_mode(true);
+      let snapshot = self.wasmSimulator.get_snapshot_js(false, 0);
+      postMessage({ type: "debug_state", state: snapshot });
+    } else {
+      self.wasmSimulator.run_full();
+      if (typeof finishExec === "function") finishExec();
+    }
+  } catch (e) {
+    console.error("Rust Whisper execution failure:", e);
+    if (typeof finishExec === "function") finishExec();
+  }
+}
+
+function finishExec(passedSnapshot) {
   if (self.execFinished) return;
   self.execFinished = true;
   bus_sync.sync();
   let executionEndTime = performance.now();
-  let elapsedTimeMs = executionEndTime - (self.executionStartTime || executionEndTime);
+  let elapsedTimeMs =
+    executionEndTime - (self.executionStartTime || executionEndTime);
 
-  let snapshot = null;
-  const wasmSim = self.wasmSimulator || (typeof wasmSimulator !== 'undefined' ? wasmSimulator : null);
-  if (wasmSim) {
+  let snapshot = passedSnapshot || null;
+  if (
+    !snapshot &&
+    typeof self.wasmSimulator !== "undefined" &&
+    self.wasmSimulator
+  ) {
     try {
-      snapshot = wasmSim.get_snapshot_js(false, 0);
-    } catch(e) {
+      snapshot = self.wasmSimulator.get_snapshot_js(false, 0);
+    } catch (e) {
       console.warn("Failed to get WASM simulator snapshot:", e);
     }
   }
 
-  let totalInstructions = snapshot ? (snapshot.step_count || 0) : 0;
+  let totalInstructions = snapshot ? snapshot.step_count || 0 : 0;
   let elapsedSeconds = elapsedTimeMs / 1000;
-  let ips = elapsedSeconds > 0 ? Math.round(totalInstructions / elapsedSeconds) : 0;
-  let mips = elapsedSeconds > 0 ? Number((totalInstructions / (elapsedSeconds * 1000000)).toFixed(3)) : 0;
-  let finalPC = snapshot ? (snapshot.pc >>> 0).toString(16).padStart(8, '0') : null;
-  let exitCode = (snapshot && snapshot.gpr) ? (snapshot.gpr[10] >>> 0) : 0;
+  let ips =
+    elapsedSeconds > 0 ? Math.round(totalInstructions / elapsedSeconds) : 0;
+  let mips =
+    elapsedSeconds > 0
+      ? Number((totalInstructions / (elapsedSeconds * 1000000)).toFixed(3))
+      : 0;
+  let finalPC = snapshot
+    ? (snapshot.pc >>> 0).toString(16).padStart(8, "0")
+    : null;
+  let exitCode = snapshot && snapshot.gpr ? snapshot.gpr[10] >>> 0 : 0;
 
   postMessage({
     type: "status",
@@ -449,25 +653,29 @@ function finishExec() {
         ips,
         mips,
         finalPC,
-        exitCode
-      }
-    }
+        exitCode,
+      },
+    },
   });
 }
 
 var xhr = new XMLHttpRequest();
-function getDebugMsg(){
+function getDebugMsg() {
   postGDBWaiting = 1;
-  while(1){
-    try{
-      xhr.open("GET", "http://127.0.0.1:5689/gdbInput", false);  // synchronous request
+  while (1) {
+    try {
+      xhr.open("GET", "http://127.0.0.1:5689/gdbInput", false); // synchronous request
       xhr.send(null);
-      if(xhr.status === 200){
+      if (xhr.status === 200) {
         return xhr.responseText;
       }
-    }catch(e){
-      if(postGDBWaiting){
-        postMessage({type: "sim_log", subtype: "info", msg: "Waiting for GDB..."});
+    } catch (e) {
+      if (postGDBWaiting) {
+        postMessage({
+          type: "sim_log",
+          subtype: "info",
+          msg: "Waiting for GDB...",
+        });
         postGDBWaiting = 0;
       }
     }
@@ -475,18 +683,22 @@ function getDebugMsg(){
 }
 
 var xhrS = new XMLHttpRequest();
-function sendDebugMsg(msg){
+function sendDebugMsg(msg) {
   postGDBWaiting = 1;
-  while(1){
+  while (1) {
     try {
-      xhrS.open("POST", "http://127.0.0.1:5689/gdbInput", false);  // synchronous request
+      xhrS.open("POST", "http://127.0.0.1:5689/gdbInput", false); // synchronous request
       xhrS.send(msg);
-      if(xhrS.status === 200){
+      if (xhrS.status === 200) {
         return;
       }
     } catch (error) {
-      if(postGDBWaiting){
-        postMessage({type: "sim_log", subtype: "info", msg: "Waiting for GDB..."});
+      if (postGDBWaiting) {
+        postMessage({
+          type: "sim_log",
+          subtype: "info",
+          msg: "Waiting for GDB...",
+        });
         postGDBWaiting = 0;
       }
     }
@@ -495,21 +707,30 @@ function sendDebugMsg(msg){
 
 var Module = {
   // arguments : ["--version"],
-  arguments : ["--newlib", "/working/ex2", "--isa", "acdfimsu", "--setreg", "sp=0x10000"],
-  instantiateWasm: function(imports, successCallback) {
+  arguments: [
+    "--newlib",
+    "/working/ex2",
+    "--isa",
+    "acdfimsu",
+    "--setreg",
+    "sp=0x10000",
+  ],
+  instantiateWasm: function (imports, successCallback) {
     if (precompiledWhisperModule) {
-      WebAssembly.instantiate(precompiledWhisperModule, imports).then(function(instance) {
-        successCallback(instance, precompiledWhisperModule);
-      }).catch(function(err) {
-        console.error("Precompiled Whisper WASM instantiation error:", err);
-      });
+      WebAssembly.instantiate(precompiledWhisperModule, imports)
+        .then(function (instance) {
+          successCallback(instance, precompiledWhisperModule);
+        })
+        .catch(function (err) {
+          console.error("Precompiled Whisper WASM instantiation error:", err);
+        });
       return {};
     }
     return false;
   },
-  preRun : [initFS],
-  print : bus_sync.add_stdout.bind(bus_sync),
-  printErr : bus_sync.add_stderr.bind(bus_sync)
+  preRun: [],
+  print: bus_sync.add_stdout.bind(bus_sync),
+  printErr: bus_sync.add_stderr.bind(bus_sync),
 };
 
-postMessage({type:"status", status:{starting:true}});
+postMessage({ type: "status", status: { starting: true } });

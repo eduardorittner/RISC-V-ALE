@@ -1,0 +1,5 @@
+service_worker.js
+modules/pkg/**
+node_modules/**
+crates/rust-whisper/SweRV-ISS-1/**
+assets/js/**

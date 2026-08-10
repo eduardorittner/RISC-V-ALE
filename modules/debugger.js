@@ -34,7 +34,9 @@ export class VisualDebuggerUI {
     this.gprContainer = document.getElementById("gpr_grid_container");
     this.fprContainer = document.getElementById("fpr_grid_container");
     this.csrContainer = document.getElementById("csr_grid_container");
-    this.hexBody = document.getElementById("debug_hex_body") || document.getElementById("debug_hex_editor");
+    this.hexBody =
+      document.getElementById("debug_hex_body") ||
+      document.getElementById("debug_hex_editor");
     this.stackBody = document.getElementById("debug_stack_body");
     this.spValDisplay = document.getElementById("debug_sp_val");
     this.pcDisplay = document.getElementById("debug_pc_display");
@@ -65,17 +67,22 @@ export class VisualDebuggerUI {
   }
 
   bindEvents() {
-    if (this.btnStepInto) this.btnStepInto.onclick = () => this.controller.debugStep();
-    if (this.btnStepOver) this.btnStepOver.onclick = () => this.controller.debugStepOver();
-    if (this.btnStepOut) this.btnStepOut.onclick = () => this.controller.debugStepOut();
-    if (this.btnContinue) this.btnContinue.onclick = () => {
-      this.setStateBadge("RUNNING", "badge-success");
-      this.controller.debugContinue();
-    };
-    if (this.btnPause) this.btnPause.onclick = () => {
-      this.setStateBadge("PAUSED", "badge-warning");
-      this.controller.debugPause();
-    };
+    if (this.btnStepInto)
+      this.btnStepInto.onclick = () => this.controller.debugStep();
+    if (this.btnStepOver)
+      this.btnStepOver.onclick = () => this.controller.debugStepOver();
+    if (this.btnStepOut)
+      this.btnStepOut.onclick = () => this.controller.debugStepOut();
+    if (this.btnContinue)
+      this.btnContinue.onclick = () => {
+        this.setStateBadge("RUNNING", "badge-success");
+        this.controller.debugContinue();
+      };
+    if (this.btnPause)
+      this.btnPause.onclick = () => {
+        this.setStateBadge("PAUSED", "badge-warning");
+        this.controller.debugPause();
+      };
     if (this.btnReset) this.btnReset.onclick = () => this.resetDebugger();
 
     if (this.regFormatSelect) {
@@ -97,7 +104,12 @@ export class VisualDebuggerUI {
 
   bindKeyboardShortcuts() {
     window.addEventListener("keydown", (e) => {
-      if (!this.debugTab || this.debugTab.hidden || this.debugTab.style.display === "none") return;
+      if (
+        !this.debugTab ||
+        this.debugTab.hidden ||
+        this.debugTab.style.display === "none"
+      )
+        return;
 
       if (e.key === "F11") {
         e.preventDefault();
@@ -162,8 +174,11 @@ export class VisualDebuggerUI {
       this.setStateBadge("PAUSED", "badge-warning");
     }
 
-    if (this.pcDisplay) this.pcDisplay.innerText = "0x" + (snapshot.pc >>> 0).toString(16).padStart(8, "0");
-    if (this.cycleCounter) this.cycleCounter.innerText = (snapshot.step_count || 0).toLocaleString();
+    if (this.pcDisplay)
+      this.pcDisplay.innerText =
+        "0x" + (snapshot.pc >>> 0).toString(16).padStart(8, "0");
+    if (this.cycleCounter)
+      this.cycleCounter.innerText = (snapshot.step_count || 0).toLocaleString();
 
     this.renderRegisters(snapshot.gpr);
     this.renderFPRRegisters(snapshot.fpr);
@@ -174,8 +189,10 @@ export class VisualDebuggerUI {
     this.controller.debugFetchDisassembly(startAddr, 128);
 
     // Fetch memory around SP (x2)
-    const sp = snapshot.gpr ? snapshot.gpr[2] : 0x7FFFFFC;
-    if (this.spValDisplay) this.spValDisplay.innerText = "0x" + (sp >>> 0).toString(16).padStart(8, "0");
+    const sp = snapshot.gpr ? snapshot.gpr[2] : 0x7fffffc;
+    if (this.spValDisplay)
+      this.spValDisplay.innerText =
+        "0x" + (sp >>> 0).toString(16).padStart(8, "0");
     this.renderStack(sp);
 
     // Fetch memory slice for memory inspector
@@ -195,7 +212,11 @@ export class VisualDebuggerUI {
     const renderItem = (item) => {
       const isPC = item.address === this.currentPC;
       const isBp = this.breakpoints.has(item.address);
-      const pcClass = isPC ? (isHalted ? "pc-line pc-line-halted" : "pc-line") : "";
+      const pcClass = isPC
+        ? isHalted
+          ? "pc-line pc-line-halted"
+          : "pc-line"
+        : "";
       const bpClass = isBp ? "active-bp" : "";
       const pcMarker = isPC ? (isHalted ? "🛑" : "➔") : "➔";
 
@@ -229,7 +250,9 @@ export class VisualDebuggerUI {
 
     items.forEach((item) => {
       const isZeroOpcode =
-        (item.opcode_hex === "0000" || item.opcode_hex === "00000000" || item.asm_text.startsWith("c.addi4spn")) &&
+        (item.opcode_hex === "0000" ||
+          item.opcode_hex === "00000000" ||
+          item.asm_text.startsWith("c.addi4spn")) &&
         item.address !== this.currentPC &&
         !this.breakpoints.has(item.address) &&
         !item.label;
@@ -265,7 +288,10 @@ export class VisualDebuggerUI {
       for (let i = 0; i < items.length; i++) {
         if (items[i].address <= this.currentPC && items[i].label) {
           const offset = this.currentPC - items[i].address;
-          activeSymbol = offset === 0 ? `<${items[i].label}>` : `<${items[i].label} + 0x${offset.toString(16)}>`;
+          activeSymbol =
+            offset === 0
+              ? `<${items[i].label}>`
+              : `<${items[i].label} + 0x${offset.toString(16)}>`;
         }
       }
     }
@@ -316,10 +342,38 @@ export class VisualDebuggerUI {
   renderRegisters(gpr) {
     if (!gpr || !this.gprContainer) return;
     const regNames = [
-      "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
-      "s0/fp", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
-      "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
-      "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
+      "zero",
+      "ra",
+      "sp",
+      "gp",
+      "tp",
+      "t0",
+      "t1",
+      "t2",
+      "s0/fp",
+      "s1",
+      "a0",
+      "a1",
+      "a2",
+      "a3",
+      "a4",
+      "a5",
+      "a6",
+      "a7",
+      "s2",
+      "s3",
+      "s4",
+      "s5",
+      "s6",
+      "s7",
+      "s8",
+      "s9",
+      "s10",
+      "s11",
+      "t3",
+      "t4",
+      "t5",
+      "t6",
     ];
 
     let html = "";
@@ -345,7 +399,10 @@ export class VisualDebuggerUI {
     this.gprContainer.querySelectorAll(".reg-cell").forEach((cell) => {
       cell.ondblclick = () => {
         const regIdx = parseInt(cell.getAttribute("data-reg"), 10);
-        const newVal = prompt(`Enter new value for register x${regIdx}:`, "0x" + (gpr[regIdx] >>> 0).toString(16));
+        const newVal = prompt(
+          `Enter new value for register x${regIdx}:`,
+          "0x" + (gpr[regIdx] >>> 0).toString(16),
+        );
         if (newVal !== null) {
           const parsed = parseInt(newVal, 16) || parseInt(newVal, 10) || 0;
           this.controller.debugPokeRegister(regIdx, parsed);
@@ -353,7 +410,7 @@ export class VisualDebuggerUI {
       };
     });
 
-    this.previousRegisters = gpr.map(v => v >>> 0);
+    this.previousRegisters = gpr.map((v) => v >>> 0);
   }
 
   renderFPRRegisters(fpr) {
@@ -385,7 +442,7 @@ export class VisualDebuggerUI {
       html += `
         <div class="col-6 col-md-4 p-1">
           <div class="reg-cell">
-            <span class="text-danger font-weight-bold">${csrNames[i] || 'csr'}</span>:
+            <span class="text-danger font-weight-bold">${csrNames[i] || "csr"}</span>:
             <span class="reg-val">${valHex}</span>
           </div>
         </div>
@@ -396,9 +453,14 @@ export class VisualDebuggerUI {
 
   formatRegValue(val) {
     switch (this.registerFormat) {
-      case "sdec": return (val | 0).toString(10);
-      case "udec": return (val >>> 0).toString(10);
-      case "ascii": return val >= 32 && val <= 126 ? `'${String.fromCharCode(val)}'` : "\\0";
+      case "sdec":
+        return (val | 0).toString(10);
+      case "udec":
+        return (val >>> 0).toString(10);
+      case "ascii":
+        return val >= 32 && val <= 126
+          ? `'${String.fromCharCode(val)}'`
+          : "\\0";
       case "hex":
       default:
         return "0x" + (val >>> 0).toString(16).padStart(8, "0");
@@ -480,7 +542,10 @@ export class VisualDebuggerUI {
       elem.ondblclick = () => {
         const addr = parseInt(elem.getAttribute("data-addr"), 10);
         const currentHex = elem.innerText.trim();
-        const newVal = prompt(`Edit RAM byte at 0x${addr.toString(16)}:`, "0x" + currentHex);
+        const newVal = prompt(
+          `Edit RAM byte at 0x${addr.toString(16)}:`,
+          "0x" + currentHex,
+        );
         if (newVal !== null) {
           const parsed = parseInt(newVal, 16) || parseInt(newVal, 10) || 0;
           this.controller.debugPokeMemory(addr, parsed & 0xff);
@@ -492,7 +557,7 @@ export class VisualDebuggerUI {
   renderStack(sp) {
     if (!this.stackBody) return;
     let html = "";
-    const baseSp = (sp >>> 0);
+    const baseSp = sp >>> 0;
 
     for (let offset = 0; offset <= 32; offset += 4) {
       const addr = (baseSp + offset) >>> 0;
@@ -513,9 +578,24 @@ export class VisualDebuggerUI {
   }
 
   initPanelResizers() {
-    this.setupVerticalResizer("gutter_top_v", "dock_panel_source", "dock_panel_regs", "dock_top_row");
-    this.setupVerticalResizer("gutter_bottom_v", "dock_panel_mem", "dock_panel_stack", "dock_bottom_row");
-    this.setupHorizontalResizer("gutter_main_h", "dock_top_row", "dock_bottom_row", "debug-dock-container");
+    this.setupVerticalResizer(
+      "gutter_top_v",
+      "dock_panel_source",
+      "dock_panel_regs",
+      "dock_top_row",
+    );
+    this.setupVerticalResizer(
+      "gutter_bottom_v",
+      "dock_panel_mem",
+      "dock_panel_stack",
+      "dock_bottom_row",
+    );
+    this.setupHorizontalResizer(
+      "gutter_main_h",
+      "dock_top_row",
+      "dock_bottom_row",
+      "debug-dock-container",
+    );
   }
 
   setupVerticalResizer(gutterId, leftPanelId, rightPanelId, rowId) {
@@ -547,7 +627,7 @@ export class VisualDebuggerUI {
 
         const leftPercent = (newLeftWidth / totalWidth) * 100;
         leftPanel.style.width = leftPercent + "%";
-        rightPanel.style.width = (100 - leftPercent) + "%";
+        rightPanel.style.width = 100 - leftPercent + "%";
       };
 
       const onMouseUp = () => {
@@ -579,7 +659,8 @@ export class VisualDebuggerUI {
 
       const startY = e.clientY;
       const startTopHeight = topRow.getBoundingClientRect().height;
-      const totalHeight = container.getBoundingClientRect().height - gutter.offsetHeight;
+      const totalHeight =
+        container.getBoundingClientRect().height - gutter.offsetHeight;
 
       const onMouseMove = (moveEvt) => {
         const dy = moveEvt.clientY - startY;
@@ -592,7 +673,7 @@ export class VisualDebuggerUI {
 
         const topPercent = (newTopHeight / totalHeight) * 100;
         topRow.style.height = topPercent + "%";
-        bottomRow.style.height = (100 - topPercent) + "%";
+        bottomRow.style.height = 100 - topPercent + "%";
       };
 
       const onMouseUp = () => {
@@ -611,7 +692,9 @@ export class VisualDebuggerUI {
   initPanelDragAndDrop() {
     let draggedCardId = null;
 
-    const cardHeaders = document.querySelectorAll(".dock-panel .card-header[draggable='true']");
+    const cardHeaders = document.querySelectorAll(
+      ".dock-panel .card-header[draggable='true']",
+    );
     const dockPanels = document.querySelectorAll(".dock-panel");
 
     cardHeaders.forEach((header) => {
@@ -647,7 +730,8 @@ export class VisualDebuggerUI {
         e.preventDefault();
         panel.classList.remove("drag-over-slot");
 
-        const sourceCardId = e.dataTransfer.getData("text/plain") || draggedCardId;
+        const sourceCardId =
+          e.dataTransfer.getData("text/plain") || draggedCardId;
         if (!sourceCardId) return;
 
         const sourceCard = document.getElementById(sourceCardId);
@@ -680,17 +764,24 @@ function highlightAsm(asmText) {
   let text = escapeHtml(asmText);
 
   // Symbol references <name> or <name + 0x4>
-  text = text.replace(/(&lt;[^&]+&gt;)/g, '<span class="asm-sym-ref">$1</span>');
+  text = text.replace(
+    /(&lt;[^&]+&gt;)/g,
+    '<span class="asm-sym-ref">$1</span>',
+  );
 
   // Mnemonic instruction keyword at start of text
   text = text.replace(/^([a-z0-9\._]+)/i, '<span class="asm-inst">$1</span>');
 
   // Registers
-  const regRegex = /\b(x[0-9]{1,2}|f[0-9]{1,2}|zero|ra|sp|gp|tp|t[0-6]|s[0-9]{1,2}|a[0-7]|ft[0-9]{1,2}|fs[0-9]{1,2}|fa[0-7])\b/g;
+  const regRegex =
+    /\b(x[0-9]{1,2}|f[0-9]{1,2}|zero|ra|sp|gp|tp|t[0-6]|s[0-9]{1,2}|a[0-7]|ft[0-9]{1,2}|fs[0-9]{1,2}|fa[0-7])\b/g;
   text = text.replace(regRegex, '<span class="asm-reg">$1</span>');
 
   // Immediates & numbers
-  text = text.replace(/\b(-?(?:0x[0-9a-fA-F]+|[0-9]+))\b/g, '<span class="asm-imm">$1</span>');
+  text = text.replace(
+    /\b(-?(?:0x[0-9a-fA-F]+|[0-9]+))\b/g,
+    '<span class="asm-imm">$1</span>',
+  );
 
   return text;
 }

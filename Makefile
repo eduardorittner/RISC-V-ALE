@@ -1,7 +1,12 @@
-.PHONY: gh-pages perf HEAD
+.PHONY: build format gh-pages perf HEAD
 
-gh-pages:
-	./scripts/deploy_gh_pages.sh
+build:
+	wasm-pack build --target no-modules --out-dir ../../modules/pkg crates/rust-whisper
+	python3 update_cache.py
+
+format:
+	npx prettier --write "*.js" "modules/*.js" "!modules/pkg/**"
+	cargo fmt --manifest-path crates/rust-whisper/Cargo.toml
 
 # ─── Performance Testing Harness ───────────────────────────────────────────
 #
@@ -57,3 +62,6 @@ perf:
 	fi
 	node scripts/perf/harness.js $(PERF_ARGS)
 endif
+
+gh-pages:
+	./scripts/deploy_gh_pages.sh
