@@ -1,5 +1,6 @@
 import { simulator_controller } from "./simulator.js";
 import { compiler } from "./compiler.js";
+import { base64ToArrayBuffer } from "./utils.js";
 
 export class Connection {
   constructor() {
@@ -31,16 +32,6 @@ export class Connection {
   }
 
   load_add_file_from_base64(params) {
-    var base64ToArrayBuffer = function (base64) {
-      var binaryString = window.atob(base64);
-      var binaryLen = binaryString.length;
-      var bytes = new Uint8Array(binaryLen);
-      for (var i = 0; i < binaryLen; i++) {
-        var ascii = binaryString.charCodeAt(i);
-        bytes[i] = ascii;
-      }
-      return bytes;
-    };
     var bytes = base64ToArrayBuffer(params.str64);
     var blob = new Blob([bytes], { type: "application/binary" });
     let file = new File([blob], params.name);
@@ -53,16 +44,6 @@ export class Connection {
   }
 
   load_file_from_base64(params) {
-    var base64ToArrayBuffer = function (base64) {
-      var binaryString = window.atob(base64);
-      var binaryLen = binaryString.length;
-      var bytes = new Uint8Array(binaryLen);
-      for (var i = 0; i < binaryLen; i++) {
-        var ascii = binaryString.charCodeAt(i);
-        bytes[i] = ascii;
-      }
-      return bytes;
-    };
     var bytes = base64ToArrayBuffer(params.str64);
     var blob = new Blob([bytes], { type: "application/binary" });
     let file = new File([blob], params.name);
