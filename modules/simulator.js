@@ -1,4 +1,4 @@
-class MMIO {
+export class MMIO {
   constructor(size) {
     this.sharedBuffer = new ArrayBuffer(size);
     this.memory = [];
@@ -20,7 +20,9 @@ class MMIO {
   store(addr, size, value) {
     addr &= 0xffff;
     this.memory[size][(addr / size) | 0] = value;
-    simulator_controller.add_mmio_update(addr, size, value);
+    if (typeof simulator_controller !== "undefined" && simulator_controller) {
+      simulator_controller.add_mmio_update(addr, size, value);
+    }
   }
 
   update_store(addr, size, value) {
@@ -31,11 +33,21 @@ class MMIO {
 
 class SimulatorController {
   constructor() {
-    this.stdio_ch = new BroadcastChannel("stdio_channel" + window.uniq_id);
+    if (typeof window === "undefined") {
+      this.stdio_ch = { postMessage: () => {}, onmessage: null };
+      this.sim_status_ch = { postMessage: () => {}, onmessage: null };
+      this.bus_ch = { postMessage: () => {}, onmessage: null };
+      this.bus_freq_limit = 1000;
+      this.int_cont_freq_scale = 25;
+      this.last_loaded_files = [];
+      return;
+    }
+    const uniq_id = window.uniq_id || "";
+    this.stdio_ch = new BroadcastChannel("stdio_channel" + uniq_id);
     this.sim_status_ch = new BroadcastChannel(
-      "simulator_status" + window.uniq_id,
+      "simulator_status" + uniq_id,
     );
-    this.bus_ch = new BroadcastChannel("bus_channel" + window.uniq_id);
+    this.bus_ch = new BroadcastChannel("bus_channel" + uniq_id);
     this.bus_freq_limit = 1000;
     this.int_cont_freq_scale = 25;
     this.last_loaded_files = [];
@@ -44,7 +56,7 @@ class SimulatorController {
     this.initPromise = null;
     this.idle_worker = null;
     window.__ale__ = {
-      uniq_id: window.uniq_id,
+      uniq_id: uniq_id,
       sim_status_ch: this.sim_status_ch,
     };
     this.init_wasm_cache().then(() => {
@@ -196,6 +208,7 @@ class SimulatorController {
   }
 
   add_mmio_update(addr, size, value) {
+    if (!this.mmio_write_buffer) return;
     for (let i = 0; i < size; i++) {
       const idx = (addr + i) & 0xffff;
       this.mmio_write_buffer[idx] = (value >> (i * 8)) & 0xff;

@@ -18,12 +18,13 @@ export class MMIO_Manager {
   }
 
   getFreeSlot() {
-    while (this.slots.includes(this.next_slot)) {
-      this.next_slot += this.slot_size;
-    }
-    if (this.next_slot <= this.last_slot) {
-      this.slots.push(this.next_slot);
-      return this.next_slot;
+    let candidate = 0x100;
+    while (candidate <= this.last_slot) {
+      if (!this.slots.includes(candidate)) {
+        this.slots.push(candidate);
+        return candidate;
+      }
+      candidate += this.slot_size;
     }
     return -1;
   }

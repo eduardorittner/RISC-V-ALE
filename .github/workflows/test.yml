@@ -139,6 +139,8 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+      - name: Run MMIO & IPC Unit Tests
+        run: npm run test:unit
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
 
