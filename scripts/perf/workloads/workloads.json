@@ -1,7 +1,9 @@
 [
   {
     "name": "hello_world",
-    "files": ["hello.s"],
+    "files": [
+      "hello.s"
+    ],
     "stdin": "",
     "expected_stdout": "Hello, World!\n",
     "isa": "imac",
@@ -11,7 +13,9 @@
   },
   {
     "name": "sum_1_to_99",
-    "files": ["sum.s"],
+    "files": [
+      "sum.s"
+    ],
     "stdin": "99\n",
     "expected_stdout": "4950\n",
     "isa": "imac",
@@ -21,7 +25,9 @@
   },
   {
     "name": "fibonacci",
-    "files": ["fib.s"],
+    "files": [
+      "fib.s"
+    ],
     "stdin": "20\n",
     "expected_stdout": "6765\n",
     "isa": "imac",
@@ -31,7 +37,9 @@
   },
   {
     "name": "memset_bench",
-    "files": ["memset.s"],
+    "files": [
+      "memset.s"
+    ],
     "stdin": "",
     "expected_stdout": "OK\n",
     "isa": "imac",
@@ -41,7 +49,9 @@
   },
   {
     "name": "echo_stdin",
-    "files": ["echo.s"],
+    "files": [
+      "echo.s"
+    ],
     "stdin": "Hello ALE!\n",
     "expected_stdout": "Hello ALE!\n",
     "isa": "imac",
@@ -51,12 +61,26 @@
   },
   {
     "name": "stdout_bench",
-    "files": ["stdout.s"],
+    "files": [
+      "stdout.s"
+    ],
     "stdin": "",
     "expected_stdout": "Line of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\nLine of output\n",
     "isa": "imac",
     "newlib": true,
     "stack_pointer": "0x7FFFFFC",
     "description": "Repeatedly write strings to stdout in a loop (100 iterations)"
+  },
+  {
+    "name": "mem_syscall_bench",
+    "files": [
+      "mem_syscall.s"
+    ],
+    "stdin": "",
+    "expected_stdout": "Pass 000\nPass 001\nPass 002\nPass 003\nPass 004\nPass 005\nPass 006\nPass 007\nPass 008\nPass 009\nPass 010\nPass 011\nPass 012\nPass 013\nPass 014\nPass 015\nPass 016\nPass 017\nPass 018\nPass 019\nPass 020\nPass 021\nPass 022\nPass 023\nPass 024\nPass 025\nPass 026\nPass 027\nPass 028\nPass 029\nPass 030\nPass 031\nPass 032\nPass 033\nPass 034\nPass 035\nPass 036\nPass 037\nPass 038\nPass 039\nPass 040\nPass 041\nPass 042\nPass 043\nPass 044\nPass 045\nPass 046\nPass 047\nPass 048\nPass 049\nPass 050\nPass 051\nPass 052\nPass 053\nPass 054\nPass 055\nPass 056\nPass 057\nPass 058\nPass 059\nPass 060\nPass 061\nPass 062\nPass 063\nPass 064\nPass 065\nPass 066\nPass 067\nPass 068\nPass 069\nPass 070\nPass 071\nPass 072\nPass 073\nPass 074\nPass 075\nPass 076\nPass 077\nPass 078\nPass 079\nPass 080\nPass 081\nPass 082\nPass 083\nPass 084\nPass 085\nPass 086\nPass 087\nPass 088\nPass 089\nPass 090\nPass 091\nPass 092\nPass 093\nPass 094\nPass 095\nPass 096\nPass 097\nPass 098\nPass 099\nPass 100\nPass 101\nPass 102\nPass 103\nPass 104\nPass 105\nPass 106\nPass 107\nPass 108\nPass 109\nPass 110\nPass 111\nPass 112\nPass 113\nPass 114\nPass 115\nPass 116\nPass 117\nPass 118\nPass 119\nPass 120\nPass 121\nPass 122\nPass 123\nPass 124\nPass 125\nPass 126\nPass 127\nPass 128\nPass 129\nPass 130\nPass 131\nPass 132\nPass 133\nPass 134\nPass 135\nPass 136\nPass 137\nPass 138\nPass 139\nPass 140\nPass 141\nPass 142\nPass 143\nPass 144\nPass 145\nPass 146\nPass 147\nPass 148\nPass 149\nPass 150\nPass 151\nPass 152\nPass 153\nPass 154\nPass 155\nPass 156\nPass 157\nPass 158\nPass 159\nPass 160\nPass 161\nPass 162\nPass 163\nPass 164\nPass 165\nPass 166\nPass 167\nPass 168\nPass 169\nPass 170\nPass 171\nPass 172\nPass 173\nPass 174\nPass 175\nPass 176\nPass 177\nPass 178\nPass 179\nPass 180\nPass 181\nPass 182\nPass 183\nPass 184\nPass 185\nPass 186\nPass 187\nPass 188\nPass 189\nPass 190\nPass 191\nPass 192\nPass 193\nPass 194\nPass 195\nPass 196\nPass 197\nPass 198\nPass 199\nPass 200\nPass 201\nPass 202\nPass 203\nPass 204\nPass 205\nPass 206\nPass 207\nPass 208\nPass 209\nPass 210\nPass 211\nPass 212\nPass 213\nPass 214\nPass 215\nPass 216\nPass 217\nPass 218\nPass 219\nPass 220\nPass 221\nPass 222\nPass 223\nPass 224\nPass 225\nPass 226\nPass 227\nPass 228\nPass 229\nPass 230\nPass 231\nPass 232\nPass 233\nPass 234\nPass 235\nPass 236\nPass 237\nPass 238\nPass 239\nPass 240\nPass 241\nPass 242\nPass 243\nPass 244\nPass 245\nPass 246\nPass 247\nPass 248\nPass 249\nPass 250\nPass 251\nPass 252\nPass 253\nPass 254\nPass 255\nPass 256\nPass 257\nPass 258\nPass 259\nPass 260\nPass 261\nPass 262\nPass 263\nPass 264\nPass 265\nPass 266\nPass 267\nPass 268\nPass 269\nPass 270\nPass 271\nPass 272\nPass 273\nPass 274\nPass 275\nPass 276\nPass 277\nPass 278\nPass 279\nPass 280\nPass 281\nPass 282\nPass 283\nPass 284\nPass 285\nPass 286\nPass 287\nPass 288\nPass 289\nPass 290\nPass 291\nPass 292\nPass 293\nPass 294\nPass 295\nPass 296\nPass 297\nPass 298\nPass 299\nOK\n",
+    "isa": "imac",
+    "newlib": true,
+    "stack_pointer": "0x7FFFFFC",
+    "description": "Stress memory reads, memory writes, and syscalls over multiple passes"
   }
 ]
