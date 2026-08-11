@@ -169,20 +169,6 @@ export class WebTerminal {
     });
   }
 
-  // async call_clang(op, args){
-  //   this.enter_wait_mode();
-  //   let file = await compiler[op](args);
-  //   if(file){
-  //     console.log(file);
-  //     compiler.load_new_file(file);
-  //     simulator_controller.load_new_file(file);
-  //     this.term.pop();
-  //     return true
-  //   }
-  //   this.term.pop();
-  //   return false
-  // }
-
   enter_input_mode() {
     this.term.push(
       function (stdin) {

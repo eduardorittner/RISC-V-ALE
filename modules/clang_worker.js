@@ -11,13 +11,11 @@ onmessage = function (e) {
       precompiledLldModule = e.data.lldModule;
       break;
     case "add_files":
-      console.log("Files", e.data.files);
       files = e.data.files;
       break;
     case "clang_c":
       current_op = "clang_c";
       if (e.data.file) files = e.data.files;
-      console.log(e.data.args);
       expected_result = e.data.out_filename;
       Module.arguments = [
         "-cc1",
@@ -76,7 +74,6 @@ onmessage = function (e) {
     case "clang_s":
       current_op = "clang_s";
       if (e.data.file) files = e.data.files;
-      console.log(e.data.args);
       expected_result = e.data.out_filename;
       Module.arguments = [
         "-cc1as",
@@ -113,7 +110,6 @@ onmessage = function (e) {
     case "ld":
       current_op = "ld";
       if (e.data.file) files = e.data.files;
-      console.log(e.data.args);
       expected_result = e.data.out_filename;
       Module.thisProgram = "ld.lld";
       Module.arguments = ["--threads=1", e.data.args].flat();
@@ -121,8 +117,6 @@ onmessage = function (e) {
       break;
 
     case "fs":
-      console.log(FS.readdir("/"));
-      console.log(FS.readdir("/working/"));
       break;
   }
 };
@@ -162,7 +156,6 @@ function initFS() {
 }
 
 function returnResult() {
-  console.log(expected_result);
   if (FS.readdir("/").includes(expected_result))
     this.postMessage({ type: "file", file: FS.readFile(expected_result) });
   else this.postMessage({ type: "file", file: -1 });

@@ -115,10 +115,7 @@ class Window_postMessage extends Connection {
   }
 
   send(data) {
-    if (data.constructor.name === "ArrayBuffer") {
-      // TODO?
-    } else {
-      // TODO: validate data
+    if (data.constructor.name !== "ArrayBuffer") {
       window.parent.postMessage(data);
     }
   }
@@ -143,12 +140,9 @@ export class LocalReport extends Connection {
       this.dataLogSizes.push(data.byteLength);
       this.log[this.log.length - 1]["data_log_idx"] = this.dataLog.length - 1;
     } else {
-      // TODO: validate data
       this.log.push(data);
     }
   }
-
-  hashLog() {}
 
   generate_report() {
     let header = new Uint32Array(this.dataLogSizes.length + 2);

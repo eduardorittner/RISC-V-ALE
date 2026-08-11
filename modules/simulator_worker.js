@@ -27,7 +27,6 @@ onmessage = function (e) {
       new_stdin_buffer.set(stdinBuffer);
       new_stdin_buffer.set(new_stdin, stdinBuffer.length);
       stdinBuffer = new_stdin_buffer;
-      console.log(stdinBuffer);
       break;
     case "non_blocking_io":
       non_blocking_io = e.data.value;
@@ -42,7 +41,6 @@ onmessage = function (e) {
       files = e.data.files;
       break;
     case "start":
-      console.log(e.data.args);
       self.execFinished = false;
       self.executionStartTime = performance.now();
       Module.arguments = e.data.args;

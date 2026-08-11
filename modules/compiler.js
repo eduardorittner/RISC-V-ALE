@@ -68,7 +68,6 @@ class Compiler {
 
   setup_worker(w, file_callback) {
     w.onmessage = function (ev) {
-      console.log(ev);
       switch (ev.data.type) {
         case "stdio":
           this.stdio_ch.postMessage({
