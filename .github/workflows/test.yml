@@ -40,6 +40,9 @@ jobs:
       - name: cargo test --locked
         working-directory: crates/rust-whisper
         run: cargo test --locked --all-features --all-targets
+      - name: Run Syscall & Host Import Fuzz Tests
+        working-directory: crates/rust-whisper
+        run: cargo test --test syscall_fuzz --test host_imports_tests
       # https://github.com/rust-lang/cargo/issues/6669
       - name: cargo test --doc
         working-directory: crates/rust-whisper
