@@ -1,4 +1,4 @@
-.PHONY: build format perf HEAD
+.PHONY: build format test perf HEAD
 
 build:
 	wasm-pack build --target no-modules --out-dir ../../modules/pkg crates/rust-whisper
@@ -7,6 +7,11 @@ build:
 format:
 	npx prettier --write "*.js" "modules/*.js" "!modules/pkg/**"
 	cargo fmt --manifest-path crates/rust-whisper/Cargo.toml
+
+test:
+	cargo test --manifest-path crates/rust-whisper/Cargo.toml
+	npm run test:ui
+
 
 # ─── Performance Testing Harness ───────────────────────────────────────────
 #

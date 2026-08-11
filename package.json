@@ -1,0 +1,14 @@
+{
+  "name": "risc-v-ale",
+  "version": "1.0.0",
+  "description": "RISC-V Assembly Learning Environment",
+  "main": "index.html",
+  "type": "module",
+  "scripts": {
+    "test:ui": "playwright test tests/integration",
+    "test:ui:headed": "playwright test tests/integration --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}
