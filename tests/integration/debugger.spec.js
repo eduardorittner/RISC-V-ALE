@@ -242,4 +242,23 @@ test.describe("Visual Debugger Subsystem", () => {
     const cycleText = await page.locator("#debug_cycle_counter").innerText();
     expect(cycleText).toBe("0");
   });
+
+  test("Suite 2.6: Stack View Column & Address Formatting", async ({ page }) => {
+    // 1. Verify stack table header has only Address and Value (no Offset)
+    const headers = await page.locator("#card_stack_visualizer table thead th").allInnerTexts();
+    expect(headers).toEqual(["Address", "Value"]);
+
+    // 2. Trigger renderStack with sp = 0x7fffffc
+    await page.evaluate(() => {
+      const ui = window.visualDebuggerUI;
+      ui.renderStack(0x7fffffc);
+    });
+
+    // 3. Check first and second row address formatting
+    const firstRowCells = await page.locator("#debug_stack_body tr").nth(0).locator("td").allInnerTexts();
+    expect(firstRowCells[0]).toBe("0x07fffffc (sp)");
+
+    const secondRowCells = await page.locator("#debug_stack_body tr").nth(1).locator("td").allInnerTexts();
+    expect(secondRowCells[0]).toBe("0x08000000");
+  });
 });

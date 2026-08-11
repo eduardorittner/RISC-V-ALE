@@ -563,12 +563,12 @@ export class VisualDebuggerUI {
       const addr = (baseSp + offset) >>> 0;
       const isSpRow = offset === 0;
       const rowClass = isSpRow ? "sp-row font-weight-bold" : "";
-      const offsetLabel = isSpRow ? "sp" : `sp+0x${offset.toString(16)}`;
+      const addrHex = `0x${addr.toString(16).padStart(8, "0")}`;
+      const addrDisplay = isSpRow ? `${addrHex} (sp)` : addrHex;
 
       html += `
         <tr class="${rowClass}">
-          <td>${offsetLabel}</td>
-          <td class="text-primary">0x${addr.toString(16).padStart(8, "0")}</td>
+          <td class="text-primary">${addrDisplay}</td>
           <td><code>0x00000000</code></td>
         </tr>
       `;
