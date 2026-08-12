@@ -33,19 +33,19 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - name: cargo generate-lockfile
         # enable this ci template to run regardless of whether the lockfile is checked in or not
-        if: hashFiles('crates/rust-whisper/Cargo.lock') == ''
-        working-directory: crates/rust-whisper
+        if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
+        working-directory: crates/riscv-rs
         run: cargo generate-lockfile
       # https://twitter.com/jonhoo/status/1571290371124260865
       - name: cargo test --locked
-        working-directory: crates/rust-whisper
+        working-directory: crates/riscv-rs
         run: cargo test --locked --all-features --all-targets
       - name: Run Syscall & Host Import Fuzz Tests
-        working-directory: crates/rust-whisper
+        working-directory: crates/riscv-rs
         run: cargo test --test syscall_fuzz --test host_imports_tests
       # https://github.com/rust-lang/cargo/issues/6669
       - name: cargo test --doc
-        working-directory: crates/rust-whisper
+        working-directory: crates/riscv-rs
         run: cargo test --locked --all-features --doc
   os-check:
     # run cargo test on mac and windows
@@ -70,11 +70,11 @@ jobs:
         with:
           toolchain: stable
       - name: cargo generate-lockfile
-        if: hashFiles('crates/rust-whisper/Cargo.lock') == ''
-        working-directory: crates/rust-whisper
+        if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
+        working-directory: crates/riscv-rs
         run: cargo generate-lockfile
       - name: cargo test
-        working-directory: crates/rust-whisper
+        working-directory: crates/riscv-rs
         run: cargo test --locked --all-features --all-targets
   coverage:
     # use llvm-cov to build and collect coverage and outputs in a format that
@@ -114,11 +114,11 @@ jobs:
         with:
           tool: cargo-llvm-cov
       - name: cargo generate-lockfile
-        if: hashFiles('crates/rust-whisper/Cargo.lock') == ''
-        working-directory: crates/rust-whisper
+        if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
+        working-directory: crates/riscv-rs
         run: cargo generate-lockfile
       - name: cargo llvm-cov
-        working-directory: crates/rust-whisper
+        working-directory: crates/riscv-rs
         run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
       - name: Record Rust version
         run: echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"

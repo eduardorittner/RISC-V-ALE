@@ -6,12 +6,12 @@ var interactiveBufferString = "";
 var syscall_delay = 0;
 var simulator_sleep = [0, 0, 0]; // int, read, write
 var simulator_int_inst_delay = 1000;
-var precompiledWhisperModule = null;
+var precompiledRiscvModule = null;
 
 onmessage = function (e) {
   switch (e.data.type) {
     case "init_modules":
-      precompiledWhisperModule = e.data.whisperModule;
+      precompiledRiscvModule = e.data.riscvModule || e.data.whisperModule;
       break;
     case "code_load":
       files = e.data.code;
@@ -570,15 +570,15 @@ function getBinaryBytes() {
 
 function runSimulation() {
   try {
-    importScripts("pkg/rust_whisper.js");
+    importScripts("pkg/riscv_rs.js");
     const bindgen =
       typeof wasm_bindgen !== "undefined" ? wasm_bindgen : self.wasm_bindgen;
     const { Simulator, initSync } = bindgen;
 
-    var wasmModule = self.precompiledWhisperModule;
+    var wasmModule = self.precompiledRiscvModule;
     if (!wasmModule) {
       var xhr = new XMLHttpRequest();
-      xhr.open("GET", "pkg/rust_whisper_bg.wasm", false);
+      xhr.open("GET", "pkg/riscv_rs_bg.wasm", false);
       xhr.responseType = "arraybuffer";
       xhr.send(null);
       wasmModule = new WebAssembly.Module(xhr.response);
@@ -602,7 +602,7 @@ function runSimulation() {
       if (typeof finishExec === "function") finishExec();
     }
   } catch (e) {
-    console.error("Rust Whisper execution failure:", e);
+    console.error("riscv-rs execution failure:", e);
     if (typeof finishExec === "function") finishExec();
   }
 }
@@ -714,13 +714,13 @@ var Module = {
     "sp=0x10000",
   ],
   instantiateWasm: function (imports, successCallback) {
-    if (precompiledWhisperModule) {
-      WebAssembly.instantiate(precompiledWhisperModule, imports)
+    if (precompiledRiscvModule) {
+      WebAssembly.instantiate(precompiledRiscvModule, imports)
         .then(function (instance) {
-          successCallback(instance, precompiledWhisperModule);
+          successCallback(instance, precompiledRiscvModule);
         })
         .catch(function (err) {
-          console.error("Precompiled Whisper WASM instantiation error:", err);
+          console.error("Precompiled riscv-rs WASM instantiation error:", err);
         });
       return {};
     }

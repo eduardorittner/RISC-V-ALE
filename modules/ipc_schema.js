@@ -52,8 +52,8 @@ export function validateWorkerMessage(msg) {
 
   switch (msg.type) {
     case 'init_modules':
-      if (!msg.whisperModule) {
-        return { success: false, error: 'init_modules requires whisperModule' };
+      if (!msg.riscvModule && !msg.whisperModule) {
+        return { success: false, error: 'init_modules requires riscvModule' };
       }
       break;
 

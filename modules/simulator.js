@@ -52,7 +52,7 @@ class SimulatorController {
     this.int_cont_freq_scale = 25;
     this.last_loaded_files = [];
     this._executionResolve = null;
-    this.whisperModule = null;
+    this.riscvModule = null;
     this.initPromise = null;
     this.idle_worker = null;
     window.__ale__ = {
@@ -81,22 +81,22 @@ class SimulatorController {
   }
 
   async init_wasm_cache() {
-    if (this.whisperModule) return;
+    if (this.riscvModule) return;
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
       try {
-        const res = await fetch("./modules/pkg/rust_whisper_bg.wasm");
+        const res = await fetch("./modules/pkg/riscv_rs_bg.wasm");
         try {
           if (typeof WebAssembly.compileStreaming === "function") {
-            this.whisperModule = await WebAssembly.compileStreaming(
+            this.riscvModule = await WebAssembly.compileStreaming(
               res.clone(),
             );
             return;
           }
         } catch (e) {}
         const buf = await res.arrayBuffer();
-        this.whisperModule = await WebAssembly.compile(buf);
+        this.riscvModule = await WebAssembly.compile(buf);
       } catch (err) {
         console.warn(
           "WASM pre-compilation failed, falling back to standard fetching:",
@@ -117,10 +117,10 @@ class SimulatorController {
     if (this.idle_worker) return;
     try {
       const worker = new Worker("./modules/simulator_worker.js");
-      if (this.whisperModule) {
+      if (this.riscvModule) {
         worker.postMessage({
           type: "init_modules",
-          whisperModule: this.whisperModule,
+          riscvModule: this.riscvModule,
         });
       }
       this.idle_worker = worker;
@@ -189,10 +189,10 @@ class SimulatorController {
       this.idle_worker = null;
     } else {
       this.simulator = new Worker("./modules/simulator_worker.js");
-      if (this.whisperModule) {
+      if (this.riscvModule) {
         this.simulator.postMessage({
           type: "init_modules",
-          whisperModule: this.whisperModule,
+          riscvModule: this.riscvModule,
         });
       }
     }

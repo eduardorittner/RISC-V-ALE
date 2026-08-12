@@ -11,6 +11,10 @@ export class WebTerminal {
     this.firstOpen = true;
     this.term = $("#xterm-container").terminal(
       {
+        riscv: function (...args) {
+          args = args.map((e) => e.trim().replace(" ", "_"));
+          simulator_controller.start_execution(args);
+        },
         whisper: function (...args) {
           args = args.map((e) => e.trim().replace(" ", "_"));
           simulator_controller.start_execution(args);
@@ -119,8 +123,8 @@ export class WebTerminal {
         }
         if (e.data.status.starting_exec) {
           this.flush_render();
-          this.term.echo(`$ whisper ${e.data.status.args.join(" ")}`);
-          this.term.history().append(`whisper ${e.data.status.args.join(" ")}`);
+          this.term.echo(`$ riscv ${e.data.status.args.join(" ")}`);
+          this.term.history().append(`riscv ${e.data.status.args.join(" ")}`);
         }
       } else if (e.data.type == "sim_log") {
         this.flush_render();

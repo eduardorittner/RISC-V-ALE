@@ -32,7 +32,7 @@ jobs:
           toolchain: stable
           components: rustfmt
       - name: cargo fmt --check
-        working-directory: crates/rust-whisper
+        working-directory: crates/riscv-rs
         run: cargo fmt --check
   clippy:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: clippy
       - name: cargo clippy
-        working-directory: crates/rust-whisper
+        working-directory: crates/riscv-rs
         run: cargo clippy --all-targets --all-features -- -D warnings
   doc:
     # run docs generation on nightly rather than stable. This enables features like
@@ -74,5 +74,5 @@ jobs:
       - name: Install cargo-docs-rs
         uses: dtolnay/install@cargo-docs-rs
       - name: cargo docs-rs
-        working-directory: crates/rust-whisper
+        working-directory: crates/riscv-rs
         run: cargo docs-rs

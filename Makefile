@@ -1,15 +1,15 @@
 .PHONY: build format test perf HEAD
 
 build:
-	wasm-pack build --target no-modules --out-dir ../../modules/pkg crates/rust-whisper
+	wasm-pack build --target no-modules --out-dir ../../modules/pkg crates/riscv-rs
 	python3 update_cache.py
 
 format:
 	npx prettier --write "*.js" "modules/*.js" "!modules/pkg/**"
-	cargo fmt --manifest-path crates/rust-whisper/Cargo.toml
+	cargo fmt --manifest-path crates/riscv-rs/Cargo.toml
 
 test:
-	cargo test --manifest-path crates/rust-whisper/Cargo.toml
+	cargo test --manifest-path crates/riscv-rs/Cargo.toml
 	npm run test:ui
 
 

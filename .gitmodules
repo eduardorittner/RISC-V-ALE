@@ -1,6 +1,6 @@
 [submodule "extensions"]
 	path = extensions
 	url = https://github.com/antoniocgj/RISC-V-ALE-Extensions.git
-[submodule "crates/rust-whisper"]
-	path = crates/rust-whisper
+[submodule "crates/riscv-rs"]
+	path = crates/riscv-rs
 	url = git@github.com:eduardorittner/riscv-rs.git
