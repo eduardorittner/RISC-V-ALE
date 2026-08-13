@@ -140,6 +140,7 @@ class SimulatorController {
           });
           break;
         case "sim_log":
+        case "message":
           this.sim_status_ch.postMessage(e.data);
           break;
         case "status":

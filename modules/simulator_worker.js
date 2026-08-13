@@ -459,6 +459,23 @@ function customSyscall(a0, a1, a2, a3, a7) {
   return 0;
 }
 
+function notifyUnknownSyscall(sys_num, a0, a1, a2, a3) {
+  var formatVal = function (v) {
+    return v < 0 ? `${v}` : `0x${(v >>> 0).toString(16)}`;
+  };
+  var text = `Syscall Number: ${sys_num}\nArguments: a0=${formatVal(a0)}, a1=${formatVal(a1)}, a2=${formatVal(a2)}, a3=${formatVal(a3)}`;
+  postMessage({
+    type: "message",
+    msg: {
+      type: "error",
+      title: "Unknown Syscall Error",
+      text: text,
+      delay: 8000,
+    },
+  });
+}
+self.notifyUnknownSyscall = notifyUnknownSyscall;
+
 function jsExternalInterrupt() {
   return typeof intController !== "undefined" ? intController.interrupt : 0;
 }
