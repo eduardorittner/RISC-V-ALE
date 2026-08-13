@@ -62,10 +62,12 @@ import {conn} from "../../modules/connection.js";
 // Expose on window for performance testing harness (CDP Runtime.evaluate)
 window.simulator_controller = simulator_controller;
 window.compiler = compiler;
+window.run_simulator = run_simulator;
 window.__ale_perf_ready__ = true;
 
 var mmio_manager = new MMIO_Manager();
 var web_terminal = new WebTerminal(document.getElementById('xterm-container'), document.getElementById("terminal_badge"));
+window.web_terminal = web_terminal;
 var assistant = new Assistant(document.getElementById('assistant_container'), document.getElementById('assistant_button'));
 
 // load plugins
@@ -400,6 +402,7 @@ async function auto_compile() {
 }
 
 async function run_simulator(debug) {
+  window.run_simulator = run_simulator;
   if(simulator_controller.last_loaded_files.length == 0){
     Toast.notice({
       title: 'No input files',
@@ -413,6 +416,9 @@ async function run_simulator(debug) {
   }
   run_button.onclick = function () {console.log("Repeated click");};
   var filename = await auto_compile();
+  if (compiler.loaded_files && compiler.loaded_files.length > 0) {
+    simulator_controller.last_loaded_files = compiler.loaded_files;
+  }
   if(!filename){
     for (let index = 0; index < simulator_controller.last_loaded_files.length; index++) {
       const element = simulator_controller.last_loaded_files[index];

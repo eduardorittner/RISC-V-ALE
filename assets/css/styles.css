@@ -884,6 +884,15 @@ header#topbar nav ul {
   height: 100% !important;
   width: 100% !important;
   box-sizing: border-box !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+#xterm-container .xterm {
+  height: 100% !important;
+  width: 100% !important;
+  padding: 4px !important;
+  box-sizing: border-box !important;
 }
 
 /* Topbar Header Alignment Overrides */
