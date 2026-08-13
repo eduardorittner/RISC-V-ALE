@@ -2,7 +2,7 @@
 
 build:
 	wasm-pack build --target no-modules --out-dir ../../modules/pkg crates/riscv-rs
-	python3 update_cache.py
+	python3 scripts/update_cache.py
 
 format:
 	npx prettier --write "*.js" "modules/*.js" "!modules/pkg/**"

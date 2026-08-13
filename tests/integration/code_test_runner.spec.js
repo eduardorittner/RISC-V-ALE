@@ -4,7 +4,7 @@ import fs from "fs";
 
 test.describe("Automated Zip Lab Runner Integration (code_test.html)", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/code_test.html");
+    await page.goto("/tests/code_test.html");
   });
 
   test("Suite 3.4: Automated Zip Lab Runner Integration", async ({ page }) => {
@@ -12,7 +12,7 @@ test.describe("Automated Zip Lab Runner Integration (code_test.html)", () => {
     expect(fs.existsSync(fixturePassPath)).toBe(true);
 
     // Set simulator iframe URL to index.html and short timeouts for test speed
-    await page.fill("#activity_url", "./index.html");
+    await page.fill("#activity_url", "../index.html");
     await page.fill("#load_time", "100");
     await page.fill("#test_timeout", "2000");
 
