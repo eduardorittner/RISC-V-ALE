@@ -32,12 +32,12 @@ PERF_ARGS := $(PERF_BROWSER) $(PERF_DRY) $(PERF_NO_COMPARE) $(PERF_ITERATIONS)
 
 ifeq ($(filter HEAD,$(MAKECMDGOALS)),HEAD)
 perf:
-	@if [ ! -d "scripts/perf/node_modules/ws" ]; then \
-		echo "Error: 'ws' package not found."; \
-		echo "Please run: cd scripts/perf && npm install"; \
-		exit 1; \
+	@if ! node -e "require('ws')" >/dev/null 2>&1; then \
+		echo "Installing missing dependencies for perf harness..."; \
+		npm install --no-audit 2>/dev/null || (cd scripts/perf && npm install --no-audit); \
 	fi
-	@STASHED=0; \
+	@ORIG_REF=$$(git symbolic-ref --short HEAD 2>/dev/null || git rev-parse HEAD); \
+	STASHED=0; \
 	if [ -n "$$(git status --porcelain)" ]; then \
 		echo "Stashing uncommitted changes..."; \
 		git stash push -m "make-perf-head-temp"; \
@@ -45,25 +45,26 @@ perf:
 	fi; \
 	echo "Checking out HEAD~1..."; \
 	git checkout HEAD~1 && \
-	$(MAKE) perf NO_COMPARE=1 && \
-	echo "Switching back to current commit..."; \
-	git switch - && \
-	$(MAKE) perf; \
-	EXIT_CODE=$$?; \
+	$(MAKE) perf NO_COMPARE=1; \
+	PERF_STATUS=$$?; \
+	echo "Switching back to $$ORIG_REF..."; \
+	git checkout $$ORIG_REF; \
 	if [ $$STASHED -eq 1 ]; then \
 		echo "Restoring stashed changes..."; \
 		git stash pop; \
 	fi; \
-	exit $$EXIT_CODE
+	if [ $$PERF_STATUS -ne 0 ]; then \
+		exit $$PERF_STATUS; \
+	fi; \
+	$(MAKE) perf
 
 HEAD:
 	@:
 else
 perf:
-	@if [ ! -d "scripts/perf/node_modules/ws" ]; then \
-		echo "Error: 'ws' package not found."; \
-		echo "Please run: cd scripts/perf && npm install"; \
-		exit 1; \
+	@if ! node -e "require('ws')" >/dev/null 2>&1; then \
+		echo "Installing missing dependencies for perf harness..."; \
+		npm install --no-audit 2>/dev/null || (cd scripts/perf && npm install --no-audit); \
 	fi
 	node scripts/perf/harness.js $(PERF_ARGS)
 endif

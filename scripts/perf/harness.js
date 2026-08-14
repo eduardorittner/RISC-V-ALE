@@ -285,7 +285,7 @@ async function runWorkload(client, workload, workloadsDir, timeout) {
   const filesJson = JSON.stringify(filesData);
   const filesB64 = base64Encode(filesJson);
   await client.evaluate(
-    `window.__perf_files__ = JSON.parse(atob("${filesB64}"));`
+    `window.__perf_files__ = JSON.parse(atob("${filesB64}"));`,
   );
 
   // Set config in the page
@@ -298,7 +298,7 @@ async function runWorkload(client, workload, workloadsDir, timeout) {
   };
   const configB64 = base64Encode(JSON.stringify(config));
   await client.evaluate(
-    `window.__perf_config__ = JSON.parse(atob("${configB64}"));`
+    `window.__perf_config__ = JSON.parse(atob("${configB64}"));`,
   );
 
   // Clear previous result
@@ -311,7 +311,7 @@ async function runWorkload(client, workload, workloadsDir, timeout) {
   const resultStr = await client.pollForResult(
     "window.__perf_result__",
     200,
-    timeout + 10000
+    timeout + 10000,
   );
 
   const result = JSON.parse(resultStr);
@@ -361,7 +361,7 @@ function loadLastResults() {
 function printResultsTable(results) {
   console.log("\n" + "─".repeat(80));
   console.log(
-    `Performance Results — ${results.browser} ${results.browser_version} — ${results.timestamp}`
+    `Performance Results — ${results.browser} ${results.browser_version} — ${results.timestamp}`,
   );
   console.log("─".repeat(80));
   console.log(
@@ -369,24 +369,20 @@ function printResultsTable(results) {
       padRight("Compile (ms)", 14) +
       padRight("Exec (ms)", 12) +
       padRight("Stdout", 8) +
-      padRight("Status", 16)
+      padRight("Status", 16),
   );
   console.log("─".repeat(80));
 
   for (const w of results.workloads) {
     const stdoutCol =
-      w.stdout_match === true
-        ? "✓"
-        : w.stdout_match === false
-        ? "✗"
-        : "-";
+      w.stdout_match === true ? "✓" : w.stdout_match === false ? "✗" : "-";
     const statusColor = w.status === "ok" ? "green" : "red";
     console.log(
       pad(w.name, 25) +
         padRight(w.compile_time_ms.toFixed(1), 14) +
         padRight(w.exec_time_ms.toFixed(1), 12) +
         padRight(stdoutCol, 8) +
-        padRight(colorize(w.status, statusColor), 16)
+        padRight(colorize(w.status, statusColor), 16),
     );
   }
   console.log("─".repeat(80));
@@ -406,7 +402,7 @@ function printComparisonTable(current, last) {
       padRight("Compile (ms)", 14) +
       padRight("Exec (ms)", 12) +
       padRight("Compile Δ", 16) +
-      padRight("Exec Δ", 16)
+      padRight("Exec Δ", 16),
   );
   console.log("─".repeat(90));
 
@@ -418,7 +414,7 @@ function printComparisonTable(current, last) {
           padRight(w.compile_time_ms.toFixed(1), 14) +
           padRight(w.exec_time_ms.toFixed(1), 12) +
           padRight("(new)", 16) +
-          padRight("(new)", 16)
+          padRight("(new)", 16),
       );
       continue;
     }
@@ -434,11 +430,11 @@ function printComparisonTable(current, last) {
 
     const compileDeltaStr = colorize(
       formatDelta(compileDelta, compilePct),
-      deltaColor(compileDelta, compilePct)
+      deltaColor(compileDelta, compilePct),
     );
     const execDeltaStr = colorize(
       formatDelta(execDelta, execPct),
-      deltaColor(execDelta, execPct)
+      deltaColor(execDelta, execPct),
     );
 
     console.log(
@@ -446,7 +442,7 @@ function printComparisonTable(current, last) {
         padRight(w.compile_time_ms.toFixed(1), 14) +
         padRight(w.exec_time_ms.toFixed(1), 12) +
         padRight(compileDeltaStr, 16) +
-        padRight(execDeltaStr, 16)
+        padRight(execDeltaStr, 16),
     );
   }
   console.log("═".repeat(90));
@@ -476,11 +472,12 @@ function padRight(str, len) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   // Check for ws dependency
-  const wsPath = path.join(PERF_DIR, "node_modules", "ws");
-  if (!fs.existsSync(wsPath)) {
+  try {
+    require.resolve("ws");
+  } catch (e) {
     console.error(
       "Error: 'ws' package not found.\n" +
-        "Please run: cd scripts/perf && npm install"
+        "Please run: npm install (or cd scripts/perf && npm install)",
     );
     process.exit(1);
   }
@@ -495,7 +492,9 @@ async function main() {
   try {
     workloadDefs = JSON.parse(fs.readFileSync(workloadsPath, "utf-8"));
   } catch (e) {
-    console.error(`Error loading workloads from ${workloadsPath}: ${e.message}`);
+    console.error(
+      `Error loading workloads from ${workloadsPath}: ${e.message}`,
+    );
     process.exit(1);
   }
 
@@ -588,7 +587,7 @@ async function main() {
   for (let i = 0; i < workloadDefs.length; i++) {
     const wl = workloadDefs[i];
     console.log(
-      `\n[${i + 1}/${workloadDefs.length}] ${wl.name}: ${wl.description || ""}`
+      `\n[${i + 1}/${workloadDefs.length}] ${wl.name}: ${wl.description || ""}`,
     );
 
     const compileTimes = [];
@@ -605,7 +604,7 @@ async function main() {
           client,
           wl,
           workloadsDir,
-          args.timeout
+          args.timeout,
         );
         compileTimes.push(result.compileTime);
         execTimes.push(result.execTime);
@@ -615,7 +614,7 @@ async function main() {
         console.log(
           `  Compile: ${result.compileTime.toFixed(1)}ms  ` +
             `Exec: ${result.execTime.toFixed(1)}ms  ` +
-            `Status: ${colorize(result.status, iterStatusColor)}`
+            `Status: ${colorize(result.status, iterStatusColor)}`,
         );
 
         if (result.stdoutMatch === false) {
@@ -630,9 +629,7 @@ async function main() {
           console.log(`  Error: ${result.error}`);
         }
         if (result.stderr && result.status !== "ok") {
-          console.log(
-            `  Stderr: ${result.stderr.slice(0, 200)}`
-          );
+          console.log(`  Stderr: ${result.stderr.slice(0, 200)}`);
         }
       } catch (e) {
         console.error(`  Failed: ${e.message}`);
@@ -652,8 +649,7 @@ async function main() {
       }
     }
 
-    const compileMedian =
-      compileTimes.length > 0 ? median(compileTimes) : 0;
+    const compileMedian = compileTimes.length > 0 ? median(compileTimes) : 0;
     const execMedian = execTimes.length > 0 ? median(execTimes) : 0;
 
     results.workloads.push({

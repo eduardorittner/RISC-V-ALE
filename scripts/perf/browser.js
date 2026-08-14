@@ -6,9 +6,44 @@ const fs = require("fs");
 
 const path = require("path");
 
+function findInPath(cmd) {
+  const envPath = process.env.PATH || "";
+  const sep = process.platform === "win32" ? ";" : ":";
+  const exts =
+    process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
+  for (const dir of envPath.split(sep)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const full = path.join(dir, cmd + ext);
+      try {
+        if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+          return full;
+        }
+      } catch (e) {}
+    }
+  }
+  return null;
+}
+
+function getPlaywrightBrowserPath(browser) {
+  try {
+    const playwright = require("@playwright/test");
+    if (browser === "chrome" && playwright.chromium) {
+      const p = playwright.chromium.executablePath();
+      if (p && fs.existsSync(p)) return p;
+    } else if (browser === "firefox" && playwright.firefox) {
+      const p = playwright.firefox.executablePath();
+      if (p && fs.existsSync(p)) return p;
+    }
+  } catch (e) {}
+  return null;
+}
+
 function getCandidatePaths(browser) {
-  if (browser === "firefox" && process.env.FIREFOX_BIN) return [process.env.FIREFOX_BIN];
-  if (browser === "chrome" && process.env.CHROME_BIN) return [process.env.CHROME_BIN];
+  if (browser === "firefox" && process.env.FIREFOX_BIN)
+    return [process.env.FIREFOX_BIN];
+  if (browser === "chrome" && process.env.CHROME_BIN)
+    return [process.env.CHROME_BIN];
   if (process.env.BROWSER_BIN) return [process.env.BROWSER_BIN];
 
   const platform = process.platform;
@@ -69,11 +104,16 @@ function resolveBrowserBinary(browser) {
     if (path.isAbsolute(candidate)) {
       if (fs.existsSync(candidate)) return candidate;
     } else {
-      // Return command name directly to let system PATH resolve it
-      return candidate;
+      const resolved = findInPath(candidate);
+      if (resolved) return resolved;
     }
   }
-  return candidates[0];
+
+  // Check Playwright cached browser if available
+  const pwPath = getPlaywrightBrowserPath(browser);
+  if (pwPath) return pwPath;
+
+  return null;
 }
 
 const BROWSER_COMMANDS = {
@@ -115,29 +155,49 @@ const BROWSER_COMMANDS = {
 function waitForPort(proc, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     let stderrBuffer = "";
-    let resolved = false;
+    let stdoutBuffer = "";
+    let settled = false;
 
     const timer = setTimeout(() => {
-      if (!resolved) {
+      if (!settled) {
+        settled = true;
         reject(
           new Error(
-            `Timeout waiting for debugging port. stderr:\n${stderrBuffer}`
-          )
+            `Timeout waiting for debugging port (${timeoutMs}ms). stderr:\n${stderrBuffer}`,
+          ),
         );
       }
     }, timeoutMs);
 
-    proc.stderr.on("data", (data) => {
-      if (resolved) return;
-      const text = data.toString();
-      stderrBuffer += text;
+    proc.on("error", (err) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(`Failed to start browser process: ${err.message}`));
+      }
+    });
+
+    proc.on("exit", (code, signal) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(
+          new Error(
+            `Browser process exited prematurely with code ${code}, signal ${signal}. stderr:\n${stderrBuffer}`,
+          ),
+        );
+      }
+    });
+
+    const handleOutput = (text) => {
+      if (settled) return;
 
       // Firefox: "WebDriver BiDi listening on ws://127.0.0.1:PORT"
       const bidiMatch = text.match(
-        /WebDriver BiDi listening on ws:\/\/[^:]+:(\d+)/
+        /WebDriver BiDi listening on ws:\/\/[^:]+:(\d+)/,
       );
       if (bidiMatch) {
-        resolved = true;
+        settled = true;
         clearTimeout(timer);
         resolve(parseInt(bidiMatch[1], 10));
         return;
@@ -145,10 +205,10 @@ function waitForPort(proc, timeoutMs = 30000) {
 
       // Chrome: "DevTools listening on ws://127.0.0.1:PORT"
       const devtoolsMatch = text.match(
-        /DevTools listening on ws:\/\/[^:]+:(\d+)/
+        /DevTools listening on ws:\/\/[^:]+:(\d+)/,
       );
       if (devtoolsMatch) {
-        resolved = true;
+        settled = true;
         clearTimeout(timer);
         resolve(parseInt(devtoolsMatch[1], 10));
         return;
@@ -157,12 +217,28 @@ function waitForPort(proc, timeoutMs = 30000) {
       // Generic fallback: "listening on ws://host:PORT"
       const genericMatch = text.match(/listening on ws:\/\/[^:]+:(\d+)/);
       if (genericMatch) {
-        resolved = true;
+        settled = true;
         clearTimeout(timer);
         resolve(parseInt(genericMatch[1], 10));
         return;
       }
-    });
+    };
+
+    if (proc.stderr) {
+      proc.stderr.on("data", (data) => {
+        const text = data.toString();
+        stderrBuffer += text;
+        handleOutput(text);
+      });
+    }
+
+    if (proc.stdout) {
+      proc.stdout.on("data", (data) => {
+        const text = data.toString();
+        stdoutBuffer += text;
+        handleOutput(text);
+      });
+    }
   });
 }
 
@@ -178,6 +254,13 @@ async function launchBrowser(browser) {
   }
 
   const binary = config.getCmd();
+  if (!binary) {
+    const envVar = browser === "firefox" ? "FIREFOX_BIN" : "CHROME_BIN";
+    throw new Error(
+      `Could not find an executable for browser "${browser}". Please install ${browser} or specify its path via the ${envVar} environment variable.`,
+    );
+  }
+
   const proc = spawn(binary, config.args, {
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -204,7 +287,7 @@ async function launchBrowser(browser) {
 async function getBrowserInfo(port) {
   // Firefox BiDi doesn't expose /json/version.
   // The browser version is obtained from session.new capabilities.
-  return { Browser: "firefox", "webSocketDebuggerUrl": "" };
+  return { Browser: "firefox", webSocketDebuggerUrl: "" };
 }
 
 /**
