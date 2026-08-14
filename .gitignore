@@ -3,3 +3,4 @@ test-results/
 playwright-report/
 .githooks/
 mc404/
+modules/pkg/
