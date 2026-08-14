@@ -61,10 +61,16 @@ onmessage = function (e) {
 
     case "load_syscall":
       syscall_emulator.register(parseInt(e.data.number), e.data.code);
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
+        wasmSimulator.set_has_custom_syscalls(true);
+      }
       break;
 
     case "disable_syscall":
       syscall_emulator.unregister(parseInt(e.data.number));
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
+        wasmSimulator.set_has_custom_syscalls(syscall_emulator.has_syscalls());
+      }
       break;
 
     case "interrupt_enabled":
@@ -391,6 +397,14 @@ class SyscallEmulator {
     delete this.syscalls[number];
   }
 
+  has_syscalls() {
+    return (
+      typeof this.syscalls === "object" &&
+      this.syscalls !== null &&
+      Object.keys(this.syscalls).length > 0
+    );
+  }
+
   run(a0, a1, a2, a3, a7) {
     const fn = this.syscalls[a7];
     if (fn !== undefined) {
@@ -448,13 +462,17 @@ function getInteractiveCommand() {
 }
 
 function customSyscall(a0, a1, a2, a3, a7) {
-  if (
-    typeof syscall_emulator !== "undefined" &&
-    syscall_emulator.syscalls &&
-    syscall_emulator.syscalls[a7] !== undefined
-  ) {
-    var ret = syscall_emulator.run(a0, a1, a2, a3, a7);
-    return ret !== undefined ? ret : 1;
+  try {
+    if (
+      typeof syscall_emulator !== "undefined" &&
+      syscall_emulator.syscalls &&
+      syscall_emulator.syscalls[a7] !== undefined
+    ) {
+      var ret = syscall_emulator.run(a0, a1, a2, a3, a7);
+      return ret !== undefined ? ret : 1;
+    }
+  } catch (e) {
+    console.error("Error in customSyscall:", e);
   }
   return 0;
 }
@@ -608,6 +626,7 @@ function runSimulation() {
     var args = currentMod.arguments || [];
 
     self.wasmSimulator = new Simulator();
+    self.wasmSimulator.set_has_custom_syscalls(syscall_emulator.has_syscalls());
     let entryPoint = self.wasmSimulator.load_binary(binaryBytes, args);
 
     if (args.includes("--interactive") || self.debugModeActive) {

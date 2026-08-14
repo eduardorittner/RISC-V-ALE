@@ -44,9 +44,7 @@ class SimulatorController {
     }
     const uniq_id = window.uniq_id || "";
     this.stdio_ch = new BroadcastChannel("stdio_channel" + uniq_id);
-    this.sim_status_ch = new BroadcastChannel(
-      "simulator_status" + uniq_id,
-    );
+    this.sim_status_ch = new BroadcastChannel("simulator_status" + uniq_id);
     this.bus_ch = new BroadcastChannel("bus_channel" + uniq_id);
     this.bus_freq_limit = 1000;
     this.int_cont_freq_scale = 25;
@@ -89,9 +87,7 @@ class SimulatorController {
         const res = await fetch("./modules/pkg/riscv_rs_bg.wasm");
         try {
           if (typeof WebAssembly.compileStreaming === "function") {
-            this.riscvModule = await WebAssembly.compileStreaming(
-              res.clone(),
-            );
+            this.riscvModule = await WebAssembly.compileStreaming(res.clone());
             return;
           }
         } catch (e) {}

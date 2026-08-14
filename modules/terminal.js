@@ -11,8 +11,10 @@ export class WebTerminal {
     this.firstOpen = true;
 
     // Initialize xterm.js instance
-    const TerminalClass = window.Terminal || (window.xterm && window.xterm.Terminal);
-    const FitAddonClass = (window.FitAddon && window.FitAddon.FitAddon) || window.FitAddon;
+    const TerminalClass =
+      window.Terminal || (window.xterm && window.xterm.Terminal);
+    const FitAddonClass =
+      (window.FitAddon && window.FitAddon.FitAddon) || window.FitAddon;
 
     if (!TerminalClass) {
       console.error("xterm.js library not loaded");
@@ -20,13 +22,13 @@ export class WebTerminal {
 
     this.term = new TerminalClass({
       cursorBlink: true,
-      fontFamily: 'Courier Prime, Consolas, monospace',
+      fontFamily: "Courier Prime, Consolas, monospace",
       fontSize: 14,
       theme: {
-        background: '#000000',
-        foreground: '#ffffff',
-        cursor: '#ffffff'
-      }
+        background: "#000000",
+        foreground: "#ffffff",
+        cursor: "#ffffff",
+      },
     });
 
     if (FitAddonClass) {
@@ -41,7 +43,7 @@ export class WebTerminal {
 
     // Shell state
     this.modeStack = [];
-    this.currentMode = 'shell';
+    this.currentMode = "shell";
     this.inputLine = "";
     this.promptStr = "$ ";
     this.running_mode = false;
@@ -106,16 +108,22 @@ export class WebTerminal {
             const ipsFormatted = (s.ips || 0).toLocaleString();
             const mipsFormatted = s.mips || 0;
 
-            this.term.writeln(`--------------------------------------------------`);
+            this.term.writeln(
+              `--------------------------------------------------`,
+            );
             this.term.writeln(`Program Execution Complete`);
             this.term.writeln(`  • Time Elapsed:       ${timeFormatted}`);
             this.term.writeln(`  • Total Instructions: ${instFormatted}`);
-            this.term.writeln(`  • Execution Speed:    ${mipsFormatted} MIPS (${ipsFormatted} inst/sec)`);
+            this.term.writeln(
+              `  • Execution Speed:    ${mipsFormatted} MIPS (${ipsFormatted} inst/sec)`,
+            );
             if (s.finalPC) {
               this.term.writeln(`  • Final PC:           0x${s.finalPC}`);
             }
             this.term.writeln(`  • Exit Code (a0):     ${s.exitCode}`);
-            this.term.writeln(`--------------------------------------------------`);
+            this.term.writeln(
+              `--------------------------------------------------`,
+            );
           }
           if (this.running_mode) {
             this.popMode();
@@ -132,7 +140,9 @@ export class WebTerminal {
       } else if (e.data.type == "clang_status") {
         if (e.data.status.starting) {
           this.flush_render();
-          this.term.writeln(`$ ${e.data.status.tool} ${e.data.status.args.join(" ")}`);
+          this.term.writeln(
+            `$ ${e.data.status.tool} ${e.data.status.args.join(" ")}`,
+          );
           this.enter_wait_mode();
         } else {
           this.flush_render();
@@ -184,18 +194,26 @@ export class WebTerminal {
           this.container.clientWidth > 0 &&
           this.container.clientHeight > 0
         ) {
-          const charMeasure = this.container.querySelector('.xterm-char-measure-element');
+          const charMeasure = this.container.querySelector(
+            ".xterm-char-measure-element",
+          );
           const rect = charMeasure ? charMeasure.getBoundingClientRect() : null;
-          const charWidth = (rect && rect.width > 0) ? rect.width : 9;
-          const charHeight = (rect && rect.height > 0) ? rect.height : 17;
+          const charWidth = rect && rect.width > 0 ? rect.width : 9;
+          const charHeight = rect && rect.height > 0 ? rect.height : 17;
 
-          cols = Math.max(20, Math.floor((this.container.clientWidth - 12) / charWidth));
-          rows = Math.max(5, Math.floor((this.container.clientHeight - 12) / charHeight));
+          cols = Math.max(
+            20,
+            Math.floor((this.container.clientWidth - 12) / charWidth),
+          );
+          rows = Math.max(
+            5,
+            Math.floor((this.container.clientHeight - 12) / charHeight),
+          );
         }
       }
 
       if (cols > 0 && rows > 0) {
-        const canvas = this.container.querySelector('canvas');
+        const canvas = this.container.querySelector("canvas");
         if (canvas && (canvas.width === 300 || canvas.height === 150)) {
           // Force dimension shift to trigger canvas buffer allocation
           this.term.resize(cols + 1, rows + 1);
@@ -227,35 +245,37 @@ export class WebTerminal {
       this.currentMode = prev.mode;
       this.promptStr = prev.promptStr;
     } else {
-      this.currentMode = 'shell';
-      this.promptStr = '$ ';
+      this.currentMode = "shell";
+      this.promptStr = "$ ";
     }
     this.inputLine = "";
     this.writePrompt();
   }
 
   enter_wait_mode() {
-    this.pushMode('wait', '');
+    this.pushMode("wait", "");
   }
 
   enter_input_mode() {
-    this.pushMode('input', '');
+    this.pushMode("input", "");
   }
 
   enter_debug_mode() {
-    this.pushMode('debug', '\x1b[33m>>> \x1b[0m');
+    this.pushMode("debug", "\x1b[33m>>> \x1b[0m");
   }
 
   handleTermData(data) {
-    if (this.currentMode === 'wait') {
-      if (data === '\x03') { // Ctrl+C
+    if (this.currentMode === "wait") {
+      if (data === "\x03") {
+        // Ctrl+C
         this.popMode();
       }
       return;
     }
 
-    if (this.currentMode === 'input') {
-      if (data === '\x03') { // Ctrl+C
+    if (this.currentMode === "input") {
+      if (data === "\x03") {
+        // Ctrl+C
         simulator_controller.stop_execution();
         return;
       }
@@ -268,21 +288,25 @@ export class WebTerminal {
     for (let i = 0; i < data.length; i++) {
       const char = data[i];
 
-      if (char === '\r' || char === '\n') { // Enter key
-        this.term.write('\r\n');
+      if (char === "\r" || char === "\n") {
+        // Enter key
+        this.term.write("\r\n");
         const cmd = this.inputLine;
         this.inputLine = "";
         this.executeCommand(cmd);
-      } else if (char === '\x7f' || char === '\b') { // Backspace
+      } else if (char === "\x7f" || char === "\b") {
+        // Backspace
         if (this.inputLine.length > 0) {
           this.inputLine = this.inputLine.slice(0, -1);
-          this.term.write('\b \b');
+          this.term.write("\b \b");
         }
-      } else if (char === '\x03') { // Ctrl+C
+      } else if (char === "\x03") {
+        // Ctrl+C
         this.inputLine = "";
-        this.term.write('^C\r\n');
+        this.term.write("^C\r\n");
         this.writePrompt();
-      } else if (char >= ' ' || char === '\t') { // Printable chars
+      } else if (char >= " " || char === "\t") {
+        // Printable chars
         this.inputLine += char;
         this.term.write(char);
       }
@@ -296,7 +320,7 @@ export class WebTerminal {
       return;
     }
 
-    if (this.currentMode === 'debug') {
+    if (this.currentMode === "debug") {
       let cmd = trimmed.split(" ")[0];
       switch (cmd) {
         case "write-stdin":
@@ -306,7 +330,9 @@ export class WebTerminal {
           });
           break;
         case "help":
-          this.term.writeln(`RISC-V ALE commands:\n\nwrite-stdin string\n\tWrites a string to stdin (fd = 0)\n\nSweRV Commands:`);
+          this.term.writeln(
+            `RISC-V ALE commands:\n\nwrite-stdin string\n\tWrites a string to stdin (fd = 0)\n\nSweRV Commands:`,
+          );
           this.stdio_ch.postMessage({ fh: -1, debug: true, cmd: trimmed });
           break;
         default:
@@ -319,7 +345,7 @@ export class WebTerminal {
     // Shell commands
     const parts = trimmed.split(/\s+/);
     const cmd = parts[0];
-    const args = parts.slice(1).map(e => e.trim().replace(" ", "_"));
+    const args = parts.slice(1).map((e) => e.trim().replace(" ", "_"));
 
     switch (cmd) {
       case "riscv":
@@ -340,7 +366,11 @@ export class WebTerminal {
         break;
 
       case "ls":
-        for (let i = 0; i < simulator_controller.last_loaded_files.length; i++) {
+        for (
+          let i = 0;
+          i < simulator_controller.last_loaded_files.length;
+          i++
+        ) {
           this.term.writeln(simulator_controller.last_loaded_files[i].name);
         }
         this.writePrompt();
