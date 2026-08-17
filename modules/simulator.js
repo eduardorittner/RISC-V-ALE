@@ -125,7 +125,49 @@ class SimulatorController {
     }
   }
 
+  /**
+   * Surface a worker-level failure (a thrown exception that escaped the worker,
+   * or a message that could not be deserialized) and settle any pending run.
+   */
+  report_worker_failure(title, detail) {
+    console.error(title + ":", detail);
+    this.sim_status_ch.postMessage({
+      type: "message",
+      msg: {
+        type: "error",
+        title,
+        text: String(detail),
+        delay: Infinity,
+      },
+    });
+    this.sim_status_ch.postMessage({
+      type: "status",
+      status: { finish: true, error: true, errorMessage: String(detail) },
+    });
+    if (this._executionResolve) {
+      const resolve = this._executionResolve;
+      this._executionResolve = null;
+      resolve();
+    }
+  }
+
   setup_simulator_listeners(worker) {
+    worker.onerror = function (e) {
+      // `preventDefault` stops the browser from also logging an uncaught error.
+      if (typeof e.preventDefault === "function") e.preventDefault();
+      this.report_worker_failure(
+        "Simulator Worker Error",
+        e.message || "The simulator worker crashed.",
+      );
+    }.bind(this);
+
+    worker.onmessageerror = function () {
+      this.report_worker_failure(
+        "Simulator Worker Error",
+        "A message from the simulator worker could not be deserialized.",
+      );
+    }.bind(this);
+
     worker.onmessage = function (e) {
       switch (e.data.type) {
         case "device_message":

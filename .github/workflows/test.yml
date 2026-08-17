@@ -31,6 +31,18 @@ jobs:
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # branch=master
         with:
           toolchain: ${{ matrix.toolchain }}
+      # The differential tests compare against the SweRV-ISS oracle. Building it
+      # takes several minutes, so key a cache on the pinned oracle revision.
+      - name: Record oracle revision
+        run: |
+          echo "ORACLE_SHA=$(git -C crates/riscv-rs rev-parse HEAD:SweRV-ISS-1)" >> "$GITHUB_ENV"
+      - name: Cache the SweRV-ISS oracle build
+        uses: actions/cache@v4
+        with:
+          path: |
+            crates/riscv-rs/SweRV-ISS-1/opt
+            crates/riscv-rs/vendor/stage
+          key: swerv-iss-${{ runner.os }}-${{ env.ORACLE_SHA }}-${{ hashFiles('crates/riscv-rs/vendor/GNUmakefile.vendor') }}
       - name: cargo generate-lockfile
         # enable this ci template to run regardless of whether the lockfile is checked in or not
         if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
@@ -39,6 +51,10 @@ jobs:
       # https://twitter.com/jonhoo/status/1571290371124260865
       - name: cargo test --locked
         working-directory: crates/riscv-rs
+        # A missing or unbuildable oracle must fail this job rather than let the
+        # differential tests pass without ever comparing anything.
+        env:
+          RISCV_RS_REQUIRE_ORACLE: "1"
         run: cargo test --locked --all-features --all-targets
       - name: Run Syscall & Host Import Fuzz Tests
         working-directory: crates/riscv-rs
@@ -113,12 +129,24 @@ jobs:
         uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # tag=v2.82.7
         with:
           tool: cargo-llvm-cov
+      - name: Record oracle revision
+        run: |
+          echo "ORACLE_SHA=$(git -C crates/riscv-rs rev-parse HEAD:SweRV-ISS-1)" >> "$GITHUB_ENV"
+      - name: Cache the SweRV-ISS oracle build
+        uses: actions/cache@v4
+        with:
+          path: |
+            crates/riscv-rs/SweRV-ISS-1/opt
+            crates/riscv-rs/vendor/stage
+          key: swerv-iss-${{ runner.os }}-${{ env.ORACLE_SHA }}-${{ hashFiles('crates/riscv-rs/vendor/GNUmakefile.vendor') }}
       - name: cargo generate-lockfile
         if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
         working-directory: crates/riscv-rs
         run: cargo generate-lockfile
       - name: cargo llvm-cov
         working-directory: crates/riscv-rs
+        env:
+          RISCV_RS_REQUIRE_ORACLE: "1"
         run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
       - name: Record Rust version
         run: echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"

@@ -50,6 +50,29 @@ if ('serviceWorker' in navigator) {
 }
 
 // check for errors
+// Bridge uncaught page errors and rejected promises to a visible notification,
+// so a failure is never silent.
+window.addEventListener('error', function (event) {
+  const detail = (event.error && (event.error.stack || event.error.message)) ||
+    event.message || 'Unknown error';
+  console.error('Uncaught error:', detail);
+  Toast.error({
+    title: 'Unexpected Error',
+    text: String(detail),
+    delay: Infinity
+  });
+});
+
+window.addEventListener('unhandledrejection', function (event) {
+  const reason = event.reason;
+  const detail = (reason && (reason.stack || reason.message)) || String(reason);
+  console.error('Unhandled promise rejection:', detail);
+  Toast.error({
+    title: 'Unexpected Error',
+    text: String(detail),
+    delay: Infinity
+  });
+});
 
 // load modules
 import {MMIO_Manager} from "../../modules/mmio_manager.js";
@@ -198,10 +221,17 @@ class ConfigurationManager{
     this.currentConfig = new_config;
     // options
     for (const opt in this.currentConfig.options) {
+      const element = document.getElementById(opt);
+      if(!element){
+        // Shared configuration links can carry options that this build no
+        // longer has a control for. Skip them instead of failing the load.
+        console.warn("Ignoring unknown configuration option:", opt);
+        continue;
+      }
       if(this.trackedOptions.checkboxes.includes(opt)){
-        document.getElementById(opt).checked = this.currentConfig.options[opt];   
+        element.checked = this.currentConfig.options[opt];
       }else{
-        document.getElementById(opt).value = this.currentConfig.options[opt];
+        element.value = this.currentConfig.options[opt];
       }
     }
     freq_change();
@@ -221,22 +251,24 @@ class ConfigurationManager{
   load_content_string(base64Data){
     var cData = LZString.decompressFromEncodedURIComponent(atob(base64Data));
     var configs = JSON.parse(cData);
-    home_header.hidden = true;
     content_selection.hidden = true;
     selected_content.hidden = false;
     selected_content.insertAdjacentHTML('beforeend', `<iframe style="width:100%;height:100%" src="${configs.main_page}" frameborder="0"></iframe>`);
-    assistant.setScript(configs.assistant_script);
+    // The script arrives inside the URL, so the user has to approve it first.
+    assistant.setScript(configs.assistant_script, {trusted: false});
     this.load_configuration(configs.config);
   }
 
   load_content(id) {
-    home_header.hidden = true;
     content_selection.hidden = true;
     selected_content.hidden = false;
-    fetch('./data/config.json').then(function (request) {
-      request.json().then(function (configs) {
+    // Arrow functions keep `this` bound to the ConfigurationManager, so
+    // `this.load_configuration` resolves inside the fetch callbacks.
+    fetch('./data/config.json').then((request) => {
+      request.json().then((configs) => {
         selected_content.insertAdjacentHTML('beforeend', `<iframe style="width:100%;height:100%" src="${configs[id].main_page}" frameborder="0"></iframe>`);
-        assistant.setScript(configs[id].assistant_script);
+        // This script comes from the application's own data files.
+        assistant.setScript(configs[id].assistant_script, {trusted: true});
         this.load_configuration(configs[id].config);
       });
     });
@@ -311,10 +343,23 @@ sim_status_ch.onmessage = function (ev) {
         run_options_selector.removeAttribute("disabled", "");
         run_button.onclick = function(){run_simulator(false);};
 
-        if (ev.data.status.finish && ev.data.status.stats) {
+        if (ev.data.status.finish && ev.data.status.error) {
+          // A failed run must never be reported with the success statistics.
+          const s = ev.data.status.stats;
+          const detail = ev.data.status.errorMessage ||
+            'The program did not finish successfully.';
+          console.error("[Execution Failed]", detail, s);
+          Toast.error({
+            title: 'Execution Failed',
+            text: s
+              ? `${detail}\nInstructions: ${(s.totalInstructions || 0).toLocaleString()} | Exit Code: ${s.exitCode}`
+              : detail,
+            delay: Infinity
+          });
+        } else if (ev.data.status.finish && ev.data.status.stats) {
           const s = ev.data.status.stats;
           console.log("[Toast Execution Complete]", s);
-          const timeFormatted = s.elapsedTimeMs >= 1000 
+          const timeFormatted = s.elapsedTimeMs >= 1000
             ? (s.elapsedTimeMs / 1000).toFixed(3) + " s"
             : s.elapsedTimeMs.toFixed(2) + " ms";
           const instFormatted = (s.totalInstructions || 0).toLocaleString();

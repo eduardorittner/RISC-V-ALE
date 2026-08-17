@@ -16,12 +16,16 @@ function parseArgs(argv) {
     workloads: null,
     iterations: 1,
     timeout: 60000,
+    failThreshold: null,
   };
 
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case "--browser":
         args.browser = argv[++i];
+        break;
+      case "--fail-threshold":
+        args.failThreshold = parseFloat(argv[++i]);
         break;
       case "--dry":
         args.dry = true;
@@ -62,7 +66,13 @@ Options:
   --workloads <path>           Path to workloads.json
   --iterations <n>             Run each workload N times, report median (default: 1)
   --timeout <ms>               Per-workload timeout in ms (default: 60000)
+  --fail-threshold <pct>       Exit nonzero when a workload is more than <pct>
+                               percent slower than the saved baseline
   --help                       Show this help
+
+Exit status:
+  0   every workload reported status "ok" and stayed within the threshold
+  1   a workload failed to run, or regressed past --fail-threshold
 `;
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
@@ -667,10 +677,13 @@ async function main() {
   printResultsTable(results);
 
   // Compare with last run
-  if (!args.dry && !args.noCompare) {
-    const last = loadLastResults();
-    printComparisonTable(results, last);
+  const comparing = !args.dry && !args.noCompare;
+  const baseline = comparing ? loadLastResults() : null;
+  if (comparing) {
+    printComparisonTable(results, baseline);
   }
+
+  const failures = collectFailures(results, baseline, args.failThreshold);
 
   // Save results
   if (!args.dry) {
@@ -684,8 +697,62 @@ async function main() {
   client.close();
   cleanup();
 
+  if (failures.length > 0) {
+    console.log("\n" + "═".repeat(90));
+    console.log("FAILED");
+    for (const failure of failures) console.log("  " + failure);
+    console.log("═".repeat(90));
+    process.exit(1);
+  }
+
   console.log("\nDone.");
   process.exit(0);
+}
+
+/**
+ * Reasons this run should be considered a failure: any workload that did not
+ * report "ok", and — when a threshold is set and a baseline exists — any
+ * workload that got more than `threshold` percent slower.
+ *
+ * @returns {string[]} human-readable failure descriptions, empty when green.
+ */
+function collectFailures(results, baseline, threshold) {
+  const failures = [];
+
+  for (const w of results.workloads) {
+    if (w.status !== "ok") {
+      failures.push(
+        `${w.name}: status "${w.status}"` + (w.stderr ? ` — ${w.stderr.trim()}` : ""),
+      );
+    } else if (w.stdout_match === false) {
+      failures.push(`${w.name}: produced unexpected output`);
+    }
+  }
+
+  if (results.workloads.length === 0) {
+    failures.push("no workloads ran");
+  }
+
+  if (threshold === null || threshold === undefined || !baseline) {
+    return failures;
+  }
+
+  for (const w of results.workloads) {
+    const prev = baseline.workloads.find((x) => x.name === w.name);
+    if (!prev) continue;
+    for (const field of ["compile_time_ms", "exec_time_ms"]) {
+      if (!prev[field]) continue;
+      const pct = ((w[field] - prev[field]) / prev[field]) * 100;
+      if (pct > threshold) {
+        failures.push(
+          `${w.name}: ${field} regressed ${pct.toFixed(1)}% ` +
+            `(${prev[field].toFixed(1)}ms → ${w[field].toFixed(1)}ms, threshold ${threshold}%)`,
+        );
+      }
+    }
+  }
+
+  return failures;
 }
 
 main().catch((err) => {

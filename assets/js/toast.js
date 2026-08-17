@@ -37,19 +37,45 @@
       const toast = document.createElement('div');
       toast.className = `toast-item toast-${type} animate-toast-slide-in`;
 
+      // Built with DOM calls rather than innerHTML: titles and bodies routinely
+      // carry user-supplied strings (file names, ELF symbols, error text), and
+      // none of them may ever be parsed as markup.
       const renderContent = (curTitle, curText, curIcon) => {
-        const iconHtml = curIcon ? `<i class="${curIcon} toast-icon"></i>` : '';
-        const titleHtml = curTitle ? `<strong class="toast-title">${curTitle}</strong>` : '';
-        const textHtml = curText ? `<div class="toast-body">${String(curText).replace(/\n/g, '<br>')}</div>` : '';
+        toast.textContent = '';
 
-        toast.innerHTML = `
-          <div class="toast-header">
-            ${iconHtml}
-            ${titleHtml}
-            <button type="button" class="toast-close" aria-label="Close">&times;</button>
-          </div>
-          ${textHtml}
-        `;
+        const header = document.createElement('div');
+        header.className = 'toast-header';
+
+        if (curIcon) {
+          const iconEl = document.createElement('i');
+          iconEl.className = String(curIcon) + ' toast-icon';
+          header.appendChild(iconEl);
+        }
+
+        if (curTitle) {
+          const titleEl = document.createElement('strong');
+          titleEl.className = 'toast-title';
+          titleEl.textContent = String(curTitle);
+          header.appendChild(titleEl);
+        }
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'toast-close';
+        closeBtn.setAttribute('aria-label', 'Close');
+        closeBtn.textContent = '×';
+        header.appendChild(closeBtn);
+
+        toast.appendChild(header);
+
+        if (curText) {
+          const bodyEl = document.createElement('div');
+          bodyEl.className = 'toast-body';
+          // Preserves the line breaks the old <br> substitution produced.
+          bodyEl.style.whiteSpace = 'pre-line';
+          bodyEl.textContent = String(curText);
+          toast.appendChild(bodyEl);
+        }
       };
 
       renderContent(title, text, icon);
@@ -153,19 +179,39 @@
 
         const backdrop = document.createElement('div');
         backdrop.className = 'toast-modal-backdrop';
-        backdrop.innerHTML = `
-          <div class="toast-modal-dialog">
-            <h5 class="toast-modal-title">
-              <i class="${icon} text-warning"></i>
-              ${title}
-            </h5>
-            <div class="toast-modal-body">${String(text).replace(/\n/g, '<br>')}</div>
-            <div class="toast-modal-actions">
-              <button type="button" class="btn btn-sm btn-secondary toast-btn-cancel">${cancelText}</button>
-              <button type="button" class="btn btn-sm btn-primary toast-btn-confirm">${okText}</button>
-            </div>
-          </div>
-        `;
+
+        const dialog = document.createElement('div');
+        dialog.className = 'toast-modal-dialog';
+
+        const titleEl = document.createElement('h5');
+        titleEl.className = 'toast-modal-title';
+        const iconEl = document.createElement('i');
+        iconEl.className = String(icon) + ' text-warning';
+        titleEl.appendChild(iconEl);
+        titleEl.appendChild(document.createTextNode(' ' + String(title)));
+        dialog.appendChild(titleEl);
+
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'toast-modal-body';
+        bodyEl.style.whiteSpace = 'pre-line';
+        bodyEl.textContent = String(text);
+        dialog.appendChild(bodyEl);
+
+        const actions = document.createElement('div');
+        actions.className = 'toast-modal-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn btn-sm btn-secondary toast-btn-cancel';
+        cancelBtn.textContent = String(cancelText);
+        const confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'btn btn-sm btn-primary toast-btn-confirm';
+        confirmBtn.textContent = String(okText);
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+        dialog.appendChild(actions);
+
+        backdrop.appendChild(dialog);
 
         document.body.appendChild(backdrop);
 

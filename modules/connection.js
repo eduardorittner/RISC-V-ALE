@@ -27,8 +27,26 @@ export class Connection {
 
   send(data) {}
 
+  /**
+   * True when `cmd` names an operation this connection actually exposes.
+   * Anything else is ignored: the page receives messages from arbitrary
+   * senders, so an unrecognised command must never reach a handler.
+   */
+  is_valid_cmd(cmd) {
+    return (
+      !!cmd &&
+      typeof cmd.op === "string" &&
+      Object.prototype.hasOwnProperty.call(this.operations, cmd.op)
+    );
+  }
+
   run_remote_cmd(cmd) {
+    if (!this.is_valid_cmd(cmd)) {
+      console.warn("Ignoring unknown remote command:", cmd && cmd.op);
+      return false;
+    }
     this.operations[cmd.op].f(cmd.params);
+    return true;
   }
 
   load_add_file_from_base64(params) {
@@ -68,16 +86,20 @@ class Window_postMessage extends Connection {
   }
 
   msg_handle(msg) {
+    const cmd = msg && msg.data && msg.data.cmd;
+    if (!this.is_valid_cmd(cmd)) {
+      // Other scripts and extensions post unrelated messages to this window.
+      // Drop anything that is not a command we recognise, without throwing.
+      return;
+    }
     if (this.isTrusted || window.origin == msg.origin) {
-      this.run_remote_cmd(msg.data.cmd);
+      this.run_remote_cmd(cmd);
     } else {
-      var operation = this.operations[msg.data.cmd.op];
-      if (operation) operation = operation.desc;
       this.confirmation_dialog(
-        msg.data.name,
+        String(msg.data.name || "An unidentified page"),
         msg.origin,
-        operation,
-        msg.data.cmd,
+        this.operations[cmd.op].desc,
+        cmd,
       );
     }
   }

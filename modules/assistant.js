@@ -345,23 +345,70 @@ export class Assistant_Script {
   }
 }
 
+/** True when `value` names a script file rather than carrying script source. */
+function is_script_url(value) {
+  return /^(\.{0,2}\/|https?:\/\/)\S*\.m?js$/.test(value.trim());
+}
+
 export class Assistant {
   constructor(container, button) {
     this.button = button;
   }
 
-  loadScript(content) {
-    var script = document.createElement("script");
+  /**
+   * Inject an assistant script as a module. Scripts that come from the
+   * application's own data files are trusted and run straight away; anything
+   * delivered through a URL is arbitrary code from whoever wrote the link, so
+   * the user has to approve it first.
+   *
+   * @returns {Promise<boolean>} whether the script was injected.
+   */
+  async loadScript(content, { trusted = false } = {}) {
+    if (!trusted) {
+      const confirmed = await Toast.confirm({
+        title: "External Script Received",
+        text:
+          "This link wants to run an assistant script in the simulator. " +
+          "The script comes from the link, not from RISC-V ALE. Do you wish to proceed?",
+        icon: "fas fa-exclamation-triangle",
+        okText: "Run Script",
+        cancelText: "Cancel",
+      });
+      if (!confirmed) return false;
+    }
+
+    let source = content;
+    if (is_script_url(content)) {
+      // Configuration files name the script instead of carrying it. Fetch it
+      // and inline the text: assistant scripts import "./modules/assistant.js",
+      // which only resolves when the module's base URL is the page itself.
+      try {
+        const response = await fetch(content);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} for ${content}`);
+        }
+        source = await response.text();
+      } catch (err) {
+        Toast.error({
+          title: "Assistant Script",
+          text: `Failed to load the assistant script.\n${err}`,
+          delay: Infinity,
+        });
+        return false;
+      }
+    }
+
+    const script = document.createElement("script");
     script.type = "module";
-    var prior = document.getElementsByTagName("script")[0];
     script.async = 1;
-    script.innerHTML = content;
-    // script.src = source;
+    script.textContent = source;
+    const prior = document.getElementsByTagName("script")[0];
     prior.parentNode.insertBefore(script, prior);
+    return true;
   }
 
-  setScript(encodedJs) {
-    if (encodedJs == "") return;
-    this.loadScript(encodedJs);
+  setScript(encodedJs, options) {
+    if (!encodedJs) return Promise.resolve(false);
+    return this.loadScript(encodedJs, options);
   }
 }

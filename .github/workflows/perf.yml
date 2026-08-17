@@ -22,22 +22,46 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@wasm-pack
+
+      # The harness drives the real application, so the WASM modules the page
+      # loads have to be built from this commit.
+      - name: Build WASM modules
+        run: make build
+
       - name: Install perf dependencies
         working-directory: scripts/perf
         run: npm install
+
+      # Results from earlier runs on this branch are the regression baseline.
+      - name: Cache perf baseline
+        uses: actions/cache@v4
+        with:
+          path: scripts/perf/results
+          key: perf-baseline-${{ github.base_ref || github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            perf-baseline-${{ github.base_ref || github.ref_name }}-
+            perf-baseline-
 
       - name: Run make perf
         id: perf
         run: |
           set -o pipefail
-          make perf BROWSER=chrome DRY=1 2>&1 | tee perf_output.txt
-        continue-on-error: true
+          make perf BROWSER=chrome FAIL_THRESHOLD=20 2>&1 | tee perf_output.txt
 
       - name: Post perf results as PR comment
         if: always()
