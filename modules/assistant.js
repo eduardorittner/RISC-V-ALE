@@ -93,12 +93,29 @@ export class UI_Helper {
   }
 }
 
+/**
+ * A configuration control, typed so `checked` and `value` are visible to the
+ * compiler. A bare `getElementById` gives only `HTMLElement`.
+ *
+ * @param {string} id
+ * @returns {HTMLInputElement}
+ */
+function checkbox_by_id(id) {
+  return /** @type {HTMLInputElement} */ (document.getElementById(id));
+}
+
 export class Assistant_Script {
   constructor() {
     this.stdio_ch = new BroadcastChannel("stdio_channel" + window.uniq_id);
     this.sim_ctrl_ch = new BroadcastChannel(
       "simulator_control" + window.uniq_id,
     );
+    // A lab script subclasses this and installs its own view; see
+    // `data/html/calculator.js`.
+    /** @type {UI_Helper | null} */
+    this.ui = null;
+    /** Name of the ELF the last compile produced. @type {string | undefined} */
+    this.default_filename = undefined;
     this.bus = bus_helper;
     this.stdioCallback = undefined;
     this.predefined_args = [];
@@ -146,8 +163,8 @@ export class Assistant_Script {
     };
 
     this.get_symbol_address = async function (symbol) {
-      var symbols = await this.run_interactive_cmd("symbols", 5000);
-      symbols = symbols.split("\n");
+      const output = await this.run_interactive_cmd("symbols", 5000);
+      const symbols = output.split("\n");
       for (var s in symbols) {
         var f = symbols[s].split(" ");
         if (f.length == 2 && f[0] == symbol) {
@@ -158,8 +175,8 @@ export class Assistant_Script {
     };
 
     this.get_symbols = async function () {
-      var symbols = await this.run_interactive_cmd("symbols", 5000);
-      symbols = symbols.split("\n");
+      const output = await this.run_interactive_cmd("symbols", 5000);
+      const symbols = output.split("\n");
       var symList = {};
       for (var s in symbols) {
         var f = symbols[s].split(" ");
@@ -172,7 +189,7 @@ export class Assistant_Script {
   }
 
   generic_compile_test() {
-    return async function () {
+    return async () => {
       this.default_filename = await this.compile_code();
       this.ui.log(this.stdoutBuffer);
       this.ui.log(this.stderrBuffer);
@@ -180,7 +197,7 @@ export class Assistant_Script {
       this.log_input_files();
       if (this.default_filename) return true;
       return false;
-    }.bind(this);
+    };
   }
 
   simple_equality_test(
@@ -227,14 +244,14 @@ export class Assistant_Script {
 
     function get_checked_ISAs() {
       var ISAs = "";
-      if (document.getElementById("config_isaA").checked) ISAs += "a";
-      if (document.getElementById("config_isaC").checked) ISAs += "c";
-      if (document.getElementById("config_isaD").checked) ISAs += "d";
-      if (document.getElementById("config_isaF").checked) ISAs += "f";
-      if (document.getElementById("config_isaI").checked) ISAs += "i";
-      if (document.getElementById("config_isaM").checked) ISAs += "m";
-      if (document.getElementById("config_isaS").checked) ISAs += "s";
-      if (document.getElementById("config_isaU").checked) ISAs += "u";
+      if (checkbox_by_id("config_isaA").checked) ISAs += "a";
+      if (checkbox_by_id("config_isaC").checked) ISAs += "c";
+      if (checkbox_by_id("config_isaD").checked) ISAs += "d";
+      if (checkbox_by_id("config_isaF").checked) ISAs += "f";
+      if (checkbox_by_id("config_isaI").checked) ISAs += "i";
+      if (checkbox_by_id("config_isaM").checked) ISAs += "m";
+      if (checkbox_by_id("config_isaS").checked) ISAs += "s";
+      if (checkbox_by_id("config_isaU").checked) ISAs += "u";
       return ISAs;
     }
 
@@ -253,7 +270,7 @@ export class Assistant_Script {
         index++
       ) {
         const element = simulator_controller.last_loaded_files[index];
-        if (element.name.endsWith(document.getElementById("elf_ext").value)) {
+        if (element.name.endsWith(checkbox_by_id("elf_ext").value)) {
           filename = element.name;
           break;
         }
@@ -400,7 +417,7 @@ export class Assistant {
 
     const script = document.createElement("script");
     script.type = "module";
-    script.async = 1;
+    script.async = true;
     script.textContent = source;
     const prior = document.getElementsByTagName("script")[0];
     prior.parentNode.insertBefore(script, prior);

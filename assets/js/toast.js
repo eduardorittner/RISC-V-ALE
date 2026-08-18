@@ -2,7 +2,7 @@
  * Custom Lightweight Toast & Modal Notification System for RISC-V ALE
  * Replaces PNotify and PNotifyConfirm with zero external dependencies.
  */
-(function (global) {
+(function (/** @type {any} */ global) {
   'use strict';
 
   class ToastManager {
@@ -101,7 +101,9 @@
       };
 
       const bindClose = () => {
-        const closeBtn = toast.querySelector('.toast-close');
+        const closeBtn = /** @type {HTMLElement | null} */ (
+          toast.querySelector('.toast-close')
+        );
         if (closeBtn) {
           closeBtn.onclick = (e) => {
             e.stopPropagation();
@@ -225,13 +227,17 @@
           }, 150);
         };
 
-        backdrop.querySelector('.toast-btn-cancel').onclick = () => closeModal(false);
-        backdrop.querySelector('.toast-btn-confirm').onclick = () => closeModal(true);
+        /** @type {HTMLElement} */ (
+          backdrop.querySelector('.toast-btn-cancel')
+        ).onclick = () => closeModal(false);
+        /** @type {HTMLElement} */ (
+          backdrop.querySelector('.toast-btn-confirm')
+        ).onclick = () => closeModal(true);
       });
     }
   }
 
-  const toastInstance = new ToastManager();
+  const toastInstance = /** @type {any} */ (new ToastManager());
 
   // Backward compatibility mock for PNotify.Stack if referenced
   toastInstance.Stack = function () {
@@ -240,4 +246,4 @@
 
   global.Toast = toastInstance;
   global.PNotify = toastInstance; // Backward compatibility alias
-})(typeof window !== 'undefined' ? window : this);
+})(typeof window !== 'undefined' ? window : globalThis);

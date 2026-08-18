@@ -4,23 +4,81 @@ var stdinBuffer = new Uint8Array([]);
 var non_blocking_io = false;
 var interactiveBufferString = "";
 var syscall_delay = 0;
-var simulator_sleep = [0, 0, 0]; // int, read, write
 var simulator_int_inst_delay = 1000;
+/** @type {WebAssembly.Module | null} */
 var precompiledRiscvModule = null;
 
+// Debug settings live in the worker, not in the WASM simulator: the user sets
+// them before a program is loaded, and `load_binary` builds a fresh CPU that
+// knows nothing about them.
+var debug_mode_enabled = false;
+var breakpoints = new Set();
+/** True once `pkg/riscv_rs.js` has been imported into this worker. */
+var wasm_glue_loaded = false;
+
+// ─── Run slice scheduler ────────────────────────────────────────────────────
+//
+// A run is a chain of short `run_slice` calls joined by `setTimeout`, so the
+// worker keeps answering messages while a guest program runs. Without it a
+// single `run_full` call owns the thread until the program stops, and an
+// infinite loop in guest code wedges the worker for ever.
+
+/** True between the start of a run and the moment it finishes or stops. */
+var run_active = false;
+/** True while a `run_pause` holds the slice chain. */
+var run_paused = false;
+/** True when the chain must not restart (breakpoint, guard, failure). */
+var run_stopped = false;
+/** Instructions executed in the current run, across all slices. */
+var run_total_instructions = 0;
+
+/** Instructions per slice. Adapted so one slice lands in the target window. */
+var slice_budget = 200000;
+/** Delay between slices, in milliseconds. */
+var slice_delay = 0;
+/** True while the frequency limiter drives the budget instead of the timer. */
+var freq_limited = false;
+
+// A slice should take between these two values, in milliseconds: short enough
+// that the worker answers a message well inside one frame, long enough that the
+// scheduler is not a measurable part of the run.
+const SLICE_TARGET_MIN_MS = 8;
+const SLICE_TARGET_MAX_MS = 16;
+const SLICE_TARGET_MID_MS = 12;
+const SLICE_BUDGET_MIN = 10000;
+const SLICE_BUDGET_MAX = 20000000;
+/** Instruction total after which a run is treated as an infinite loop. */
+const RUN_INSTRUCTION_LIMIT = 2000000000;
+
+/**
+ * The only way this worker talks to the main thread. The parameter type is what
+ * makes a message the main thread does not handle a compile error.
+ *
+ * @param {SimulatorToMainMessage} msg
+ */
+function post(msg) {
+  postMessage(msg);
+}
+
+/**
+ * The `default` branch of an exhaustive switch over an IPC union. A member no
+ * case handles gives `value` a real type in place of `never`, and `tsc` fails.
+ *
+ * @param {never} value
+ */
+function assert_unreachable(value) {
+  console.error("Unhandled IPC message:", value);
+}
+
 onmessage = function (e) {
-  switch (e.data.type) {
+  /** @type {MainToSimulatorMessage} */
+  const msg = e.data;
+  switch (msg.type) {
     case "init_modules":
-      precompiledRiscvModule = e.data.riscvModule || e.data.whisperModule;
-      break;
-    case "code_load":
-      files = e.data.code;
-      break;
-    case "start_sim":
-      runSimulation();
+      precompiledRiscvModule = msg.riscvModule || msg.whisperModule;
       break;
     case "stdin":
-      let new_stdin = new TextEncoder("utf-8").encode(e.data.stdin);
+      let new_stdin = new TextEncoder().encode(msg.stdin);
       let new_stdin_buffer = new Uint8Array(
         new_stdin.length + stdinBuffer.length,
       );
@@ -29,182 +87,213 @@ onmessage = function (e) {
       stdinBuffer = new_stdin_buffer;
       break;
     case "non_blocking_io":
-      non_blocking_io = e.data.value;
+      non_blocking_io = msg.value;
       break;
     case "interactive":
-      interactiveBufferString += e.data.cmd;
+      interactiveBufferString += msg.cmd;
       break;
     case "interrupt":
-      intController.changeState(e.data.state);
+      intController.changeState(msg.state);
       break;
     case "add_files":
-      files = e.data.files;
+      files = msg.files;
       break;
     case "start":
       self.execFinished = false;
       self.executionStartTime = performance.now();
-      Module.arguments = e.data.args;
-      if (e.data.args.includes("--interactive")) {
-        postMessage({
+      Module.arguments = msg.args;
+      if (msg.args.includes("--interactive")) {
+        post({
           type: "status",
           status: { running: true, debugging: true },
         });
       } else {
-        postMessage({ type: "status", status: { running: true } });
+        post({ type: "status", status: { running: true } });
       }
       runSimulation();
       break;
 
     case "sync":
-      bus_sync.merge(e.data.buffer);
+      bus_sync.merge(msg.buffer);
       break;
 
     case "load_syscall":
-      syscall_emulator.register(parseInt(e.data.number), e.data.code);
+      syscall_emulator.register(Number(msg.number), msg.code);
       if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         wasmSimulator.set_has_custom_syscalls(true);
       }
       break;
 
     case "disable_syscall":
-      syscall_emulator.unregister(parseInt(e.data.number));
+      syscall_emulator.unregister(Number(msg.number));
       if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         wasmSimulator.set_has_custom_syscalls(syscall_emulator.has_syscalls());
       }
       break;
 
     case "interrupt_enabled":
-      intController.interrupt_enabled = e.data.value;
+      intController.interrupt_enabled = msg.value;
       break;
 
     case "set_freq_limit":
-      let value = e.data.value;
+      let value = msg.value;
       if (value >= 1000) {
-        simulator_sleep[0] = 0;
-        simulator_sleep[1] = 0;
-        simulator_sleep[2] = 0;
+        freq_limited = false;
         syscall_delay = 0;
+        slice_delay = 0;
+        slice_budget = Math.max(SLICE_BUDGET_MIN, slice_budget);
       } else {
-        simulator_sleep[0] = 1000 * (1 / value);
-        simulator_sleep[1] = 1000 * (1 / value);
-        simulator_sleep[2] = 1000 * (1 / value);
+        // One slice every 16 ms carries the instructions the requested
+        // frequency allows in that interval.
+        freq_limited = true;
         syscall_delay = 30;
+        slice_delay = 16;
+        slice_budget = Math.max(1, Math.round(value * 0.016));
       }
       break;
     case "set_int_delay":
-      simulator_int_inst_delay = e.data.value;
+      simulator_int_inst_delay = msg.value;
       break;
 
+    // The debug mode and the breakpoints are worker state, not simulator state:
+    // the user sets them before a program exists, and they must survive the
+    // next `load_binary`. They are recorded here and replayed in
+    // `setupSimulation`.
     case "debug_enable":
+      debug_mode_enabled = msg.enabled;
       if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        wasmSimulator.set_debug_mode(e.data.enabled);
+        wasmSimulator.set_debug_mode(msg.enabled);
       }
-      self.debugModeActive = e.data.enabled;
-      postMessage({ type: "debug_status", enabled: e.data.enabled });
-      break;
-
-    case "debug_step":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        let state = wasmSimulator.debug_step();
-        postMessage({ type: "debug_state", state: state });
-      }
-      break;
-
-    case "debug_step_over":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        let state = wasmSimulator.debug_step_over();
-        postMessage({ type: "debug_state", state: state });
-      }
-      break;
-
-    case "debug_step_out":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        let state = wasmSimulator.debug_step_out();
-        postMessage({ type: "debug_state", state: state });
-      }
-      break;
-
-    case "debug_continue":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        let state = wasmSimulator.run_until_breakpoint();
-        postMessage({ type: "debug_state", state: state });
-      }
-      break;
-
-    case "debug_pause":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        let state = wasmSimulator.get_snapshot_js(false, 0);
-        postMessage({ type: "debug_state", state: state });
-      }
+      post({ type: "debug_status", enabled: msg.enabled });
       break;
 
     case "debug_set_bp":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        if (e.data.active) {
-          wasmSimulator.add_breakpoint(e.data.addr);
-        } else {
-          wasmSimulator.remove_breakpoint(e.data.addr);
-        }
-        postMessage({
-          type: "debug_bp_updated",
-          addr: e.data.addr,
-          active: e.data.active,
-        });
+      if (msg.active) {
+        breakpoints.add(msg.addr);
+      } else {
+        breakpoints.delete(msg.addr);
       }
+      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
+        if (msg.active) {
+          wasmSimulator.add_breakpoint(msg.addr);
+        } else {
+          wasmSimulator.remove_breakpoint(msg.addr);
+        }
+      }
+      post({
+        type: "debug_bp_updated",
+        addr: msg.addr,
+        active: msg.active,
+      });
       break;
 
     case "debug_clear_bps":
+      breakpoints.clear();
       if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
         wasmSimulator.clear_breakpoints();
       }
       break;
 
+    case "debug_step":
+      with_simulator((sim) =>
+        post({ type: "debug_state", state: sim.debug_step() }),
+      );
+      break;
+
+    case "debug_step_over":
+      with_simulator((sim) =>
+        post({ type: "debug_state", state: sim.debug_step_over() }),
+      );
+      break;
+
+    case "debug_step_out":
+      with_simulator((sim) =>
+        post({ type: "debug_state", state: sim.debug_step_out() }),
+      );
+      break;
+
+    case "debug_continue":
+      with_simulator((sim) =>
+        post({ type: "debug_state", state: sim.run_until_breakpoint() }),
+      );
+      break;
+
+    case "debug_pause":
+    case "run_pause":
+      pause_run();
+      break;
+
+    case "run_resume":
+      resume_run();
+      break;
+
     case "debug_read_mem":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        let bytes = wasmSimulator.read_memory_range(e.data.addr, e.data.len);
-        postMessage({
+      with_simulator((sim) =>
+        post({
           type: "debug_mem_data",
-          addr: e.data.addr,
-          bytes: Array.from(bytes),
-        });
-      }
+          addr: msg.addr,
+          bytes: Array.from(sim.read_memory_range(msg.addr, msg.len)),
+        }),
+      );
       break;
 
     case "debug_poke_reg":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        wasmSimulator.write_register(e.data.reg, e.data.val);
-        let state = wasmSimulator.get_snapshot_js(false, 0);
-        postMessage({ type: "debug_state", state: state });
-      }
+      with_simulator((sim) => {
+        sim.write_register(msg.reg, msg.val);
+        post({
+          type: "debug_state",
+          state: sim.get_snapshot_js(false, 0),
+        });
+      });
       break;
 
     case "debug_poke_mem":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        wasmSimulator.write_memory_byte(e.data.addr, e.data.val);
-        let bytes = wasmSimulator.read_memory_range(e.data.addr, 64);
-        postMessage({
+      with_simulator((sim) => {
+        sim.write_memory_byte(msg.addr, msg.val);
+        post({
           type: "debug_mem_data",
-          addr: e.data.addr,
-          bytes: Array.from(bytes),
+          addr: msg.addr,
+          bytes: Array.from(sim.read_memory_range(msg.addr, 64)),
         });
-      }
+      });
       break;
 
     case "debug_disasm":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        let items = wasmSimulator.disassemble_range(e.data.addr, e.data.len);
-        postMessage({ type: "debug_disasm_data", items: items });
-      }
+      with_simulator((sim) =>
+        post({
+          type: "debug_disasm_data",
+          items: sim.disassemble_range(msg.addr, msg.len),
+        }),
+      );
       break;
 
     case "debug_get_snapshot":
-      if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
-        let state = wasmSimulator.get_snapshot_js(false, 0);
-        postMessage({ type: "debug_state", state: state });
-      }
+      with_simulator((sim) =>
+        post({
+          type: "debug_state",
+          state: sim.get_snapshot_js(false, 0),
+        }),
+      );
       break;
+
+    default:
+      assert_unreachable(msg);
   }
 };
+
+/**
+ * Run `handler` against the loaded simulator, or answer that no program is
+ * loaded. No debug command may fail in silence.
+ *
+ * @param {(sim: any) => void} handler
+ */
+function with_simulator(handler) {
+  if (typeof wasmSimulator === "undefined" || !wasmSimulator) {
+    post({ type: "debug_error", reason: "no_program" });
+    return;
+  }
+  handler(wasmSimulator);
+}
 
 class MMIO {
   constructor(size) {
@@ -219,7 +308,7 @@ class MMIO {
   load(addr, size) {
     addr &= 0xffff;
     if (addr > this.size) {
-      postMessage({
+      post({
         type: "sim_log",
         subtype: "error",
         msg: "MMIO Access Error",
@@ -231,7 +320,7 @@ class MMIO {
   store(addr, size, value) {
     addr &= 0xffff;
     if (addr > this.size) {
-      postMessage({
+      post({
         type: "sim_log",
         subtype: "error",
         msg: "MMIO Access Error",
@@ -274,16 +363,19 @@ class BusSync {
       }
     }
     this.is_dirty = true;
+    // A device must see the write even when the program never prints. The
+    // flush stays rate-limited by `flush_interval_ms`, so the cost is low.
+    this.check_auto_flush();
   }
 
   add_stdout(text) {
-    this.stdout_buffer += `${text}\n`;
+    this.stdout_buffer += text;
     this.is_dirty = true;
     this.check_auto_flush();
   }
 
   add_stderr(text) {
-    this.stderr_buffer += `${text}\n`;
+    this.stderr_buffer += text;
     this.is_dirty = true;
     this.check_auto_flush();
   }
@@ -331,7 +423,7 @@ class BusSync {
       }
       this.dirty_count = 0;
     }
-    postMessage({
+    post({
       type: "sync",
       mmio_buffer: mmio_updates,
       stdout: this.stdout_buffer,
@@ -409,7 +501,7 @@ class SyscallEmulator {
     const fn = this.syscalls[a7];
     if (fn !== undefined) {
       var sendMessage = function (msg) {
-        postMessage({ type: "device_message", syscall: a7, message: msg });
+        post({ type: "device_message", syscall: a7, message: msg });
         if (syscall_delay) {
           let start = performance.now();
           while (performance.now() - start < syscall_delay);
@@ -423,7 +515,7 @@ class SyscallEmulator {
       return a0;
     } else {
       var text = "Invalid syscall: " + a7;
-      postMessage({ type: "sim_log", subtype: "error", msg: text });
+      post({ type: "sim_log", subtype: "error", msg: text });
       return 0;
     }
   }
@@ -432,6 +524,12 @@ class SyscallEmulator {
 var syscall_emulator = new SyscallEmulator();
 var intController = new InterruptionController();
 
+/**
+ * Take up to `count` bytes of buffered stdin, or -1 when the guest has to wait.
+ *
+ * @param {number} count
+ * @returns {Uint8Array | -1}
+ */
 function getStdin(count) {
   if (stdinBuffer.length == 0 && !non_blocking_io) {
     wait_for_input_alert();
@@ -446,7 +544,7 @@ var last_wait_for_input_alert_sent = 0;
 function wait_for_input_alert() {
   bus_sync.sync();
   if (performance.now() - last_wait_for_input_alert_sent > 5000) {
-    postMessage({
+    post({
       type: "sim_log",
       subtype: "info",
       msg: "Waiting for Input...",
@@ -482,7 +580,7 @@ function notifyUnknownSyscall(sys_num, a0, a1, a2, a3) {
     return v < 0 ? `${v}` : `0x${(v >>> 0).toString(16)}`;
   };
   var text = `Syscall Number: ${sys_num}\nArguments: a0=${formatVal(a0)}, a1=${formatVal(a1)}, a2=${formatVal(a2)}, a3=${formatVal(a3)}`;
-  postMessage({
+  post({
     type: "message",
     msg: {
       type: "error",
@@ -510,20 +608,12 @@ function jsGetIntInstDelay() {
     : 1000;
 }
 
-function jsGetSleepDuration(type) {
-  return typeof simulator_sleep !== "undefined" ? simulator_sleep[type] : 0;
-}
-
 function jsReadMMIO(addr, size) {
   return typeof mmio !== "undefined" ? mmio.load(addr, size) : 0;
 }
 
 function jsWriteMMIO(addr, size, val) {
   if (typeof mmio !== "undefined") mmio.store(addr, size, val);
-}
-
-function jsSimStop(snapshot) {
-  if (typeof finishExec === "function") finishExec(snapshot);
 }
 
 function readFromStdin(buf_ptr, count) {
@@ -549,9 +639,11 @@ function readInteractiveCommand(pstr) {
 }
 
 function jsPrint(msg) {
-  var currentMod = self.Module || {};
+  /** @type {EmscriptenModule} */
+  var currentMod = self.Module || Module;
   if (typeof currentMod.print === "function") {
-    if (msg.endsWith("\n")) msg = msg.slice(0, -1);
+    // The guest bytes go through unchanged: a write without a trailing newline
+    // must leave the cursor on the same line.
     currentMod.print(msg);
   } else {
     console.log(msg);
@@ -559,9 +651,9 @@ function jsPrint(msg) {
 }
 
 function jsPrintErr(msg) {
-  var currentMod = self.Module || {};
+  /** @type {EmscriptenModule} */
+  var currentMod = self.Module || Module;
   if (typeof currentMod.printErr === "function") {
-    if (msg.endsWith("\n")) msg = msg.slice(0, -1);
     currentMod.printErr(msg);
   } else {
     console.warn(msg);
@@ -570,7 +662,8 @@ function jsPrintErr(msg) {
 
 function getBinaryBytes() {
   var filename = null;
-  var currentMod = self.Module || {};
+  /** @type {EmscriptenModule} */
+  var currentMod = self.Module || Module;
   if (currentMod.arguments && currentMod.arguments.length > 0) {
     for (var i = 0; i < currentMod.arguments.length; i++) {
       var arg = currentMod.arguments[i];
@@ -603,42 +696,208 @@ function getBinaryBytes() {
   return new Uint8Array([]);
 }
 
+/**
+ * Load the WASM module and the guest binary. It runs no instructions, so the
+ * cost of a run is paid entirely by the slice chain.
+ *
+ * @returns {string[]} the argument list the run was started with
+ */
+function setupSimulation() {
+  // `importScripts` declares `wasm_bindgen`, so a second call in the same
+  // worker throws. A worker can now run more than one program, for example a
+  // debug session that halts and is then started again.
+  if (!wasm_glue_loaded) {
+    importScripts("pkg/riscv_rs.js");
+    wasm_glue_loaded = true;
+  }
+  const bindgen =
+    typeof wasm_bindgen !== "undefined" ? wasm_bindgen : self.wasm_bindgen;
+  const { Simulator, initSync } = bindgen;
+
+  var wasmModule = self.precompiledRiscvModule;
+  if (!wasmModule) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "pkg/riscv_rs_bg.wasm", false);
+    xhr.responseType = "arraybuffer";
+    xhr.send(null);
+    wasmModule = new WebAssembly.Module(xhr.response);
+  }
+  const wasmExports = initSync(wasmModule);
+  self.wasmMemory = wasmExports.memory;
+
+  var binaryBytes = getBinaryBytes();
+  /** @type {EmscriptenModule} */
+  var currentMod = self.Module || Module;
+  var args = currentMod.arguments || [];
+
+  // The WASM instance is shared between runs in this worker, so the previous
+  // simulator has to give its memory back.
+  if (self.wasmSimulator) {
+    try {
+      self.wasmSimulator.free();
+    } catch (e) {
+      console.warn("Failed to free the previous simulator:", e);
+    }
+    self.wasmSimulator = null;
+  }
+
+  self.wasmSimulator = new Simulator();
+  self.wasmSimulator.load_binary(binaryBytes, args);
+  // `load_binary` builds a fresh CPU, so the custom-syscall flag and the debug
+  // settings have to be written after it, not before.
+  self.wasmSimulator.set_has_custom_syscalls(syscall_emulator.has_syscalls());
+  self.wasmSimulator.set_debug_mode(debug_mode_enabled);
+  breakpoints.forEach((addr) => self.wasmSimulator.add_breakpoint(addr));
+  return args;
+}
+
 function runSimulation() {
   try {
-    importScripts("pkg/riscv_rs.js");
-    const bindgen =
-      typeof wasm_bindgen !== "undefined" ? wasm_bindgen : self.wasm_bindgen;
-    const { Simulator, initSync } = bindgen;
+    const args = setupSimulation();
 
-    var wasmModule = self.precompiledRiscvModule;
-    if (!wasmModule) {
-      var xhr = new XMLHttpRequest();
-      xhr.open("GET", "pkg/riscv_rs_bg.wasm", false);
-      xhr.responseType = "arraybuffer";
-      xhr.send(null);
-      wasmModule = new WebAssembly.Module(xhr.response);
-    }
-    const wasmExports = initSync(wasmModule);
-    self.wasmMemory = wasmExports.memory;
-
-    var binaryBytes = getBinaryBytes();
-    var currentMod = self.Module || {};
-    var args = currentMod.arguments || [];
-
-    self.wasmSimulator = new Simulator();
-    self.wasmSimulator.set_has_custom_syscalls(syscall_emulator.has_syscalls());
-    let entryPoint = self.wasmSimulator.load_binary(binaryBytes, args);
-
-    if (args.includes("--interactive") || self.debugModeActive) {
+    if (args.includes("--interactive") || debug_mode_enabled) {
       self.wasmSimulator.set_debug_mode(true);
       let snapshot = self.wasmSimulator.get_snapshot_js(false, 0);
-      postMessage({ type: "debug_state", state: snapshot });
-    } else {
-      self.wasmSimulator.run_full();
-      if (typeof finishExec === "function") finishExec();
+      post({ type: "debug_state", state: snapshot });
+      return;
     }
+
+    start_run();
   } catch (e) {
+    run_active = false;
     reportSimulatorFailure(e);
+  }
+}
+
+function start_run() {
+  run_active = true;
+  run_paused = false;
+  run_stopped = false;
+  run_total_instructions = 0;
+  schedule_slice();
+}
+
+/**
+ * A zero-delay yield the browser does not clamp.
+ *
+ * `setTimeout(f, 0)` is forced to 4 ms once the timers nest, which on a 12 ms
+ * slice costs a third of the run. A `MessagePort` task hands the message queue
+ * its turn without that floor.
+ */
+const yield_channel =
+  typeof MessageChannel === "function" ? new MessageChannel() : null;
+if (yield_channel) {
+  yield_channel.port1.onmessage = function () {
+    run_one_slice();
+  };
+}
+
+/** Queue the next slice, giving the message queue a turn before it runs. */
+function schedule_slice() {
+  if (!run_active || run_paused || run_stopped) return;
+  if (slice_delay > 0 || !yield_channel) {
+    setTimeout(run_one_slice, slice_delay);
+  } else {
+    yield_channel.port2.postMessage(0);
+  }
+}
+
+function pause_run() {
+  if (run_active) {
+    run_paused = true;
+    bus_sync.sync();
+  }
+  if (typeof wasmSimulator !== "undefined" && wasmSimulator) {
+    post({
+      type: "debug_state",
+      state: wasmSimulator.get_snapshot_js(false, 0),
+    });
+  } else {
+    post({ type: "debug_error", reason: "no_program" });
+  }
+}
+
+function resume_run() {
+  if (!run_active || !run_paused) return;
+  run_paused = false;
+  schedule_slice();
+}
+
+/**
+ * Keep one slice inside the target window. A slice that is too short wastes a
+ * timer turn; one that is too long makes the worker unresponsive again.
+ */
+function adapt_slice_budget(elapsed_ms) {
+  let factor;
+  if (elapsed_ms <= 0.25) {
+    factor = 4;
+  } else if (
+    elapsed_ms < SLICE_TARGET_MIN_MS ||
+    elapsed_ms > SLICE_TARGET_MAX_MS
+  ) {
+    factor = Math.min(4, Math.max(0.25, SLICE_TARGET_MID_MS / elapsed_ms));
+  } else {
+    return;
+  }
+  slice_budget = Math.min(
+    SLICE_BUDGET_MAX,
+    Math.max(SLICE_BUDGET_MIN, Math.round(slice_budget * factor)),
+  );
+}
+
+function run_one_slice() {
+  if (!run_active || run_paused || run_stopped) return;
+
+  let outcome;
+  try {
+    const started = performance.now();
+    outcome = self.wasmSimulator.run_slice(slice_budget);
+    if (!freq_limited) adapt_slice_budget(performance.now() - started);
+  } catch (e) {
+    run_active = false;
+    run_stopped = true;
+    reportSimulatorFailure(e);
+    return;
+  }
+
+  bus_sync.sync();
+  run_total_instructions += outcome.steps;
+
+  switch (outcome.status) {
+    case "halted":
+    case "trapped":
+      run_active = false;
+      finishExec();
+      return;
+
+    case "breakpoint":
+      run_stopped = true;
+      post({
+        type: "debug_state",
+        state: self.wasmSimulator.get_snapshot_js(true, outcome.pc),
+      });
+      return;
+
+    default:
+      if (run_total_instructions >= RUN_INSTRUCTION_LIMIT) {
+        run_active = false;
+        run_stopped = true;
+        post({
+          type: "message",
+          msg: {
+            type: "error",
+            title: "Run Stopped",
+            text:
+              "The program executed " +
+              RUN_INSTRUCTION_LIMIT.toLocaleString() +
+              " instructions without stopping. It is most likely an infinite loop.",
+            delay: Infinity,
+          },
+        });
+        finishExec();
+        return;
+      }
+      schedule_slice();
   }
 }
 
@@ -649,7 +908,7 @@ function runSimulation() {
 function reportSimulatorFailure(e) {
   console.error("riscv-rs execution failure:", e);
   const detail = (e && (e.stack || e.message)) || String(e);
-  postMessage({
+  post({
     type: "message",
     msg: {
       type: "error",
@@ -665,12 +924,18 @@ function reportSimulatorFailure(e) {
   } catch (syncErr) {
     console.warn("Failed to flush the bus after a simulator failure:", syncErr);
   }
-  postMessage({
+  post({
     type: "status",
     status: { finish: true, error: true, errorMessage: detail },
   });
 }
 
+/**
+ * Report the end of a run: flush the bus and post the statistics.
+ *
+ * @param {wasm_bindgen.DebuggerSnapshot} [passedSnapshot] state read before the
+ *   call; when absent it is read from the simulator.
+ */
 function finishExec(passedSnapshot) {
   if (self.execFinished) return;
   self.execFinished = true;
@@ -695,7 +960,7 @@ function finishExec(passedSnapshot) {
   if (!snapshot) {
     // Without a snapshot there are no statistics to report, and emitting zeroed
     // ones would look like a successful run.
-    postMessage({
+    post({
       type: "message",
       msg: {
         type: "error",
@@ -704,7 +969,7 @@ function finishExec(passedSnapshot) {
         delay: Infinity,
       },
     });
-    postMessage({
+    post({
       type: "status",
       status: {
         finish: true,
@@ -734,7 +999,7 @@ function finishExec(passedSnapshot) {
         : 0;
   let trapped = snapshot.trapped === true;
 
-  postMessage({
+  post({
     type: "status",
     status: {
       finish: true,
@@ -756,6 +1021,9 @@ function finishExec(passedSnapshot) {
 }
 
 var xhr = new XMLHttpRequest();
+// The GDB bridge is polled synchronously; the flag keeps the "waiting" notice
+// to one message per attempt.
+var postGDBWaiting = 0;
 function getDebugMsg() {
   postGDBWaiting = 1;
   while (1) {
@@ -767,7 +1035,7 @@ function getDebugMsg() {
       }
     } catch (e) {
       if (postGDBWaiting) {
-        postMessage({
+        post({
           type: "sim_log",
           subtype: "info",
           msg: "Waiting for GDB...",
@@ -790,7 +1058,7 @@ function sendDebugMsg(msg) {
       }
     } catch (error) {
       if (postGDBWaiting) {
-        postMessage({
+        post({
           type: "sim_log",
           subtype: "info",
           msg: "Waiting for GDB...",
@@ -801,6 +1069,7 @@ function sendDebugMsg(msg) {
   }
 }
 
+/** @type {EmscriptenModule} */
 var Module = {
   // arguments : ["--version"],
   arguments: [
@@ -829,4 +1098,4 @@ var Module = {
   printErr: bus_sync.add_stderr.bind(bus_sync),
 };
 
-postMessage({ type: "status", status: { starting: true } });
+post({ type: "status", status: { starting: true } });

@@ -54,7 +54,9 @@
     if (el.classList.contains('nav-link')) {
       el.click();
     } else if (el.classList.contains('tab-pane')) {
-      var trigger = document.querySelector('[href="#' + el.id + '"]');
+      var trigger = /** @type {HTMLElement | null} */ (
+        document.querySelector('[href="#' + el.id + '"]')
+      );
       if (trigger) trigger.click();
     }
   };

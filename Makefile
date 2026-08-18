@@ -1,12 +1,16 @@
-.PHONY: build format test perf HEAD
+.PHONY: build format test typecheck perf HEAD
 
 build:
 	wasm-pack build --target no-modules --out-dir ../../modules/pkg crates/riscv-rs
+	python3 scripts/sync_wasm_types.py
 	python3 scripts/update_cache.py
 
 format:
 	npx prettier --write "*.js" "modules/*.js" "!modules/pkg/**"
 	cargo fmt --manifest-path crates/riscv-rs/Cargo.toml
+
+typecheck:
+	npm run typecheck
 
 test:
 	cargo test --manifest-path crates/riscv-rs/Cargo.toml
