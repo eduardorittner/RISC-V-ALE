@@ -171,11 +171,15 @@ jobs:
         uses: taiki-e/install-action@wasm-pack
       - name: Build WASM modules
         run: make build
+      # `make build` regenerates the committed TypeScript declarations. A stale
+      # copy means the typecheck job checked against an old Rust contract.
+      - name: Generated type declarations are current
+        run: git diff --exit-code modules/types/
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm ci
-      - name: Run MMIO & IPC Unit Tests
+      - name: Run unit tests
         run: npm run test:unit
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui

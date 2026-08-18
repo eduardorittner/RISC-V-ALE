@@ -59,7 +59,7 @@ export class WebTerminal {
     this.pending_stderr = "";
     this.render_scheduled = false;
 
-    this.schedule_render = function () {
+    this.schedule_render = () => {
       if (this.render_scheduled) return;
       this.render_scheduled = true;
       if (typeof requestAnimationFrame === "function") {
@@ -67,9 +67,9 @@ export class WebTerminal {
       } else {
         setTimeout(() => this.flush_render(), 16);
       }
-    }.bind(this);
+    };
 
-    this.flush_render = function () {
+    this.flush_render = () => {
       this.render_scheduled = false;
       if (this.pending_stdout.length > 0) {
         // Stream stdout directly so VT100/ANSI escape codes are rendered natively by xterm
@@ -83,22 +83,24 @@ export class WebTerminal {
         this.term.write(`\x1b[31m${formatted}\x1b[0m`);
         this.pending_stderr = "";
       }
-    }.bind(this);
+    };
 
-    this.sim_status_ch.onmessage = function (e) {
-      if (e.data.type == "status") {
-        if (e.data.status.running && !this.running_mode) {
+    this.sim_status_ch.onmessage = (e) => {
+      /** @type {SimStatusChannelMessage} */
+      const data = e.data;
+      if (data.type == "status") {
+        if (data.status.running && !this.running_mode) {
           this.running_mode = true;
-          if (e.data.status.debugging) {
+          if (data.status.debugging) {
             this.enter_debug_mode();
           } else {
             this.enter_input_mode();
           }
         }
-        if (e.data.status.stopping || e.data.status.finish) {
+        if (data.status.stopping || data.status.finish) {
           this.flush_render();
-          if (e.data.status.finish && e.data.status.stats) {
-            const s = e.data.status.stats;
+          if (data.status.finish && data.status.stats) {
+            const s = data.status.stats;
             console.log("[RISC-V ALE Stats]", s);
             const timeFormatted =
               s.elapsedTimeMs >= 1000
@@ -130,18 +132,18 @@ export class WebTerminal {
             this.running_mode = false;
           }
         }
-        if (e.data.status.starting_exec) {
+        if (data.status.starting_exec) {
           this.flush_render();
-          this.term.writeln(`$ riscv ${e.data.status.args.join(" ")}`);
+          this.term.writeln(`$ riscv ${data.status.args.join(" ")}`);
         }
-      } else if (e.data.type == "sim_log") {
+      } else if (data.type == "sim_log") {
         this.flush_render();
-        this.term.writeln(`\x1b[33m (LOG) ${e.data.msg}\x1b[0m`);
-      } else if (e.data.type == "clang_status") {
-        if (e.data.status.starting) {
+        this.term.writeln(`\x1b[33m (LOG) ${data.msg}\x1b[0m`);
+      } else if (data.type == "clang_status") {
+        if (data.status.starting) {
           this.flush_render();
           this.term.writeln(
-            `$ ${e.data.status.tool} ${e.data.status.args.join(" ")}`,
+            `$ ${data.status.tool} ${data.status.args.join(" ")}`,
           );
           this.enter_wait_mode();
         } else {
@@ -149,28 +151,39 @@ export class WebTerminal {
           this.popMode();
         }
       }
-    }.bind(this);
+    };
 
-    this.stdio_ch.onmessage = function (e) {
-      if (e.data.origin == "clang") {
+    this.stdio_ch.onmessage = (e) => {
+      /** @type {StdioChannelMessage} */
+      const data = e.data;
+      if (data.fh !== -1 && data.fh !== 0 && data.origin == "clang") {
         this.flush_render();
-        const msg = String(e.data.data).replace(/\r?\n/g, "\r\n");
+        const msg = String(data.data).replace(/\r?\n/g, "\r\n");
         this.term.write(msg);
-      } else if (e.data.fh == 1) {
-        this.pending_stdout += e.data.data;
+      } else if (data.fh == 1) {
+        this.pending_stdout += data.data;
         this.schedule_render();
-      } else if (e.data.fh == 2) {
-        this.pending_stderr += e.data.data;
+      } else if (data.fh == 2) {
+        this.pending_stderr += data.data;
         this.schedule_render();
-      } else if (e.data.fh == -1 && e.data.debug) {
+      } else if (data.fh == -1 && "debug" in data) {
         this.flush_render();
-        this.term.writeln(`\x1b[33m>>> \x1b[0m${e.data.cmd}`);
+        this.term.writeln(`\x1b[33m>>> \x1b[0m${data.cmd}`);
       }
-    }.bind(this);
+    };
 
     window.addEventListener("resize", () => {
       this.fitTerminal();
     });
+  }
+
+  /**
+   * The only way this file talks to the stdio channel.
+   *
+   * @param {StdioChannelMessage} msg
+   */
+  post_stdio(msg) {
+    this.stdio_ch.postMessage(msg);
   }
 
   fitTerminal() {
@@ -280,7 +293,7 @@ export class WebTerminal {
         return;
       }
       // Send raw keystroke data directly to program stdin
-      this.stdio_ch.postMessage({ fh: 0, data: data });
+      this.post_stdio({ fh: 0, data: data });
       return;
     }
 
@@ -324,7 +337,7 @@ export class WebTerminal {
       let cmd = trimmed.split(" ")[0];
       switch (cmd) {
         case "write-stdin":
-          this.stdio_ch.postMessage({
+          this.post_stdio({
             fh: 0,
             data: trimmed.slice(11).trimStart() + "\n",
           });
@@ -333,10 +346,10 @@ export class WebTerminal {
           this.term.writeln(
             `RISC-V ALE commands:\n\nwrite-stdin string\n\tWrites a string to stdin (fd = 0)\n\nSweRV Commands:`,
           );
-          this.stdio_ch.postMessage({ fh: -1, debug: true, cmd: trimmed });
+          this.post_stdio({ fh: -1, debug: true, cmd: trimmed });
           break;
         default:
-          this.stdio_ch.postMessage({ fh: -1, debug: true, cmd: trimmed });
+          this.post_stdio({ fh: -1, debug: true, cmd: trimmed });
           break;
       }
       return;
@@ -399,10 +412,22 @@ export class WebTerminal {
   }
 
   setSTDIN(value) {
-    this.stdio_ch.postMessage({ fh: -1, init_stdin: true, data: value + "\n" });
+    this.post_stdio({ fh: -1, init_stdin: true, data: value + "\n" });
   }
 
-  getSTDOUT() {}
+  /**
+   * Reading the buffers back is not implemented; the terminal streams straight
+   * to xterm. Returning an empty string keeps the OS tab from showing
+   * "undefined".
+   *
+   * @returns {string}
+   */
+  getSTDOUT() {
+    return "";
+  }
 
-  getSTDERR() {}
+  /** @returns {string} */
+  getSTDERR() {
+    return "";
+  }
 }

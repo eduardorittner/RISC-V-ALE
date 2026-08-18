@@ -1,0 +1,26 @@
+{
+  // The worker configuration. `WebWorker` and `DOM` declare the same globals
+  // with different types, so the workers cannot share a program with the
+  // main-thread files.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "WebWorker"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "types": []
+  },
+  "include": [
+    "modules/types/ipc.d.ts",
+    "modules/types/worker-globals.d.ts",
+    "modules/types/riscv_rs.generated.d.ts",
+    "modules/simulator_worker.js",
+    "modules/clang_worker.js"
+  ],
+  "exclude": ["node_modules", "modules/pkg"]
+}

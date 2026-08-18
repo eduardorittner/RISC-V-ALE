@@ -19,6 +19,25 @@ concurrency:
   cancel-in-progress: true
 name: check
 jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    name: node / typecheck
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          # The device sources live in the `extensions` submodule and are part of
+          # the checked program. Not recursive: the nested SweRV-ISS oracle is
+          # large and nothing here reads it.
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # No Rust toolchain and no WASM build are needed: the generated
+      # declarations are committed as `modules/types/riscv_rs.generated.d.ts`,
+      # and the `ui-integration` job proves that copy is current.
+      - name: npm run typecheck
+        run: npm run typecheck
   fmt:
     runs-on: ubuntu-latest
     name: stable / fmt

@@ -1,22 +1,46 @@
 var expected_result = "none";
+/** @type {File[]} */
 var files = [];
 var current_op = "none";
+/** @type {WebAssembly.Module | null} */
 var precompiledClangModule = null;
+/** @type {WebAssembly.Module | null} */
 var precompiledLldModule = null;
 
+/**
+ * The only way this worker talks to the main thread. The parameter type is what
+ * makes a message the main thread does not handle a compile error.
+ *
+ * @param {ClangToMainMessage} msg
+ */
+function post(msg) {
+  postMessage(msg);
+}
+
+/**
+ * The `default` branch of an exhaustive switch over an IPC union. A member no
+ * case handles gives `value` a real type in place of `never`, and `tsc` fails.
+ *
+ * @param {never} value
+ */
+function assert_unreachable(value) {
+  console.error("Unhandled IPC message:", value);
+}
+
 onmessage = function (e) {
-  switch (e.data.type) {
+  /** @type {MainToClangMessage} */
+  const msg = e.data;
+  switch (msg.type) {
     case "init_modules":
-      precompiledClangModule = e.data.clangModule;
-      precompiledLldModule = e.data.lldModule;
+      precompiledClangModule = msg.clangModule;
+      precompiledLldModule = msg.lldModule;
       break;
     case "add_files":
-      files = e.data.files;
+      files = msg.files;
       break;
     case "clang_c":
       current_op = "clang_c";
-      if (e.data.file) files = e.data.files;
-      expected_result = e.data.out_filename;
+      expected_result = msg.out_filename;
       Module.arguments = [
         "-cc1",
         "-triple",
@@ -66,15 +90,14 @@ onmessage = function (e) {
         "-faddrsig",
         "-x",
         "c",
-        e.data.args,
+        msg.args,
       ].flat();
       importScripts("clang.js");
       break;
 
     case "clang_s":
       current_op = "clang_s";
-      if (e.data.file) files = e.data.files;
-      expected_result = e.data.out_filename;
+      expected_result = msg.out_filename;
       Module.arguments = [
         "-cc1as",
         "-triple",
@@ -102,22 +125,24 @@ onmessage = function (e) {
         "static",
         "-target-abi",
         "ilp32d",
-        e.data.args,
+        msg.args,
       ].flat();
       importScripts("clang.js");
       break;
 
     case "ld":
       current_op = "ld";
-      if (e.data.file) files = e.data.files;
-      expected_result = e.data.out_filename;
+      expected_result = msg.out_filename;
       Module.thisProgram = "ld.lld";
-      Module.arguments = ["--threads=1", e.data.args].flat();
+      Module.arguments = ["--threads=1", msg.args].flat();
       importScripts("ld.lld.js");
       break;
 
     case "fs":
       break;
+
+    default:
+      assert_unreachable(msg);
   }
 };
 
@@ -157,10 +182,11 @@ function initFS() {
 
 function returnResult() {
   if (FS.readdir("/").includes(expected_result))
-    this.postMessage({ type: "file", file: FS.readFile(expected_result) });
-  else this.postMessage({ type: "file", file: -1 });
+    post({ type: "file", file: FS.readFile(expected_result) });
+  else post({ type: "file", file: -1 });
 }
 
+/** @type {EmscriptenModule} */
 var Module = {
   arguments: ["--version"],
   instantiateWasm: function (imports, successCallback) {
@@ -180,10 +206,10 @@ var Module = {
   },
   preRun: [initFS],
   print: function (text) {
-    postMessage({ type: "stdio", stdioNumber: 1, msg: text });
+    post({ type: "stdio", stdioNumber: 1, msg: text });
   },
   printErr: function (text) {
-    postMessage({ type: "stdio", stdioNumber: 2, msg: text });
+    post({ type: "stdio", stdioNumber: 2, msg: text });
   },
   postRun: [returnResult],
 };

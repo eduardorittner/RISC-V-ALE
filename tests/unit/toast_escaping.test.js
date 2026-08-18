@@ -37,7 +37,9 @@ describe("Toast rendering never parses input as markup", () => {
 
   it("keeps the close button working after a hostile render", () => {
     const toast = window.Toast.error({ title: HOSTILE, text: HOSTILE, delay: Infinity });
-    const closeBtn = toast.elem.querySelector(".toast-close");
+    const closeBtn = /** @type {HTMLElement} */ (
+      toast.elem.querySelector(".toast-close")
+    );
     expect(closeBtn).not.toBeNull();
     expect(typeof closeBtn.onclick).toBe("function");
   });
@@ -53,7 +55,9 @@ describe("Toast rendering never parses input as markup", () => {
 
   it("preserves newlines in the body without injecting elements", () => {
     const toast = window.Toast.info({ title: "t", text: "a\nb", delay: Infinity });
-    const body = toast.elem.querySelector(".toast-body");
+    const body = /** @type {HTMLElement} */ (
+      toast.elem.querySelector(".toast-body")
+    );
     expect(body.textContent).toBe("a\nb");
     expect(body.querySelectorAll("br").length).toBe(0);
     expect(body.style.whiteSpace).toBe("pre-line");

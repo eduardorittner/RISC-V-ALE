@@ -51,7 +51,9 @@ export class Connection {
 
   load_add_file_from_base64(params) {
     var bytes = base64ToArrayBuffer(params.str64);
-    var blob = new Blob([bytes], { type: "application/binary" });
+    var blob = new Blob([/** @type {BlobPart} */ (bytes)], {
+      type: "application/binary",
+    });
     let file = new File([blob], params.name);
     simulator_controller.load_new_file(file);
   }
@@ -63,7 +65,9 @@ export class Connection {
 
   load_file_from_base64(params) {
     var bytes = base64ToArrayBuffer(params.str64);
-    var blob = new Blob([bytes], { type: "application/binary" });
+    var blob = new Blob([/** @type {BlobPart} */ (bytes)], {
+      type: "application/binary",
+    });
     let file = new File([blob], params.name);
     simulator_controller.load_files([file]);
     compiler.set_file_array(simulator_controller.last_loaded_files);
@@ -150,9 +154,7 @@ export class LocalReport extends Connection {
   generate_report() {
     let header = new Uint32Array(this.dataLogSizes.length + 2);
     header[0] = this.dataLogSizes.length + 2;
-    let reportJson = new TextEncoder("utf-8").encode(
-      JSON.stringify(this.report),
-    );
+    let reportJson = new TextEncoder().encode(JSON.stringify(this.report));
     header[1] = reportJson.byteLength;
     header.set(this.dataLogSizes, 2);
     let blob = new Blob([header, reportJson, this.dataLog].flat(), {

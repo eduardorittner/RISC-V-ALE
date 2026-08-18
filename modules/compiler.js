@@ -1,3 +1,13 @@
+/**
+ * The `default` branch of an exhaustive switch over an IPC union. A member no
+ * case handles gives `value` a real type in place of `never`, and `tsc` fails.
+ *
+ * @param {never} value
+ */
+function assert_unreachable(value) {
+  console.error("Unhandled IPC message:", value);
+}
+
 class Compiler {
   constructor() {
     this.timeout = 150000;
@@ -13,6 +23,34 @@ class Compiler {
 
     // Trigger pre-compilation asynchronously on startup
     setTimeout(() => this.init_wasm_cache(), 0);
+  }
+
+  /**
+   * The only way this file talks to the status channel.
+   *
+   * @param {SimStatusChannelMessage} msg
+   */
+  post_status(msg) {
+    this.sim_status_ch.postMessage(msg);
+  }
+
+  /**
+   * The only way this file talks to the stdio channel.
+   *
+   * @param {StdioChannelMessage} msg
+   */
+  post_stdio(msg) {
+    this.stdio_ch.postMessage(msg);
+  }
+
+  /**
+   * The only way this file talks to a clang worker.
+   *
+   * @param {Worker} worker
+   * @param {MainToClangMessage} msg
+   */
+  post_to_worker(worker, msg) {
+    worker.postMessage(msg);
   }
 
   async init_wasm_cache() {
@@ -57,7 +95,7 @@ class Compiler {
     await this.init_wasm_cache();
     var worker = new Worker("./modules/clang_worker.js");
     if (this.clangModule && this.lldModule) {
-      worker.postMessage({
+      this.post_to_worker(worker, {
         type: "init_modules",
         clangModule: this.clangModule,
         lldModule: this.lldModule,
@@ -69,7 +107,7 @@ class Compiler {
   setup_worker(w, file_callback) {
     const report_failure = (detail) => {
       console.error("Compiler Worker Error:", detail);
-      this.sim_status_ch.postMessage({
+      this.post_status({
         type: "message",
         msg: {
           type: "error",
@@ -78,7 +116,7 @@ class Compiler {
           delay: Infinity,
         },
       });
-      this.sim_status_ch.postMessage({
+      this.post_status({
         type: "clang_status",
         status: { finish: true, error: true },
       });
@@ -97,23 +135,27 @@ class Compiler {
       );
     };
 
-    w.onmessage = function (ev) {
-      switch (ev.data.type) {
+    w.onmessage = (ev) => {
+      /** @type {ClangToMainMessage} */
+      const msg = ev.data;
+      switch (msg.type) {
         case "stdio":
-          this.stdio_ch.postMessage({
-            fh: ev.data.stdioNumber,
-            data: ev.data.msg,
+          this.post_stdio({
+            fh: msg.stdioNumber,
+            data: msg.msg,
             origin: "clang",
           });
           break;
 
         case "file":
-          file_callback(ev.data.file);
-        default:
+          file_callback(msg.file);
           break;
+
+        default:
+          assert_unreachable(msg);
       }
-    }.bind(this);
-    w.postMessage({ type: "add_files", files: this.loaded_files });
+    };
+    this.post_to_worker(w, { type: "add_files", files: this.loaded_files });
   }
 
   get_output_name(args, def) {
@@ -143,12 +185,12 @@ class Compiler {
     this.loaded_files.push(file);
   }
 
-  async invoke_clang(op, args, out_filename, in_file) {
+  async invoke_clang(op, args, out_filename) {
     var worker = await this.get_worker();
     return new Promise((resolve) => {
       var cto = setTimeout(() => {
         worker.terminate();
-        this.stdio_ch.postMessage({ fh: 2, data: "Compiler timed out" });
+        this.post_stdio({ fh: 2, data: "Compiler timed out" });
         resolve(-1);
       }, this.timeout);
       var file_callback = (file) => {
@@ -157,7 +199,7 @@ class Compiler {
         resolve(file);
       };
       this.setup_worker(worker, file_callback);
-      worker.postMessage({ type: op, args, file: in_file, out_filename });
+      this.post_to_worker(worker, { type: op, args, out_filename });
     });
   }
 
@@ -191,13 +233,13 @@ class Compiler {
   }
 
   async cc(args, load_result = true) {
-    this.sim_status_ch.postMessage({
+    this.post_status({
       type: "clang_status",
       status: { starting: true, tool: "cc", args },
     });
     let out_name = this.get_output_name(args, "out.o");
     var bytes = await this.invoke_clang("clang_c", args, out_name);
-    this.sim_status_ch.postMessage({
+    this.post_status({
       type: "clang_status",
       status: { finish: true },
     });
@@ -209,13 +251,13 @@ class Compiler {
   }
 
   async as(args, load_result = true) {
-    this.sim_status_ch.postMessage({
+    this.post_status({
       type: "clang_status",
       status: { starting: true, tool: "as", args },
     });
     let out_name = this.get_output_name(args, "out.o");
     var bytes = await this.invoke_clang("clang_s", args, out_name);
-    this.sim_status_ch.postMessage({
+    this.post_status({
       type: "clang_status",
       status: { finish: true },
     });
@@ -227,13 +269,13 @@ class Compiler {
   }
 
   async ld(args, load_result = true) {
-    this.sim_status_ch.postMessage({
+    this.post_status({
       type: "clang_status",
       status: { starting: true, tool: "ld", args },
     });
     let out_name = this.get_output_name(args, "out.x");
     var bytes = await this.invoke_clang("ld", args, out_name);
-    this.sim_status_ch.postMessage({
+    this.post_status({
       type: "clang_status",
       status: { finish: true },
     });

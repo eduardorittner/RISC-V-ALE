@@ -1,6 +1,16 @@
 // modules/debugger.js
 import { simulator_controller } from "./simulator.js";
 
+/**
+ * A toolbar button, typed so `disabled` is visible to the compiler.
+ *
+ * @param {string} id
+ * @returns {HTMLButtonElement}
+ */
+function button_by_id(id) {
+  return /** @type {HTMLButtonElement} */ (document.getElementById(id));
+}
+
 export class VisualDebuggerUI {
   constructor(controller) {
     this.controller = controller || simulator_controller;
@@ -23,12 +33,12 @@ export class VisualDebuggerUI {
 
   initDOMReferences() {
     this.debugTab = document.getElementById("debug_tab");
-    this.btnStepInto = document.getElementById("btn_debug_step_into");
-    this.btnStepOver = document.getElementById("btn_debug_step_over");
-    this.btnStepOut = document.getElementById("btn_debug_step_out");
-    this.btnContinue = document.getElementById("btn_debug_continue");
-    this.btnPause = document.getElementById("btn_debug_pause");
-    this.btnReset = document.getElementById("btn_debug_reset");
+    this.btnStepInto = button_by_id("btn_debug_step_into");
+    this.btnStepOver = button_by_id("btn_debug_step_over");
+    this.btnStepOut = button_by_id("btn_debug_step_out");
+    this.btnContinue = button_by_id("btn_debug_continue");
+    this.btnPause = button_by_id("btn_debug_pause");
+    this.btnReset = button_by_id("btn_debug_reset");
     this.stateBadge = document.getElementById("debug_state_badge");
     this.disasmBody = document.getElementById("debug_disasm_body");
     this.gprContainer = document.getElementById("gpr_grid_container");
@@ -41,8 +51,12 @@ export class VisualDebuggerUI {
     this.spValDisplay = document.getElementById("debug_sp_val");
     this.pcDisplay = document.getElementById("debug_pc_display");
     this.cycleCounter = document.getElementById("debug_cycle_counter");
-    this.regFormatSelect = document.getElementById("debug_reg_format_select");
-    this.memJumpInput = document.getElementById("debug_mem_jump_input");
+    this.regFormatSelect = /** @type {HTMLSelectElement} */ (
+      document.getElementById("debug_reg_format_select")
+    );
+    this.memJumpInput = /** @type {HTMLInputElement} */ (
+      document.getElementById("debug_mem_jump_input")
+    );
     this.btnMemJump = document.getElementById("btn_debug_mem_jump");
   }
 
@@ -86,8 +100,8 @@ export class VisualDebuggerUI {
     if (this.btnReset) this.btnReset.onclick = () => this.resetDebugger();
 
     if (this.regFormatSelect) {
-      this.regFormatSelect.onchange = (e) => {
-        this.registerFormat = e.target.value;
+      this.regFormatSelect.onchange = () => {
+        this.registerFormat = this.regFormatSelect.value;
         if (this.lastSnapshot) {
           this.renderRegisters(this.lastSnapshot.gpr);
         }
@@ -156,6 +170,7 @@ export class VisualDebuggerUI {
     if (this.btnReset) this.btnReset.classList.remove("btn-pulse-highlight");
   }
 
+  /** @param {wasm_bindgen.DebuggerSnapshot} snapshot */
   updateState(snapshot) {
     if (!snapshot) return;
     this.lastSnapshot = snapshot;
@@ -199,6 +214,7 @@ export class VisualDebuggerUI {
     this.controller.debugFetchMemory(this.currentMemAddr, 128);
   }
 
+  /** @param {wasm_bindgen.DisassembledInst[]} items */
   renderDisassembly(items) {
     if (!this.disasmBody || !Array.isArray(items)) return;
     this.disasmData = items;
@@ -305,9 +321,10 @@ export class VisualDebuggerUI {
     }
 
     // Attach click listener for breakpoint toggles
-    this.disasmBody.querySelectorAll(".gutter-bp").forEach((cell) => {
-      cell.onclick = (e) => {
-        const addr = parseInt(e.target.getAttribute("data-bp-addr"), 10);
+    this.disasmBody.querySelectorAll(".gutter-bp").forEach((rawCell) => {
+      const cell = /** @type {HTMLElement} */ (rawCell);
+      cell.onclick = () => {
+        const addr = parseInt(cell.getAttribute("data-bp-addr"), 10);
         const isActive = this.breakpoints.has(addr);
         this.controller.debugToggleBreakpoint(addr, !isActive);
       };
@@ -399,7 +416,8 @@ export class VisualDebuggerUI {
     this.gprContainer.innerHTML = html;
 
     // Attach double click handler for editing registers
-    this.gprContainer.querySelectorAll(".reg-cell").forEach((cell) => {
+    this.gprContainer.querySelectorAll(".reg-cell").forEach((rawCell) => {
+      const cell = /** @type {HTMLElement} */ (rawCell);
       cell.ondblclick = () => {
         const regIdx = parseInt(cell.getAttribute("data-reg"), 10);
         const newVal = prompt(
@@ -483,6 +501,10 @@ export class VisualDebuggerUI {
     this.controller.debugFetchMemory(this.currentMemAddr, 128);
   }
 
+  /**
+   * @param {number} baseAddr
+   * @param {number[]} bytes
+   */
   renderHexEditor(baseAddr, bytes) {
     if (!this.hexBody || !bytes) return;
     let html = "";
@@ -541,7 +563,8 @@ export class VisualDebuggerUI {
     this.hexBody.innerHTML = html;
 
     // Attach dblclick event handler to hex-byte elements for inline RAM editing
-    this.hexBody.querySelectorAll(".hex-byte").forEach((elem) => {
+    this.hexBody.querySelectorAll(".hex-byte").forEach((rawElem) => {
+      const elem = /** @type {HTMLElement} */ (rawElem);
       elem.ondblclick = () => {
         const addr = parseInt(elem.getAttribute("data-addr"), 10);
         const currentHex = elem.innerText.trim();
@@ -701,7 +724,7 @@ export class VisualDebuggerUI {
     const dockPanels = document.querySelectorAll(".dock-panel");
 
     cardHeaders.forEach((header) => {
-      header.addEventListener("dragstart", (e) => {
+      header.addEventListener("dragstart", (/** @type {DragEvent} */ e) => {
         const card = header.closest(".card");
         if (!card) return;
         draggedCardId = card.id;
@@ -719,7 +742,7 @@ export class VisualDebuggerUI {
     });
 
     dockPanels.forEach((panel) => {
-      panel.addEventListener("dragover", (e) => {
+      panel.addEventListener("dragover", (/** @type {DragEvent} */ e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         panel.classList.add("drag-over-slot");
@@ -729,7 +752,7 @@ export class VisualDebuggerUI {
         panel.classList.remove("drag-over-slot");
       });
 
-      panel.addEventListener("drop", (e) => {
+      panel.addEventListener("drop", (/** @type {DragEvent} */ e) => {
         e.preventDefault();
         panel.classList.remove("drag-over-slot");
 

@@ -97,6 +97,38 @@ var assistant = new Assistant(document.getElementById('assistant_container'), do
 
 import { VisualDebuggerUI } from "../../modules/debugger.js";
 
+/**
+ * The `default` branch of an exhaustive switch over an IPC union. A member no
+ * case handles gives `value` a real type in place of `never`, and `tsc` fails.
+ *
+ * @param {never} value
+ */
+function assert_unreachable(value){
+  console.error("Unhandled IPC message:", value);
+}
+
+// The page reads its controls through these, so the compiler knows a checkbox
+// has `checked` and a text field has `value`. A bare `getElementById` gives
+// only `HTMLElement`.
+
+/**
+ * @param {string} id
+ * @returns {HTMLInputElement}
+ */
+function input_by_id(id){
+  return /** @type {HTMLInputElement} */ (document.getElementById(id));
+}
+
+/**
+ * @param {string} id
+ * @returns {HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement}
+ */
+function field_by_id(id){
+  return /** @type {HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement} */ (
+    document.getElementById(id)
+  );
+}
+
 // navegation
 
 class InterfaceNavegation{
@@ -107,7 +139,7 @@ class InterfaceNavegation{
   addTab(name, icon, id, content){
     this.tabs.push(id+ "_tab");
     settings_nav_item.insertAdjacentHTML('beforebegin', `
-    <li class="nav-item list-group-item pl-1 py-2">
+    <li class="nav-item list-group-item pl-1 py-2" id="${id}_nav_item">
       <a class="nav-link" href="#${id}">
           <div class="d-xl-flex flex-grow-0 align-items-xl-center"><i class="fas ${icon}"></i><span style="padding: 10px;">${name}</span></div>
       </a>
@@ -119,6 +151,16 @@ class InterfaceNavegation{
       ${content}
     </div>
     `);
+  }
+
+  /** Undo an `addTab`. A device that is removed must not leave its tab behind. */
+  removeTab(id){
+    const tabId = id + "_tab";
+    this.tabs = this.tabs.filter(t => t !== tabId);
+    const tab = document.getElementById(tabId);
+    if (tab) tab.remove();
+    const navItem = document.getElementById(id + "_nav_item");
+    if (navItem) navItem.remove();
   }
 
   hideTab(id){
@@ -178,11 +220,11 @@ class ConfigurationManager{
   log_current_options(){
     for (const opt in this.trackedOptions.checkboxes) {
       const element = this.trackedOptions.checkboxes[opt];   
-      this.currentConfig.options[element] = document.getElementById(element).checked;
+      this.currentConfig.options[element] = input_by_id(element).checked;
     }
     for (const opt in this.trackedOptions.values) {
       const element = this.trackedOptions.values[opt];   
-      this.currentConfig.options[element] = document.getElementById(element).value;
+      this.currentConfig.options[element] = field_by_id(element).value;
     }
   }
 
@@ -221,7 +263,7 @@ class ConfigurationManager{
     this.currentConfig = new_config;
     // options
     for (const opt in this.currentConfig.options) {
-      const element = document.getElementById(opt);
+      const element = field_by_id(opt);
       if(!element){
         // Shared configuration links can carry options that this build no
         // longer has a control for. Skip them instead of failing the load.
@@ -229,7 +271,7 @@ class ConfigurationManager{
         continue;
       }
       if(this.trackedOptions.checkboxes.includes(opt)){
-        element.checked = this.currentConfig.options[opt];
+        input_by_id(opt).checked = this.currentConfig.options[opt];
       }else{
         element.value = this.currentConfig.options[opt];
       }
@@ -237,8 +279,11 @@ class ConfigurationManager{
     freq_change();
     // devices
     for (const name in this.currentConfig.devices) {
-      mmio_manager.getSlot(name.slot);
-      load_device(name, name.slot);
+      // The slot is a property of the entry; reading it off the key gave
+      // `undefined`, so a shared configuration re-allocated every device.
+      const slot = this.currentConfig.devices[name].slot;
+      mmio_manager.getSlot(slot);
+      window.load_device(name, slot);
     }
     // syscalls
     this.load_syscalls();
@@ -299,7 +344,9 @@ function download(filename, text) {
 const sim_status_ch = new BroadcastChannel('simulator_status' + window.uniq_id);
 
 sim_status_ch.onmessage = function (ev) {
-  if(ev.data.type == "message"){
+  /** @type {SimStatusChannelMessage} */
+  const data = ev.data;
+  if(data.type == "message"){
     let msgTypes = {
       success: (opts) => Toast.success(opts),
       info: (opts) => Toast.info(opts),
@@ -307,23 +354,23 @@ sim_status_ch.onmessage = function (ev) {
       notice: (opts) => Toast.notice(opts)
     };
     var delay = 8000;
-    if(ev.data.msg.delay){ 
-      delay = ev.data.msg.delay;
+    if(data.msg.delay){
+      delay = data.msg.delay;
     }
-    const fn = msgTypes[ev.data.msg.type] || msgTypes.info;
+    const fn = msgTypes[data.msg.type] || msgTypes.info;
     fn({
-      title: ev.data.msg.title,
-      text: ev.data.msg.text,
+      title: data.msg.title,
+      text: data.msg.text,
       delay
     });
   }
-  switch (ev.data.type) {
+  switch (data.type) {
     case "sim_log":
-      // settings_tab_simulator_log.insertAdjacentHTML('beforeend', ev.data.msg + "<br>");
+      // settings_tab_simulator_log.insertAdjacentHTML('beforeend', data.msg + "<br>");
       break;
 
     case "status":
-      if(ev.data.status.running){
+      if(data.status.running){
         run_button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Stop';
         run_button.setAttribute("class", "btn btn-danger");
         run_button.style.background = "";
@@ -331,22 +378,22 @@ sim_status_ch.onmessage = function (ev) {
         run_button.onclick = function(){
           simulator_controller.restart_simulator();
         };
-        if(!ev.data.status.debugging){
+        if(!data.status.debugging){
           location.hash = "#terminal";
           navegation.locationHashChanged();
         }
-      }else if(ev.data.status.stopping || ev.data.status.finish){
+      }else if(data.status.stopping || data.status.finish){
 
         run_button.innerHTML = 'Run';
         run_button.setAttribute("class", "btn btn-outline-success");
         run_button.style.background = "#FFFFFF";
-        run_options_selector.removeAttribute("disabled", "");
+        run_options_selector.removeAttribute("disabled");
         run_button.onclick = function(){run_simulator(false);};
 
-        if (ev.data.status.finish && ev.data.status.error) {
+        if (data.status.finish && data.status.error) {
           // A failed run must never be reported with the success statistics.
-          const s = ev.data.status.stats;
-          const detail = ev.data.status.errorMessage ||
+          const s = data.status.stats;
+          const detail = data.status.errorMessage ||
             'The program did not finish successfully.';
           console.error("[Execution Failed]", detail, s);
           Toast.error({
@@ -356,8 +403,8 @@ sim_status_ch.onmessage = function (ev) {
               : detail,
             delay: Infinity
           });
-        } else if (ev.data.status.finish && ev.data.status.stats) {
-          const s = ev.data.status.stats;
+        } else if (data.status.finish && data.status.stats) {
+          const s = data.status.stats;
           console.log("[Toast Execution Complete]", s);
           const timeFormatted = s.elapsedTimeMs >= 1000
             ? (s.elapsedTimeMs / 1000).toFixed(3) + " s"
@@ -370,19 +417,19 @@ sim_status_ch.onmessage = function (ev) {
           });
         }
       }
-      if(ev.data.status.starting){
+      if(data.status.starting){
         config.load_syscalls();
       }
       break;
 
     case "load_syscall":
-      if(ev.data.desc){
-        add_syscall_to_table(ev.data.number, ev.data.desc, ev.data.code);
+      if(data.desc){
+        add_syscall_to_table(data.number, data.desc, data.code);
       }
       break;
 
     case "clang_status":
-      if(ev.data.status.starting){
+      if(data.status.starting){
         if(!Modal.isOpen('#modal_terminal')){
           Modal.open('#modal_terminal', {backdrop: false});
           Modal.makeDraggable('#modal_terminal', '.modal-header');
@@ -397,12 +444,20 @@ sim_status_ch.onmessage = function (ev) {
     case "load_file":
       Toast.info({
         title: 'File Loaded',
-        text: 'Name: ' + ev.data.name + '\n (' + ev.data.size + ' bytes)'
+        text: 'Name: ' + data.name + '\n (' + data.size + ' bytes)'
       });
       break;
 
-    default:
+    case "debug_state":
+      // The debug view renders it through the controller callbacks.
       break;
+
+    case "message":
+      // Already shown as a toast above.
+      break;
+
+    default:
+      assert_unreachable(data);
   }
 }
 
@@ -430,20 +485,20 @@ codeSelector.onchange = load_file;
 
 function get_checked_ISAs(){
   var ISAs = "";
-  if(document.getElementById("config_isaA").checked) ISAs += "a";
-  if(document.getElementById("config_isaC").checked) ISAs += "c";
-  if(document.getElementById("config_isaD").checked) ISAs += "d";
-  if(document.getElementById("config_isaF").checked) ISAs += "f";
-  if(document.getElementById("config_isaI").checked) ISAs += "i";
-  if(document.getElementById("config_isaM").checked) ISAs += "m";
-  if(document.getElementById("config_isaS").checked) ISAs += "s";
-  if(document.getElementById("config_isaU").checked) ISAs += "u";
+  if(input_by_id("config_isaA").checked) ISAs += "a";
+  if(input_by_id("config_isaC").checked) ISAs += "c";
+  if(input_by_id("config_isaD").checked) ISAs += "d";
+  if(input_by_id("config_isaF").checked) ISAs += "f";
+  if(input_by_id("config_isaI").checked) ISAs += "i";
+  if(input_by_id("config_isaM").checked) ISAs += "m";
+  if(input_by_id("config_isaS").checked) ISAs += "s";
+  if(input_by_id("config_isaU").checked) ISAs += "u";
   return ISAs;
 }
 
 async function auto_compile() {
-  if(!document.getElementById("auto_compile").checked) return -1;
-  return await compiler.auto_compile(document.getElementById("c_ext").value, document.getElementById("asm_ext").value, document.getElementById("obj_ext").value, document.getElementById("elf_ext").value);
+  if(!input_by_id("auto_compile").checked) return -1;
+  return await compiler.auto_compile(field_by_id("c_ext").value, field_by_id("asm_ext").value, field_by_id("obj_ext").value, field_by_id("elf_ext").value);
 }
 
 async function run_simulator(debug) {
@@ -467,7 +522,7 @@ async function run_simulator(debug) {
   if(!filename){
     for (let index = 0; index < simulator_controller.last_loaded_files.length; index++) {
       const element = simulator_controller.last_loaded_files[index];
-      if(element.name.endsWith(document.getElementById("elf_ext").value)) {
+      if(element.name.endsWith(field_by_id("elf_ext").value)) {
         filename = element.name;
         break;
       }
@@ -475,7 +530,7 @@ async function run_simulator(debug) {
   }
   if(!filename){
     const firstFile = simulator_controller.last_loaded_files[0];
-    const elfExt = document.getElementById("elf_ext").value;
+    const elfExt = field_by_id("elf_ext").value;
     if (firstFile && (firstFile.name.endsWith(elfExt) || firstFile.name.endsWith(".elf") || firstFile.name.endsWith(".x") || firstFile.name.endsWith(".bin"))) {
       filename = firstFile.name;
     } else {
@@ -486,13 +541,13 @@ async function run_simulator(debug) {
       run_button.innerHTML = 'Run';
       run_button.setAttribute("class", "btn btn-outline-success");
       run_button.style.background = "#FFFFFF";
-      run_options_selector.removeAttribute("disabled", "");
+      run_options_selector.removeAttribute("disabled");
       run_button.onclick = function(){run_simulator(false);};
       return false;
     }
   }
   var args = [];
-  args.push('/' + filename.replace(" ", "_"));
+  args.push('/' + String(filename).replace(" ", "_"));
   if(enable_so_checkbox.checked) {
     args.push("--newlib");
     args.push("--setreg", `sp=${so_stack_pointer_value.value}`);
@@ -546,7 +601,7 @@ fetch('./data/home.json').then(function (request) {
 // hardware tab
 
 function freq_change() {
-  let value = int_freq_range.value;
+  const value = Number(int_freq_range.value);
   if(value == 0){
     int_freq_range_indicator.innerHTML = "1/∞";
   }else{
@@ -555,6 +610,10 @@ function freq_change() {
   simulator_controller.set_int_freq_scale_limit(value);
 }
 int_freq_range.onchange = freq_change;
+
+/** Device modules that are currently loaded, keyed by their file name. */
+const loaded_devices = new Map();
+window.loaded_devices = loaded_devices;
 
 window.load_device = async function (name, slot){
   if(slot == undefined){
@@ -570,11 +629,29 @@ window.load_device = async function (name, slot){
     `
   );
   const module = await import("../../extensions/devices/" + name);
+  // The module has to be kept: removing the device later needs the instance
+  // that holds the watches, the syscalls and the tab.
+  loaded_devices.set(name, module.default);
   config.add_device(name, slot);
+  module.default.device_name = name;
   module.default.setBaseAddress(slot);
 }
 
 window.remove_device = function (name){
+  const device = loaded_devices.get(name);
+  if(device){
+    const syscall_numbers = (device.syscalls || []).map(s => s.number);
+    try{
+      device.teardown();
+    }catch(e){
+      console.error("Failed to tear down the device " + name + ":", e);
+    }
+    for(const number of syscall_numbers){
+      simulator_controller.remove_syscall(number);
+    }
+    loaded_devices.delete(name);
+  }
+  // This releases the MMIO slot, so a device loaded again gets the same one.
   config.remove_device(name);
   const rowId = "mapped_device_" + name.replace(/[^a-zA-Z0-9_]/g, "_");
   const row = document.getElementById(rowId);
@@ -594,9 +671,10 @@ window.device_action_formatter = function(value) {
 
 // os tab
 
-window.load_syscall = function(value) {
-  value = JSON.parse(unescape(value));
-  if(document.getElementById(`syscall_checkbox-${value.number}`).checked){
+window.load_syscall = function(serialized) {
+  /** @type {SyscallTableEntry} */
+  const value = JSON.parse(unescape(serialized));
+  if(input_by_id(`syscall_checkbox-${value.number}`).checked){
     simulator_controller.load_syscall(value.number, value.code);
     config.add_syscall(value.number, value);
   }else{
@@ -619,6 +697,7 @@ function add_syscall_to_table(number, desc, code) {
 }
 
 
+/** @param {SyscallTableEntry} value */
 window.syscall_action_formatter = function(value) {
   if(value.builtin){
     return `<div class="custom-control custom-control-inline disabled custom-switch"><input type="checkbox" class="custom-control-input" id="syscall_checkbox-${value.number}" checked disabled /><label class="custom-control-label" for="syscall_checkbox-${value.number}"></label></div>`;
@@ -638,11 +717,11 @@ os_tab_stdio_refresh.onclick = function() {
   }else{
     os_tab_stdio_textarea.value = web_terminal.getSTDERR()
   }
-}.bind(this);
+};
 
 os_tab_stdin_radio.onchange = function () {
   if(os_tab_stdin_radio.checked){
-    os_tab_stdio_upload.removeAttribute("disabled", "");
+    os_tab_stdio_upload.removeAttribute("disabled");
   }else{
     os_tab_stdio_upload.setAttribute("disabled", "");
   }
@@ -657,8 +736,8 @@ stdio_file_input.onchange = function() {
     var file = stdio_file_input.files[0];
     var reader = new FileReader();
     reader.readAsText(file, "UTF-8");
-    reader.onload = function (evt) {
-      os_tab_stdio_textarea.value = evt.target.result;
+    reader.onload = function () {
+      os_tab_stdio_textarea.value = String(reader.result);
     };
     reader.onerror = function (evt) {
       console.log("error reading file", evt);

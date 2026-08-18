@@ -31,8 +31,49 @@ export class MMIO {
   }
 }
 
+/**
+ * The `default` branch of an exhaustive switch over an IPC union.
+ *
+ * When every member is handled, `value` narrows to `never` and the call type
+ * checks. A member that no case handles gives it a real type, and `tsc` fails:
+ * that is how a drift between a sender and a receiver is caught.
+ *
+ * @param {never} value
+ */
+function assert_unreachable(value) {
+  console.error("Unhandled IPC message:", value);
+}
+
 class SimulatorController {
   constructor() {
+    // Debug settings outlive a worker: each run gets a fresh one, and
+    // `replay_debug_state` sends these to it.
+    this.debug_mode_enabled = false;
+    /** @type {Set<number>} */
+    this.breakpoints = new Set();
+    /** True once the current worker has run a program to its end. */
+    this.worker_dirty = false;
+    /**
+     * Custom syscalls a device installed, keyed by number. A worker only lives
+     * for one run, so they are replayed into each new one.
+     * @type {Map<number, string>}
+     */
+    this.custom_syscalls = new Map();
+    /**
+     * Input that arrived before the next run started. The worker that receives
+     * it is replaced at the start of that run, which would otherwise throw the
+     * input away.
+     */
+    this.pending_stdin = "";
+    // The debugger UI installs these; they stay null while no view is open.
+    /** @type {((state: wasm_bindgen.DebuggerSnapshot) => void) | null} */
+    this.onDebugState = null;
+    /** @type {((addr: number, bytes: number[]) => void) | null} */
+    this.onDebugMemData = null;
+    /** @type {((items: wasm_bindgen.DisassembledInst[]) => void) | null} */
+    this.onDebugDisasmData = null;
+    /** @type {((addr: number, active: boolean) => void) | null} */
+    this.onDebugBpUpdated = null;
     if (typeof window === "undefined") {
       this.stdio_ch = { postMessage: () => {}, onmessage: null };
       this.sim_status_ch = { postMessage: () => {}, onmessage: null };
@@ -63,19 +104,56 @@ class SimulatorController {
       }
       this.prewarm_idle_worker();
     });
-    this.stdio_ch.onmessage = function (e) {
-      if (e.data.fh == 0) {
-        // stdin
-        if (this.simulator)
-          this.simulator.postMessage({ type: "stdin", stdin: e.data.data });
-      } else if (e.data.debug) {
-        if (this.simulator)
-          this.simulator.postMessage({ type: "interactive", cmd: e.data.cmd });
-      } else if (e.data.init_stdin) {
-        if (this.simulator)
-          this.simulator.postMessage({ type: "stdin", stdin: e.data.data });
+    this.stdio_ch.onmessage = (e) => {
+      /** @type {StdioChannelMessage} */
+      const msg = e.data;
+      if (msg.fh == 0) {
+        this.send_stdin(msg.data);
+      } else if (msg.fh === -1 && "debug" in msg) {
+        this.post_to_worker({ type: "interactive", cmd: msg.cmd });
+      } else if (msg.fh === -1 && "init_stdin" in msg) {
+        this.send_stdin(msg.data);
       }
-    }.bind(this);
+    };
+  }
+
+  /**
+   * The only way this file talks to the simulator worker. The parameter type is
+   * what makes a message the worker does not handle a compile error.
+   *
+   * @param {MainToSimulatorMessage} msg
+   */
+  post_to_worker(msg) {
+    if (this.simulator) this.simulator.postMessage(msg);
+  }
+
+  /**
+   * Hand input to the worker. While no program runs, it is also kept so a
+   * worker replacement at the start of the next run does not lose it.
+   *
+   * @param {string} data
+   */
+  send_stdin(data) {
+    if (!this._executionResolve) this.pending_stdin += data;
+    this.post_to_worker({ type: "stdin", stdin: data });
+  }
+
+  /**
+   * The only way this file talks to the status channel.
+   *
+   * @param {SimStatusChannelMessage} msg
+   */
+  post_status(msg) {
+    this.sim_status_ch.postMessage(msg);
+  }
+
+  /**
+   * The only way this file talks to the stdio channel.
+   *
+   * @param {StdioChannelMessage} msg
+   */
+  post_stdio(msg) {
+    this.stdio_ch.postMessage(msg);
   }
 
   async init_wasm_cache() {
@@ -105,8 +183,7 @@ class SimulatorController {
   }
 
   triggerInterrupt() {
-    if (this.simulator)
-      this.simulator.postMessage({ type: "interrupt", state: 1 });
+    this.post_to_worker({ type: "interrupt", state: 1 });
   }
 
   prewarm_idle_worker() {
@@ -114,10 +191,9 @@ class SimulatorController {
     try {
       const worker = new Worker("./modules/simulator_worker.js");
       if (this.riscvModule) {
-        worker.postMessage({
-          type: "init_modules",
-          riscvModule: this.riscvModule,
-        });
+        /** @type {MainToSimulatorMessage} */
+        const init = { type: "init_modules", riscvModule: this.riscvModule };
+        worker.postMessage(init);
       }
       this.idle_worker = worker;
     } catch (e) {
@@ -131,7 +207,7 @@ class SimulatorController {
    */
   report_worker_failure(title, detail) {
     console.error(title + ":", detail);
-    this.sim_status_ch.postMessage({
+    this.post_status({
       type: "message",
       msg: {
         type: "error",
@@ -140,7 +216,7 @@ class SimulatorController {
         delay: Infinity,
       },
     });
-    this.sim_status_ch.postMessage({
+    this.post_status({
       type: "status",
       status: { finish: true, error: true, errorMessage: String(detail) },
     });
@@ -152,74 +228,90 @@ class SimulatorController {
   }
 
   setup_simulator_listeners(worker) {
-    worker.onerror = function (e) {
+    worker.onerror = (e) => {
       // `preventDefault` stops the browser from also logging an uncaught error.
       if (typeof e.preventDefault === "function") e.preventDefault();
       this.report_worker_failure(
         "Simulator Worker Error",
         e.message || "The simulator worker crashed.",
       );
-    }.bind(this);
+    };
 
-    worker.onmessageerror = function () {
+    worker.onmessageerror = () => {
       this.report_worker_failure(
         "Simulator Worker Error",
         "A message from the simulator worker could not be deserialized.",
       );
-    }.bind(this);
+    };
 
-    worker.onmessage = function (e) {
-      switch (e.data.type) {
+    worker.onmessage = (e) => {
+      /** @type {SimulatorToMainMessage} */
+      const msg = e.data;
+      switch (msg.type) {
         case "device_message":
-          this.bus_ch.postMessage({
-            so_emulation: true,
-            syscall: e.data.syscall,
-            data: e.data.message,
-          });
+          this.bus_ch.postMessage(
+            /** @type {BusChannelMessage} */ ({
+              so_emulation: true,
+              syscall: msg.syscall,
+              data: msg.message,
+            }),
+          );
           break;
         case "sim_log":
         case "message":
-          this.sim_status_ch.postMessage(e.data);
+          this.post_status(msg);
           break;
         case "status":
-          this.sim_status_ch.postMessage(e.data);
-          if (e.data.status.finish) {
+          this.post_status(msg);
+          if (msg.status.finish) {
             if (this._executionResolve) {
               const resolve = this._executionResolve;
               this._executionResolve = null;
               resolve();
             }
-            setTimeout(() => this.restart_simulator(), 50);
+            // The worker keeps the finished program so the debugger can still
+            // read its state. The next run replaces the worker instead.
+            this.worker_dirty = true;
           }
           break;
         case "sync":
-          this.bus_sync(e.data);
+          this.bus_sync(msg);
           break;
         case "debug_state":
           if (typeof this.onDebugState === "function")
-            this.onDebugState(e.data.state);
-          this.sim_status_ch.postMessage({
-            type: "debug_state",
-            state: e.data.state,
-          });
+            this.onDebugState(msg.state);
+          this.post_status({ type: "debug_state", state: msg.state });
           break;
         case "debug_mem_data":
           if (typeof this.onDebugMemData === "function")
-            this.onDebugMemData(e.data.addr, e.data.bytes);
+            this.onDebugMemData(msg.addr, msg.bytes);
           break;
         case "debug_disasm_data":
           if (typeof this.onDebugDisasmData === "function")
-            this.onDebugDisasmData(e.data.items);
+            this.onDebugDisasmData(msg.items);
           break;
         case "debug_bp_updated":
           if (typeof this.onDebugBpUpdated === "function")
-            this.onDebugBpUpdated(e.data.addr, e.data.active);
+            this.onDebugBpUpdated(msg.addr, msg.active);
+          break;
+        case "debug_status":
+          // The worker confirms the mode it now runs in; the UI already shows it.
+          break;
+        case "debug_error":
+          this.post_status({
+            type: "message",
+            msg: {
+              type: "notice",
+              title: "Debugger",
+              text: "Load and run a program before you use the debugger.",
+            },
+          });
           break;
 
         default:
-          console.log("w: " + e.data);
+          assert_unreachable(msg);
       }
-    }.bind(this);
+    };
   }
 
   startSimulator() {
@@ -236,6 +328,8 @@ class SimulatorController {
       }
     }
     this.setup_simulator_listeners(this.simulator);
+    this.replay_worker_state();
+    this.worker_dirty = false;
     mmio.reset();
     this.mmio_write_buffer = new Uint8Array(0x10000);
     this.mmio_dirty_flags = new Uint8Array(0x10000);
@@ -244,6 +338,41 @@ class SimulatorController {
     this.set_freq_limit(this.bus_freq_limit);
     this.set_int_freq_scale_limit(this.int_cont_freq_scale);
     setTimeout(() => this.prewarm_idle_worker(), 0);
+  }
+
+  /**
+   * Re-apply everything a freshly created worker cannot know: the syscalls a
+   * device installed, the debug session, and input that is still waiting.
+   */
+  replay_worker_state() {
+    this.custom_syscalls.forEach((code, number) => {
+      this.post_to_worker({ type: "load_syscall", number, code });
+    });
+    this.replay_debug_state();
+    if (this.pending_stdin) {
+      this.post_to_worker({ type: "stdin", stdin: this.pending_stdin });
+    }
+  }
+
+  /**
+   * Send the debug mode and every breakpoint to a worker that has just been
+   * created. The controller holds them because a worker only lives for one run.
+   */
+  replay_debug_state() {
+    if (!this.simulator) return;
+    if (this.debug_mode_enabled) {
+      this.post_to_worker({ type: "debug_enable", enabled: true });
+    }
+    this.breakpoints.forEach((addr) => {
+      this.post_to_worker({ type: "debug_set_bp", addr, active: true });
+    });
+  }
+
+  /** Replace a worker that already ran a program with a fresh one. */
+  replace_simulator() {
+    if (this.simulator) this.simulator.terminate();
+    this.simulator = null;
+    this.startSimulator();
   }
 
   add_mmio_update(addr, size, value) {
@@ -261,6 +390,7 @@ class SimulatorController {
 
   flush_mmio() {
     if (this.mmio_dirty_count === 0) return;
+    /** @type {Record<string, number>} */
     const updates = {};
     for (let i = 0; i < this.mmio_dirty_count; i++) {
       const idx = this.mmio_dirty_indices[i];
@@ -268,16 +398,20 @@ class SimulatorController {
       this.mmio_dirty_flags[idx] = 0;
     }
     this.mmio_dirty_count = 0;
-    if (this.simulator) {
-      this.simulator.postMessage({ type: "sync", buffer: updates });
-    }
+    this.post_to_worker({ type: "sync", buffer: updates });
   }
 
+  /**
+   * Fan a worker `sync` out to the page: the text to the stdio channel and the
+   * MMIO bytes into the shared buffer the devices read.
+   *
+   * @param {Extract<SimulatorToMainMessage, {type: "sync"}>} data
+   */
   bus_sync(data) {
     if (data.stdout && data.stdout.length > 0)
-      this.stdio_ch.postMessage({ fh: 1, data: data.stdout });
+      this.post_stdio({ fh: 1, data: data.stdout });
     if (data.stderr && data.stderr.length > 0)
-      this.stdio_ch.postMessage({ fh: 2, data: data.stderr });
+      this.post_stdio({ fh: 2, data: data.stderr });
     if (data.mmio_buffer) {
       const keys = Object.keys(data.mmio_buffer);
       for (let k = 0; k < keys.length; k++) {
@@ -291,16 +425,20 @@ class SimulatorController {
     await this.init_wasm_cache();
     if (!this.simulator) {
       this.startSimulator();
+    } else if (this.worker_dirty) {
+      // A worker that already ran a program cannot run a second one, so it is
+      // replaced here rather than immediately after the previous run. That
+      // keeps the finished machine state readable until the next run starts.
+      this.replace_simulator();
     }
-    this.simulator.postMessage({
-      type: "add_files",
-      files: this.last_loaded_files,
-    });
-    this.sim_status_ch.postMessage({
+    // The input is now in the worker that will run the program.
+    this.pending_stdin = "";
+    this.post_to_worker({ type: "add_files", files: this.last_loaded_files });
+    this.post_status({
       type: "status",
       status: { starting_exec: true, args },
     });
-    this.simulator.postMessage({ type: "start", args });
+    this.post_to_worker({ type: "start", args });
     this.flush_mmio();
 
     return new Promise((resolve) => {
@@ -309,21 +447,16 @@ class SimulatorController {
   }
 
   load_syscall(number, code, desc) {
+    this.custom_syscalls.set(number, code);
     if (desc) {
-      this.sim_status_ch.postMessage({
-        type: "load_syscall",
-        number,
-        desc,
-        code,
-      });
+      this.post_status({ type: "load_syscall", number, desc, code });
     }
-    if (this.simulator)
-      this.simulator.postMessage({ type: "load_syscall", number, code });
+    this.post_to_worker({ type: "load_syscall", number, code });
   }
 
   remove_syscall(number) {
-    if (this.simulator)
-      this.simulator.postMessage({ type: "disable_syscall", number });
+    this.custom_syscalls.delete(number);
+    this.post_to_worker({ type: "disable_syscall", number });
   }
 
   load_files(files) {
@@ -350,23 +483,19 @@ class SimulatorController {
 
   set_int_freq_scale_limit(value) {
     this.int_cont_freq_scale = value;
-    if (this.simulator) {
-      if (value == 0) {
-        this.simulator.postMessage({ type: "interrupt_enabled", value: 0 });
-      } else {
-        this.simulator.postMessage({ type: "interrupt_enabled", value: 1 });
-      }
-      this.simulator.postMessage({
-        type: "set_int_delay",
-        value: 2 ** (32 - value) - 1,
-      });
-    }
+    this.post_to_worker({
+      type: "interrupt_enabled",
+      value: value == 0 ? 0 : 1,
+    });
+    this.post_to_worker({
+      type: "set_int_delay",
+      value: 2 ** (32 - value) - 1,
+    });
   }
 
   set_freq_limit(value) {
     this.bus_freq_limit = value;
-    if (this.simulator)
-      this.simulator.postMessage({ type: "set_freq_limit", value });
+    this.post_to_worker({ type: "set_freq_limit", value });
   }
 
   restart_simulator() {
@@ -376,10 +505,7 @@ class SimulatorController {
       resolve();
     }
     if (this.simulator) this.simulator.terminate();
-    this.sim_status_ch.postMessage({
-      type: "status",
-      status: { stopping: true },
-    });
+    this.post_status({ type: "status", status: { stopping: true } });
     this.startSimulator();
   }
 
@@ -388,82 +514,72 @@ class SimulatorController {
   }
 
   debugEnable(enabled = true) {
-    if (this.simulator)
-      this.simulator.postMessage({ type: "debug_enable", enabled });
+    this.debug_mode_enabled = enabled;
+    this.post_to_worker({ type: "debug_enable", enabled });
   }
 
   debugStep() {
-    if (this.simulator) this.simulator.postMessage({ type: "debug_step" });
+    this.post_to_worker({ type: "debug_step" });
   }
 
   debugStepOver() {
-    if (this.simulator) this.simulator.postMessage({ type: "debug_step_over" });
+    this.post_to_worker({ type: "debug_step_over" });
   }
 
   debugStepOut() {
-    if (this.simulator) this.simulator.postMessage({ type: "debug_step_out" });
+    this.post_to_worker({ type: "debug_step_out" });
   }
 
   debugContinue() {
-    if (this.simulator) this.simulator.postMessage({ type: "debug_continue" });
+    this.post_to_worker({ type: "debug_continue" });
   }
 
   debugPause() {
-    if (this.simulator) this.simulator.postMessage({ type: "debug_pause" });
+    this.post_to_worker({ type: "debug_pause" });
+  }
+
+  /** Hold the slice chain of a running program and read back its state. */
+  runPause() {
+    this.post_to_worker({ type: "run_pause" });
+  }
+
+  /** Let a paused slice chain continue. */
+  runResume() {
+    this.post_to_worker({ type: "run_resume" });
   }
 
   debugToggleBreakpoint(addr, active) {
-    if (this.simulator)
-      this.simulator.postMessage({
-        type: "debug_set_bp",
-        addr: addr,
-        active: active,
-      });
+    if (active) {
+      this.breakpoints.add(addr);
+    } else {
+      this.breakpoints.delete(addr);
+    }
+    this.post_to_worker({ type: "debug_set_bp", addr, active });
   }
 
   debugClearBreakpoints() {
-    if (this.simulator) this.simulator.postMessage({ type: "debug_clear_bps" });
+    this.breakpoints.clear();
+    this.post_to_worker({ type: "debug_clear_bps" });
   }
 
   debugFetchMemory(addr, len) {
-    if (this.simulator)
-      this.simulator.postMessage({
-        type: "debug_read_mem",
-        addr: addr,
-        len: len,
-      });
+    this.post_to_worker({ type: "debug_read_mem", addr, len });
   }
 
   debugPokeRegister(reg, val) {
-    if (this.simulator)
-      this.simulator.postMessage({
-        type: "debug_poke_reg",
-        reg: reg,
-        val: val,
-      });
+    this.post_to_worker({ type: "debug_poke_reg", reg, val });
   }
 
   debugPokeMemory(addr, val) {
-    if (this.simulator)
-      this.simulator.postMessage({
-        type: "debug_poke_mem",
-        addr: addr,
-        val: val,
-      });
+    this.post_to_worker({ type: "debug_poke_mem", addr, val });
   }
 
   debugFetchDisassembly(addr, len) {
-    if (this.simulator)
-      this.simulator.postMessage({
-        type: "debug_disasm",
-        addr: addr,
-        len: len,
-      });
+    this.post_to_worker({ type: "debug_disasm", addr, len });
   }
 
   debugGetSnapshot() {
-    if (this.simulator)
-      this.simulator.postMessage({ type: "debug_get_snapshot" });
+    this.post_to_worker({ type: "debug_get_snapshot" });
   }
 }
 
