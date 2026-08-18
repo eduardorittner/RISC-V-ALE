@@ -75,4 +75,69 @@ test.describe("Automated Zip Lab Runner Integration (code_test.html)", () => {
     expect(resultsJson[0].grade).toBe(100);
     expect(resultsJson[0].comment).toContain("Pass");
   });
+
+  test("Suite 3.4b: a failing submission records the fail verdict", async ({ page }) => {
+    const fixtureFailPath = path.resolve(process.cwd(), "tests/fixtures/lab_submission_fail.zip");
+    expect(fs.existsSync(fixtureFailPath)).toBe(true);
+
+    await page.fill("#activity_url", "../index.html");
+    await page.fill("#load_time", "100");
+    await page.fill("#test_timeout", "2000");
+
+    // 1. Upload the failing submission fixture.
+    const fileInput = page.locator("#file_input");
+    await fileInput.setInputFiles(fixtureFailPath);
+
+    await page.waitForFunction(() => window.files && window.files.length > 0, { timeout: 5000 });
+
+    // 2. Simulate the assistant grading the submission as a failure.
+    await page.evaluate(() => {
+      window.testFinishInterval = setInterval(() => {
+        window.postMessage(
+          { finish_test: true, grade: 0, comment: "Fail: assertion 2 did not hold" },
+          "*"
+        );
+      }, 50);
+    });
+
+    // 3. Run the batch test runner.
+    await page.click("button:has-text('Run Tests')");
+
+    // 4. Wait for the runner to write the verdict to localStorage.
+    await page.waitForFunction(() => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const item = localStorage.getItem(localStorage.key(i));
+        if (item && item.includes('"grade":0')) {
+          return true;
+        }
+      }
+      return false;
+    }, { timeout: 8000 });
+
+    await page.evaluate(() => {
+      if (window.testFinishInterval) clearInterval(window.testFinishInterval);
+    });
+
+    // 5. The stored verdict must be the failure, and it must name the failing file.
+    const resultsJson = await page.evaluate(() => {
+      const list = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const str = localStorage.getItem(localStorage.key(i));
+        if (str && str !== "") {
+          try {
+            const parsed = JSON.parse(str);
+            if (parsed && typeof parsed.grade !== "undefined") {
+              list.push(parsed);
+            }
+          } catch (e) {}
+        }
+      }
+      return list;
+    });
+
+    expect(resultsJson.length).toBeGreaterThan(0);
+    expect(resultsJson[0].grade).toBe(0);
+    expect(resultsJson[0].comment).toContain("Fail");
+    expect(resultsJson[0].filename).toContain("lab_submission_fail");
+  });
 });

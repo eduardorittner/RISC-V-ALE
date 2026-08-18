@@ -20,10 +20,12 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      # `true`, not `recursive`: this job needs `extensions` and
+      # `crates/riscv-rs`, and never the nested SweRV-ISS-1 oracle.
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -35,6 +37,11 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
+
       - name: Install wasm-pack
         uses: taiki-e/install-action@wasm-pack
 
@@ -43,9 +50,9 @@ jobs:
       - name: Build WASM modules
         run: make build
 
-      - name: Install perf dependencies
-        working-directory: scripts/perf
-        run: npm install
+      # The harness uses the root npm project; there is no separate perf project.
+      - name: Install dependencies
+        run: npm ci
 
       # Earlier results are restored only to fill in the comparison table in the
       # PR comment. Restore keys stay scoped to this base branch so the numbers

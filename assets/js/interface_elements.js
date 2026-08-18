@@ -430,11 +430,7 @@ sim_status_ch.onmessage = function (ev) {
 
     case "clang_status":
       if(data.status.starting){
-        if(!Modal.isOpen('#modal_terminal')){
-          Modal.open('#modal_terminal', {backdrop: false});
-          Modal.makeDraggable('#modal_terminal', '.modal-header');
-          web_terminal.openTerminal();
-        }
+        web_terminal.openTerminal();
       }else{
 
         run_button.onclick = function(){run_simulator(false);};

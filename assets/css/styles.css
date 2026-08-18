@@ -2,13 +2,7 @@
   pointer-events: none;
 }
 
-/* Global Shadow Removal Override */
-*, ::before, ::after {
-  box-shadow: none !important;
-  -webkit-box-shadow: none !important;
-  -moz-box-shadow: none !important;
-}
-
+/* Shadow removal for the template's shadowed components. */
 .shadow, .shadow-sm, .shadow-lg, .card, .navbar, .first-menu, .submenu, .sub-submenu {
   box-shadow: none !important;
   -webkit-box-shadow: none !important;
@@ -52,10 +46,6 @@ aside nav > ul {
 
 .pointer {
   cursor: pointer;
-}
-
-#modal_terminal .modal-header {
-  cursor: move;
 }
 
 #xterm-container {
@@ -287,7 +277,6 @@ aside nav > ul {
     padding-bottom: 10px !important;
     background-color: #ffffff !important;
     border-top: 1px solid #e3e6f0 !important;
-    box-shadow: none !important;
     z-index: 1000;
 }
 
@@ -348,7 +337,6 @@ aside nav > ul {
     border-radius: 0 !important;
     border: 1px solid #d1d3e2;
     margin: 0 !important;
-    box-shadow: none !important;
 }
 
 .debug-tab-seamless .row.no-gutters > [class*="col-"] + [class*="col-"] .card {
@@ -431,7 +419,6 @@ aside nav > ul {
     height: 100% !important;
     border-radius: 0 !important;
     border: 1px solid #d1d3e2;
-    box-shadow: none !important;
 }
 
 .dock-panel .card-body {
@@ -916,3 +903,114 @@ header#topbar nav h1 {
 
 
 
+
+/* ─── Merged from Top--Right--Left-Navigation-by-Jigar-Mistry.css ──────────
+ *
+ * The rest of that template styled a right sidebar, a search box, a
+ * notification tray and a multi-level dropdown. None of those elements exist
+ * in this application, and its `#content` and `#content-wrapper` rules were
+ * already fully overridden above.
+ */
+.nav.nav-tabs:hover {
+  outline: none !important;
+  border: none;
+}
+
+header#topbar nav > a {
+  width: 200px;
+  height: 35px;
+  margin: 5px 0px;
+}
+
+/* ─── Merged from Vertical-Left-SideBar-by-Jigar-Mistry.css ────────────────
+ *
+ * The sidebar is a single flat list: every entry, including the ones the
+ * device extensions inject through `addTab`, is a direct `<li>` of one `<ul>`.
+ * The template's nested `ul ul` and `ul ul ul` submenu rules matched nothing
+ * and are dropped. The `z-index`, `transition` and `box-shadow` declarations
+ * that this file repeated are already set above.
+ */
+aside {
+  position: fixed;
+}
+
+aside nav {
+  position: fixed;
+}
+
+aside nav > ul {
+  position: fixed;
+  background-color: #ffffff;
+  height: 100vh !important;
+  width: 62px;
+  top: 49px !important;
+  padding-top: 0.5rem;
+  padding-left: 0 !important;
+  margin: 0 !important;
+  list-style: none !important;
+  list-style-type: none !important;
+  border-color: white;
+  border-right: 1px solid #e3e6f0;
+  overflow: auto !important;
+  overflow-x: hidden !important;
+}
+
+aside nav > ul > li {
+  list-style: none !important;
+  list-style-type: none !important;
+  margin: 0 !important;
+  border-radius: 0;
+  white-space: nowrap;
+  padding: 0.5rem 0 !important;
+  font-size: 15px;
+  background-color: transparent;
+  border: none;
+  width: 100%;
+}
+
+aside nav a {
+  color: #041e42;
+  display: block;
+  border-radius: 0;
+  padding: 0.2rem 0 !important;
+  text-decoration: none;
+}
+
+aside nav a div {
+  display: flex;
+  align-items: center;
+}
+
+aside nav i {
+  font-size: 24px;
+  width: 62px;
+  min-width: 62px;
+  text-align: center;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+aside nav span {
+  font-size: 15px;
+  font-family: 'Nunito Sans', sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+aside nav > ul:hover span {
+  opacity: 1;
+  visibility: visible;
+  display: initial;
+}
+
+aside nav > ul > li:hover {
+  background-color: rgba(7,7,7,0.06);
+  border-right: 5px solid rgb(255,199,44);
+}
+
+aside nav > ul:hover {
+  width: 220px;
+}

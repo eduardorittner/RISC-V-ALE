@@ -1,7 +1,40 @@
 /*jshint esversion: 9 */
 
-var cacheName = 'RISC-V_ALE_v0.2:247';
-var urlsToCache = ['./', './index.html', './LICENSE', './Makefile', './playwright.config.js', './vitest.config.js', './.prettierignore', './README.md', './package-lock.json', './package.json', './tests/code_test.html', './tests/unit/bus_helper.test.js', './tests/unit/mmio.test.js', './tests/unit/toast_escaping.test.js', './tests/unit/mmio_manager.test.js', './tests/unit/utils.test.js', './tests/integration/run_loop.spec.js', './tests/integration/debug_lifecycle.spec.js', './tests/integration/worker_ipc.spec.js', './tests/integration/device_lifecycle.spec.js', './tests/integration/unknown_syscall.spec.js', './tests/integration/code_test_runner.spec.js', './tests/integration/rv32gc.spec.js', './tests/integration/assistant.spec.js', './tests/integration/debugger.spec.js', './tests/integration/injection.spec.js', './tests/integration/output_fidelity.spec.js', './tests/integration/home_tutorials.spec.js', './tests/integration/failure_reporting.spec.js', './tests/fixtures/lab_submission_fail.zip', './tests/fixtures/lab_submission_pass.zip', './tests/fixtures/debug_sample.s', './tests/fixtures/lab_fail.zip', './tests/fixtures/lab_pass.zip', './extensions/README.md', './extensions/devices/midi_synthesizer.js', './extensions/devices/serial_port.js', './extensions/devices/uoli_robot.js', './extensions/devices/general_purpose_timer.js', './extensions/devices/self_driving_car.js', './extensions/devices/bus_helper.js', './extensions/devices/canvas.js', './extensions/devices/utils.js', './extensions/devices/dependencies/webaudio-tinysynth.js', './extensions/devices/dependencies/self_driving_car_unity/index.html', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/fullscreen-button.png', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/unity-logo-dark.png', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/favicon.ico', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/progress-bar-empty-light.png', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/webgl-logo.png', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/style.css', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/progress-bar-full-dark.png', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/progress-bar-full-light.png', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/progress-bar-empty-dark.png', './extensions/devices/dependencies/self_driving_car_unity/TemplateData/unity-logo-light.png', './extensions/devices/dependencies/self_driving_car_unity/Build/self_driving_car_unity.wasm', './extensions/devices/dependencies/self_driving_car_unity/Build/self_driving_car_unity.data', './extensions/devices/dependencies/self_driving_car_unity/Build/self_driving_car_unity.framework.js', './extensions/devices/dependencies/self_driving_car_unity/Build/self_driving_car_unity.loader.js', './extensions/devices/dependencies/uoli-unity/index.html', './extensions/devices/dependencies/uoli-unity/TemplateData/UnityProgress.js', './extensions/devices/dependencies/uoli-unity/TemplateData/progressFull.Light.png', './extensions/devices/dependencies/uoli-unity/TemplateData/progressEmpty.Light.png', './extensions/devices/dependencies/uoli-unity/TemplateData/favicon.ico', './extensions/devices/dependencies/uoli-unity/TemplateData/progressLogo.Light.png', './extensions/devices/dependencies/uoli-unity/TemplateData/webgl-logo.png', './extensions/devices/dependencies/uoli-unity/TemplateData/fullscreen.png', './extensions/devices/dependencies/uoli-unity/TemplateData/progressLogo.Dark.png', './extensions/devices/dependencies/uoli-unity/TemplateData/style.css', './extensions/devices/dependencies/uoli-unity/TemplateData/progressEmpty.Dark.png', './extensions/devices/dependencies/uoli-unity/TemplateData/progressFull.Dark.png', './extensions/devices/dependencies/uoli-unity/Build/UnityLoader.js', './extensions/devices/dependencies/uoli-unity/Build/build.wasm.code.unityweb', './extensions/devices/dependencies/uoli-unity/Build/build.data.unityweb', './extensions/devices/dependencies/uoli-unity/Build/build.wasm.framework.unityweb', './extensions/devices/dependencies/uoli-unity/Build/build.json', './extensions/devices/dependencies/roomba-unity/index.html', './extensions/devices/dependencies/roomba-unity/TemplateData/UnityProgress.js', './extensions/devices/dependencies/roomba-unity/TemplateData/progressFull.Light.png', './extensions/devices/dependencies/roomba-unity/TemplateData/progressEmpty.Light.png', './extensions/devices/dependencies/roomba-unity/TemplateData/favicon.ico', './extensions/devices/dependencies/roomba-unity/TemplateData/progressLogo.Light.png', './extensions/devices/dependencies/roomba-unity/TemplateData/webgl-logo.png', './extensions/devices/dependencies/roomba-unity/TemplateData/fullscreen.png', './extensions/devices/dependencies/roomba-unity/TemplateData/progressLogo.Dark.png', './extensions/devices/dependencies/roomba-unity/TemplateData/style.css', './extensions/devices/dependencies/roomba-unity/TemplateData/progressEmpty.Dark.png', './extensions/devices/dependencies/roomba-unity/TemplateData/progressFull.Dark.png', './extensions/devices/dependencies/roomba-unity/Build/UnityLoader.js', './extensions/devices/dependencies/roomba-unity/Build/build.wasm.code.unityweb', './extensions/devices/dependencies/roomba-unity/Build/build.data.unityweb', './extensions/devices/dependencies/roomba-unity/Build/build.wasm.framework.unityweb', './extensions/devices/dependencies/roomba-unity/Build/build.json', './modules/assistant.js', './modules/lld.wasm', './modules/clang_worker.js', './modules/clang.wasm', './modules/simulator_worker.js', './modules/terminal.js', './modules/compiler.js', './modules/LICENSE_clang_lld', './modules/ld.lld.js', './modules/clang.js', './modules/LICENSE_whisper', './modules/mmio_manager.js', './modules/utils.js', './modules/connection.js', './modules/debugger.js', './modules/simulator.js', './modules/pkg/README.md', './modules/pkg/riscv_rs_bg.wasm', './modules/pkg/package.json', './modules/pkg/riscv_rs.js', './data/syscalls.json', './data/config.json', './data/devices.json', './data/home.json', './data/html/hello.x', './data/html/getting_started.html', './data/html/calculator.html', './data/html/calculator.js', './assets/manifest.json', './assets/css/xterm.css', './assets/css/Top--Right--Left-Navigation-by-Jigar-Mistry.css', './assets/css/styles.css', './assets/css/Vertical-Left-SideBar-by-Jigar-Mistry.css', './assets/css/app.css', './assets/css/toast.css', './assets/js/tabs.js', './assets/js/interface_elements.js', './assets/js/zip.min.js', './assets/js/dropdown.js', './assets/js/data_table.js', './assets/js/xterm-addon-fit.min.js', './assets/js/z-worker.js', './assets/js/xterm.min.js', './assets/js/modal.js', './assets/js/toast.js', './assets/js/lz-string.min.js', './assets/img/logo_square.png', './assets/img/Standard-White_2.png', './assets/img/Standard_2.png', './assets/img/logo_circle.png', './assets/img/Standard_2ALE.png', './assets/fonts/fa-solid-900.ttf', './assets/fonts/MaterialIcons-Regular.svg', './assets/fonts/fa-regular-400.svg', './assets/fonts/fa-regular-400.woff2', './assets/fonts/MaterialIcons-Regular.woff2', './assets/fonts/fa-solid-900.eot', './assets/fonts/fontawesome-all.min.css', './assets/fonts/fa-brands-400.svg', './assets/fonts/material-icons.min.css', './assets/fonts/fa-regular-400.woff', './assets/fonts/fa-brands-400.eot', './assets/fonts/MaterialIcons-Regular.woff', './assets/fonts/fa-solid-900.svg', './assets/fonts/MaterialIcons-Regular.ttf', './assets/fonts/fa-solid-900.woff', './assets/fonts/fa-regular-400.ttf', './assets/fonts/fa-solid-900.woff2', './assets/fonts/fa-brands-400.woff2', './assets/fonts/fa-brands-400.woff', './assets/fonts/fa-brands-400.ttf', './assets/fonts/MaterialIcons-Regular.eot', './assets/fonts/fa-regular-400.eot'];
+var cacheName = 'RISC-V_ALE_v0.2:255';
+var urlsToCache = ['./', './index.html', './assets/manifest.json', './modules/pkg/riscv_rs.js', './modules/pkg/riscv_rs_bg.wasm', './assets/css/app.css', './assets/css/styles.css', './assets/css/toast.css', './assets/css/xterm.css', './assets/js/data_table.js', './assets/js/dropdown.js', './assets/js/interface_elements.js', './assets/js/lz-string.min.js', './assets/js/modal.js', './assets/js/tabs.js', './assets/js/toast.js', './assets/js/xterm-addon-fit.min.js', './assets/js/xterm.min.js', './assets/img/Standard-White_2.png', './assets/img/Standard_2.png', './assets/img/Standard_2ALE.png', './assets/img/logo_circle.png', './assets/img/logo_square.png', './assets/fonts/MaterialIcons-Regular.woff2', './assets/fonts/fa-brands-400.woff2', './assets/fonts/fa-regular-400.woff2', './assets/fonts/fa-solid-900.woff2', './assets/fonts/fontawesome-all.min.css', './assets/fonts/material-icons.min.css', './data/config.json', './data/devices.json', './data/home.json', './data/syscalls.json', './data/html/calculator.html', './data/html/calculator.js', './data/html/getting_started.html', './data/html/hello.x', './extensions/devices/bus_helper.js', './extensions/devices/canvas.js', './extensions/devices/general_purpose_timer.js', './extensions/devices/midi_synthesizer.js', './extensions/devices/self_driving_car.js', './extensions/devices/serial_port.js', './extensions/devices/uoli_robot.js', './extensions/devices/utils.js', './modules/assistant.js', './modules/clang.js', './modules/clang_worker.js', './modules/compiler.js', './modules/connection.js', './modules/debugger.js', './modules/ld.lld.js', './modules/mmio_manager.js', './modules/simulator.js', './modules/simulator_worker.js', './modules/terminal.js', './modules/utils.js'];
+
+// Large, optional assets are not precached. The first successful fetch of one
+// of these puts it in the cache, so the compiler and the Unity devices work
+// offline after one online use without costing every visitor 46 MB up front.
+var RUNTIME_CACHE_PATTERNS = [
+  /\/modules\/[^/]+\.wasm$/,
+  /\/extensions\/devices\/dependencies\//,
+];
+
+// Answered from the cache first and refreshed in the background. These are
+// small first-party files where a one-reload-stale copy is an acceptable trade
+// for not blocking the page on the network.
+var STALE_WHILE_REVALIDATE_PATTERNS = [
+  /\/$/,
+  /\.html$/,
+  /\/assets\/(js|css)\/[^/]+\.(js|css)$/,
+  /\/modules\/[^/]+\.js$/,
+  /\/data\//,
+];
+
+function matchesAny(patterns, url) {
+  return patterns.some(function (pattern) {
+    return pattern.test(url);
+  });
+}
+
+function offlineResponse() {
+  return new Response("Offline", {
+    status: 503,
+    statusText: "Service Unavailable",
+    headers: { "Content-Type": "text/plain" },
+  });
+}
 
 self.addEventListener('install', function(event) {
   event.waitUntil(
@@ -30,29 +63,83 @@ self.addEventListener('activate', event => {
   );
 });
 
+/**
+ * Answer from the cache, and refresh the entry from the network in the
+ * background. A cache miss waits for the network.
+ */
+function staleWhileRevalidate(request) {
+  return caches.open(cacheName).then(function (cache) {
+    return cache.match(request).then(function (cached) {
+      var networked = fetch(request)
+        .then(function (response) {
+          if (response && response.ok) {
+            cache.put(request, response.clone());
+          }
+          return response;
+        })
+        .catch(function (err) {
+          console.log("Fail to fetch", request.url, err);
+          return cached || offlineResponse();
+        });
+
+      if (cached && cached.ok) {
+        return cached;
+      }
+      return networked;
+    });
+  });
+}
+
+/**
+ * Answer from the cache, and on a miss fetch and store the response. Used for
+ * the WASM and the fonts, where the cache name carries the version, and for
+ * the large optional assets that are never precached.
+ */
+function cacheFirst(request, storeOnMiss) {
+  return caches.open(cacheName).then(function (cache) {
+    return cache.match(request).then(function (cached) {
+      if (cached && cached.ok) {
+        return cached;
+      }
+      return fetch(request)
+        .then(function (response) {
+          if (storeOnMiss && response && response.ok) {
+            cache.put(request, response.clone());
+          }
+          return response;
+        })
+        .catch(function (err) {
+          console.log("Fail to fetch", request.url, err);
+          return offlineResponse();
+        });
+    });
+  });
+}
 
 self.addEventListener('fetch', function(event) {
   if (event.request.method !== 'GET') {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then(function(response) {
-      if (response && response.ok) {
-        // cache hit and valid response
-        return response;
-      }
-      // cache miss or invalid/corrupted cached response -> fallback to network
-      return fetch(event.request).catch(function(err) {
-        console.log("Fail to fetch", event.request, err);
-      });
-    }).catch(function(err) {
-      console.warn("Cache match error, falling back to fetch:", event.request.url, err);
-      return fetch(event.request).catch(function(fetchErr) {
-        console.log("Fail to fetch", event.request, fetchErr);
-      });
-    })
-  );
+  var url = event.request.url;
+
+  // Cross-origin requests (the Google Fonts stylesheets) are left to the
+  // browser; a partial cross-origin cache is worse than none.
+  if (!url.startsWith(self.location.origin)) {
+    return;
+  }
+
+  if (matchesAny(RUNTIME_CACHE_PATTERNS, url)) {
+    event.respondWith(cacheFirst(event.request, true));
+    return;
+  }
+
+  if (matchesAny(STALE_WHILE_REVALIDATE_PATTERNS, url)) {
+    event.respondWith(staleWhileRevalidate(event.request));
+    return;
+  }
+
+  event.respondWith(cacheFirst(event.request, false));
 });
 
 self.addEventListener('message', function (event) {

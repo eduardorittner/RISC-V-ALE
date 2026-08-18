@@ -31,6 +31,10 @@ jobs:
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # branch=master
         with:
           toolchain: ${{ matrix.toolchain }}
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
       # The differential tests compare against the SweRV-ISS oracle. Building it
       # takes several minutes, so key a cache on the pinned oracle revision.
       - name: Record oracle revision
@@ -80,11 +84,17 @@ jobs:
       #   if: runner.os == 'Windows'
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag=v6.0.2
         with:
-          submodules: recursive
+          # Not recursive: this job does not set RISCV_RS_REQUIRE_ORACLE, so the
+          # differential tests skip and the oracle clone is pure cost.
+          submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # branch=master
         with:
           toolchain: stable
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
       - name: cargo generate-lockfile
         if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
         working-directory: crates/riscv-rs
@@ -129,6 +139,10 @@ jobs:
         uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # tag=v2.82.7
         with:
           tool: cargo-llvm-cov
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
       - name: Record oracle revision
         run: |
           echo "ORACLE_SHA=$(git -C crates/riscv-rs rev-parse HEAD:SweRV-ISS-1)" >> "$GITHUB_ENV"
@@ -162,11 +176,17 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag=v6.0.2
         with:
-          submodules: recursive
+          # Not recursive: this job builds the WASM and drives the page. It
+          # never runs the differential tests, so it never needs the oracle.
+          submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
       - name: Install wasm-pack
         uses: taiki-e/install-action@wasm-pack
       - name: Build WASM modules

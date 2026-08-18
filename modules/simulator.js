@@ -557,11 +557,6 @@ class SimulatorController {
     this.post_to_worker({ type: "debug_set_bp", addr, active });
   }
 
-  debugClearBreakpoints() {
-    this.breakpoints.clear();
-    this.post_to_worker({ type: "debug_clear_bps" });
-  }
-
   debugFetchMemory(addr, len) {
     this.post_to_worker({ type: "debug_read_mem", addr, len });
   }
@@ -578,9 +573,6 @@ class SimulatorController {
     this.post_to_worker({ type: "debug_disasm", addr, len });
   }
 
-  debugGetSnapshot() {
-    this.post_to_worker({ type: "debug_get_snapshot" });
-  }
 }
 
 class InterruptController {

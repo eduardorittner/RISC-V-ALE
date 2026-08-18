@@ -1,6 +1,6 @@
 /**
  * Custom Lightweight Toast & Modal Notification System for RISC-V ALE
- * Replaces PNotify and PNotifyConfirm with zero external dependencies.
+ * Zero external dependencies.
  */
 (function (/** @type {any} */ global) {
   'use strict';
@@ -127,7 +127,7 @@
         timer = setTimeout(dismiss, delay);
       }
 
-      // Return notification controller object compatible with PNotify usage pattern
+      // Controller handed back to the caller so it can update or dismiss the toast.
       const controller = {
         elem: toast,
         refs: { elem: toast },
@@ -239,11 +239,5 @@
 
   const toastInstance = /** @type {any} */ (new ToastManager());
 
-  // Backward compatibility mock for PNotify.Stack if referenced
-  toastInstance.Stack = function () {
-    return toastInstance;
-  };
-
   global.Toast = toastInstance;
-  global.PNotify = toastInstance; // Backward compatibility alias
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -41,6 +41,11 @@
   ],
   "exclude": [
     "node_modules",
+    // A repository-level test: it reads `service_worker.js` from disk with the
+    // Node builtins. This project is checked against the DOM library with
+    // `types: []`, so the Node module declarations are not available here. The
+    // test still runs under vitest.
+    "tests/unit/precache.test.js",
     "modules/clang.js",
     "modules/ld.lld.js",
     "modules/pkg",

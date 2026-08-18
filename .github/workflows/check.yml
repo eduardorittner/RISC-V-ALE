@@ -44,7 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          submodules: recursive
+          # Not recursive: this job builds only `crates/riscv-rs`, and the
+          # nested SweRV-ISS-1 oracle is a large clone nothing here reads.
+          submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@master
         with:
@@ -67,12 +69,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          submodules: recursive
+          # Not recursive: this job builds only `crates/riscv-rs`, and the
+          # nested SweRV-ISS-1 oracle is a large clone nothing here reads.
+          submodules: true
       - name: Install ${{ matrix.toolchain }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
           components: clippy
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
       - name: cargo clippy
         working-directory: crates/riscv-rs
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -85,11 +93,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          submodules: recursive
+          # Not recursive: this job builds only `crates/riscv-rs`, and the
+          # nested SweRV-ISS-1 oracle is a large clone nothing here reads.
+          submodules: true
       - name: Install nightly
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
       - name: Install cargo-docs-rs
         uses: dtolnay/install@cargo-docs-rs
       - name: cargo docs-rs

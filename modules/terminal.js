@@ -166,9 +166,6 @@ export class WebTerminal {
       } else if (data.fh == 2) {
         this.pending_stderr += data.data;
         this.schedule_render();
-      } else if (data.fh == -1 && "debug" in data) {
-        this.flush_render();
-        this.term.writeln(`\x1b[33m>>> \x1b[0m${data.cmd}`);
       }
     };
 
@@ -273,12 +270,17 @@ export class WebTerminal {
     this.pushMode("input", "");
   }
 
+  /**
+   * A debug session drives the terminal through the debugger panel, not through
+   * a prompt. The mode is passive: it takes no command line, because the SweRV
+   * command relay that answered those commands does not exist.
+   */
   enter_debug_mode() {
-    this.pushMode("debug", "\x1b[33m>>> \x1b[0m");
+    this.pushMode("debug", "");
   }
 
   handleTermData(data) {
-    if (this.currentMode === "wait") {
+    if (this.currentMode === "wait" || this.currentMode === "debug") {
       if (data === "\x03") {
         // Ctrl+C
         this.popMode();
@@ -330,28 +332,6 @@ export class WebTerminal {
     const trimmed = cmdStr.trim();
     if (!trimmed) {
       this.writePrompt();
-      return;
-    }
-
-    if (this.currentMode === "debug") {
-      let cmd = trimmed.split(" ")[0];
-      switch (cmd) {
-        case "write-stdin":
-          this.post_stdio({
-            fh: 0,
-            data: trimmed.slice(11).trimStart() + "\n",
-          });
-          break;
-        case "help":
-          this.term.writeln(
-            `RISC-V ALE commands:\n\nwrite-stdin string\n\tWrites a string to stdin (fd = 0)\n\nSweRV Commands:`,
-          );
-          this.post_stdio({ fh: -1, debug: true, cmd: trimmed });
-          break;
-        default:
-          this.post_stdio({ fh: -1, debug: true, cmd: trimmed });
-          break;
-      }
       return;
     }
 

@@ -1,27 +1,47 @@
 name: Deploy to GitHub Pages
 
+# The deploy runs only after the `test` workflow finishes green on `main`. A
+# plain `push` trigger shipped whatever landed, red tests included.
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["test"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
 
+# `deploy_gh_pages.sh` force-pushes an orphan branch. Two deploys in flight can
+# race, and the loser's commit wins. One at a time, and never cancelled midway.
+concurrency:
+  group: deploy-gh-pages
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # Deploy exactly the commit the tests passed on, not whatever is at
+          # the head of `main` when this run starts.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Not recursive: the build needs `extensions` and `crates/riscv-rs`,
+          # and never the nested SweRV-ISS-1 oracle.
+          submodules: true
           fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
 
       - name: Install wasm-pack
         uses: taiki-e/install-action@wasm-pack
