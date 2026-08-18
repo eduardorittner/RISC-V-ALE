@@ -7,9 +7,24 @@
 // what the workers actually touch is declared here, so a name nobody declared
 // stays an error rather than silently becoming `any`.
 
-/** The Emscripten module object both workers configure before loading a tool. */
-interface EmscriptenModule {
+/**
+ * The guest program's argument vector and output sink.
+ *
+ * The simulator worker runs a wasm-bindgen module, not an Emscripten one, so
+ * this is all it needs: the arguments it was started with, and somewhere to
+ * send the guest's stdout and stderr.
+ */
+interface GuestIoModule {
   arguments: string[];
+  print?(text: string): void;
+  printErr?(text: string): void;
+}
+
+/**
+ * The Emscripten module object the clang worker configures before it loads
+ * clang or lld. Those two really are Emscripten builds.
+ */
+interface EmscriptenModule extends GuestIoModule {
   thisProgram?: string;
   instantiateWasm?(
     imports: WebAssembly.Imports,
@@ -18,10 +33,10 @@ interface EmscriptenModule {
       module: WebAssembly.Module,
     ) => void,
   ): Record<string, never> | false;
-  preRun: Array<() => void>;
+  // Optional: the simulator worker's module is a plain output sink, because
+  // the simulator is a wasm-bindgen build with no Emscripten runtime to hook.
+  preRun?: Array<() => void>;
   postRun?: Array<() => void>;
-  print?(text: string): void;
-  printErr?(text: string): void;
 }
 
 /** The guest files the worker was given, as `File` objects. */

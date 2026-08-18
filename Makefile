@@ -1,7 +1,8 @@
 .PHONY: build format test typecheck perf HEAD
 
 build:
-	wasm-pack build --target no-modules --out-dir ../../modules/pkg crates/riscv-rs
+	wasm-pack build --target no-modules --out-dir $(CURDIR)/modules/pkg crates/riscv-rs \
+		-- --features console_error_panic_hook
 	python3 scripts/sync_wasm_types.py
 	python3 scripts/update_cache.py
 
@@ -12,8 +13,9 @@ format:
 typecheck:
 	npm run typecheck
 
-test:
+test: build
 	cargo test --manifest-path crates/riscv-rs/Cargo.toml
+	npm run test:unit
 	npm run test:ui
 
 
@@ -28,7 +30,7 @@ test:
 #   make perf FAIL_THRESHOLD=20  Fail when a workload is >20% slower than the
 #                                saved baseline
 #
-# Before the first run: cd scripts/perf && npm install
+# The harness uses the root npm project. Before the first run: npm ci
 
 PERF_BROWSER := $(if $(BROWSER),--browser $(BROWSER),)
 PERF_DRY := $(if $(DRY),--dry,)
@@ -41,7 +43,7 @@ ifeq ($(filter HEAD,$(MAKECMDGOALS)),HEAD)
 perf:
 	@if ! node -e "require('ws')" >/dev/null 2>&1; then \
 		echo "Installing missing dependencies for perf harness..."; \
-		npm install --no-audit 2>/dev/null || (cd scripts/perf && npm install --no-audit); \
+		npm install --no-audit; \
 	fi
 	@ORIG_REF=$$(git symbolic-ref --short HEAD 2>/dev/null || git rev-parse HEAD); \
 	STASHED=0; \
@@ -71,8 +73,8 @@ else
 perf:
 	@if ! node -e "require('ws')" >/dev/null 2>&1; then \
 		echo "Installing missing dependencies for perf harness..."; \
-		npm install --no-audit 2>/dev/null || (cd scripts/perf && npm install --no-audit); \
+		npm install --no-audit; \
 	fi
-	node scripts/perf/harness.js $(PERF_ARGS)
+	node scripts/perf/harness.cjs $(PERF_ARGS)
 endif
 

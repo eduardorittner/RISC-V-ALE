@@ -19,7 +19,6 @@ class Compiler {
     this.clangModule = null;
     this.lldModule = null;
     this.initPromise = null;
-    this.workerPool = [];
 
     // Trigger pre-compilation asynchronously on startup
     setTimeout(() => this.init_wasm_cache(), 0);

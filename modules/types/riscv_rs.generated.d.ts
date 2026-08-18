@@ -75,6 +75,16 @@ declare namespace wasm_bindgen {
          * keeps its turn while a program runs.
          */
         run_slice(budget: number): SliceOutcome;
+        /**
+         * Run until a breakpoint, a halt or a trap stops the guest.
+         *
+         * This drives `run_slice`, which keeps the whole gap inside the CPU's
+         * inner loop. It used to call `step_instruction` once per instruction,
+         * paying the full per-step entry and exit — the breakpoint test, the
+         * halt test and the error formatting — for every instruction between the
+         * current PC and the breakpoint. A continue across a ten-million
+         * instruction gap is the common case in a debug session.
+         */
         run_until_breakpoint(): DebuggerSnapshot;
         set_debug_mode(enabled: boolean): void;
         set_has_custom_syscalls(enabled: boolean): void;
@@ -113,8 +123,8 @@ declare interface InitOutput {
     readonly simulator_write_register: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export3: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
 }
 
 /**

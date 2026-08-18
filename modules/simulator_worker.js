@@ -639,7 +639,7 @@ function readInteractiveCommand(pstr) {
 }
 
 function jsPrint(msg) {
-  /** @type {EmscriptenModule} */
+  /** @type {GuestIoModule} */
   var currentMod = self.Module || Module;
   if (typeof currentMod.print === "function") {
     // The guest bytes go through unchanged: a write without a trailing newline
@@ -651,7 +651,7 @@ function jsPrint(msg) {
 }
 
 function jsPrintErr(msg) {
-  /** @type {EmscriptenModule} */
+  /** @type {GuestIoModule} */
   var currentMod = self.Module || Module;
   if (typeof currentMod.printErr === "function") {
     currentMod.printErr(msg);
@@ -660,9 +660,34 @@ function jsPrintErr(msg) {
   }
 }
 
+// One decoder per stream, kept across calls. A guest `write()` can split a
+// multi-byte UTF-8 sequence, and `stream: true` holds the partial sequence
+// until the next write completes it instead of emitting a replacement
+// character. `fatal: false` keeps genuinely invalid bytes from throwing.
+const stdout_decoder = new TextDecoder("utf-8", { fatal: false });
+const stderr_decoder = new TextDecoder("utf-8", { fatal: false });
+
+/**
+ * A guest write to stdout, as raw bytes.
+ *
+ * @param {Uint8Array} bytes
+ */
+function jsWriteStdout(bytes) {
+  jsPrint(stdout_decoder.decode(bytes, { stream: true }));
+}
+
+/**
+ * A guest write to stderr, as raw bytes.
+ *
+ * @param {Uint8Array} bytes
+ */
+function jsWriteStderr(bytes) {
+  jsPrintErr(stderr_decoder.decode(bytes, { stream: true }));
+}
+
 function getBinaryBytes() {
   var filename = null;
-  /** @type {EmscriptenModule} */
+  /** @type {GuestIoModule} */
   var currentMod = self.Module || Module;
   if (currentMod.arguments && currentMod.arguments.length > 0) {
     for (var i = 0; i < currentMod.arguments.length; i++) {
@@ -726,7 +751,7 @@ function setupSimulation() {
   self.wasmMemory = wasmExports.memory;
 
   var binaryBytes = getBinaryBytes();
-  /** @type {EmscriptenModule} */
+  /** @type {GuestIoModule} */
   var currentMod = self.Module || Module;
   var args = currentMod.arguments || [];
 
@@ -1020,80 +1045,13 @@ function finishExec(passedSnapshot) {
   });
 }
 
-var xhr = new XMLHttpRequest();
-// The GDB bridge is polled synchronously; the flag keeps the "waiting" notice
-// to one message per attempt.
-var postGDBWaiting = 0;
-function getDebugMsg() {
-  postGDBWaiting = 1;
-  while (1) {
-    try {
-      xhr.open("GET", "http://127.0.0.1:5689/gdbInput", false); // synchronous request
-      xhr.send(null);
-      if (xhr.status === 200) {
-        return xhr.responseText;
-      }
-    } catch (e) {
-      if (postGDBWaiting) {
-        post({
-          type: "sim_log",
-          subtype: "info",
-          msg: "Waiting for GDB...",
-        });
-        postGDBWaiting = 0;
-      }
-    }
-  }
-}
-
-var xhrS = new XMLHttpRequest();
-function sendDebugMsg(msg) {
-  postGDBWaiting = 1;
-  while (1) {
-    try {
-      xhrS.open("POST", "http://127.0.0.1:5689/gdbInput", false); // synchronous request
-      xhrS.send(msg);
-      if (xhrS.status === 200) {
-        return;
-      }
-    } catch (error) {
-      if (postGDBWaiting) {
-        post({
-          type: "sim_log",
-          subtype: "info",
-          msg: "Waiting for GDB...",
-        });
-        postGDBWaiting = 0;
-      }
-    }
-  }
-}
-
-/** @type {EmscriptenModule} */
+/**
+ * The output sink for the guest program. Every run overwrites `arguments` from
+ * the "start" message before the simulation begins.
+ * @type {EmscriptenModule}
+ */
 var Module = {
-  // arguments : ["--version"],
-  arguments: [
-    "--newlib",
-    "/working/ex2",
-    "--isa",
-    "acdfimsu",
-    "--setreg",
-    "sp=0x10000",
-  ],
-  instantiateWasm: function (imports, successCallback) {
-    if (precompiledRiscvModule) {
-      WebAssembly.instantiate(precompiledRiscvModule, imports)
-        .then(function (instance) {
-          successCallback(instance, precompiledRiscvModule);
-        })
-        .catch(function (err) {
-          console.error("Precompiled riscv-rs WASM instantiation error:", err);
-        });
-      return {};
-    }
-    return false;
-  },
-  preRun: [],
+  arguments: [],
   print: bus_sync.add_stdout.bind(bus_sync),
   printErr: bus_sync.add_stderr.bind(bus_sync),
 };

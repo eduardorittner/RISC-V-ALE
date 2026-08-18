@@ -5,7 +5,7 @@
 _start:
     li a0, 1              # fd = 1 (stdout)
     la a1, msg            # buffer
-    li a2, 20             # length
+    li a2, 14             # length of "Hello, World!\n", without the NUL
     li a7, 64             # syscall: write
     ecall
 

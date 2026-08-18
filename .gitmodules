@@ -3,4 +3,4 @@
 	url = https://github.com/antoniocgj/RISC-V-ALE-Extensions.git
 [submodule "crates/riscv-rs"]
 	path = crates/riscv-rs
-	url = git@github.com:eduardorittner/riscv-rs.git
+	url = https://github.com/eduardorittner/riscv-rs.git

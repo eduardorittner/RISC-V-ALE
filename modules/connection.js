@@ -128,41 +128,5 @@ class Window_postMessage extends Connection {
   }
 }
 
-export class LocalReport extends Connection {
-  constructor() {
-    super();
-    this.restart();
-  }
-
-  restart() {
-    this.log = [];
-    this.report = { log: this.log };
-    this.dataLog = [];
-    this.dataLogSizes = [];
-  }
-
-  send(data) {
-    if (data.constructor.name === "ArrayBuffer") {
-      this.dataLog.push(data);
-      this.dataLogSizes.push(data.byteLength);
-      this.log[this.log.length - 1]["data_log_idx"] = this.dataLog.length - 1;
-    } else {
-      this.log.push(data);
-    }
-  }
-
-  generate_report() {
-    let header = new Uint32Array(this.dataLogSizes.length + 2);
-    header[0] = this.dataLogSizes.length + 2;
-    let reportJson = new TextEncoder().encode(JSON.stringify(this.report));
-    header[1] = reportJson.byteLength;
-    header.set(this.dataLogSizes, 2);
-    let blob = new Blob([header, reportJson, this.dataLog].flat(), {
-      type: "application/octet-stream",
-    });
-    return blob;
-  }
-}
-
 export const conn = new Connection();
 export const win_postmessage = new Window_postMessage();

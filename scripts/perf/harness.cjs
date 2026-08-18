@@ -2,9 +2,9 @@
 
 const fs = require("fs");
 const path = require("path");
-const { createServer } = require("./http_server");
-const { launchBrowser, killBrowser } = require("./browser");
-const { connectToPage } = require("./cdp_client");
+const { createServer } = require("./http_server.cjs");
+const { launchBrowser, killBrowser } = require("./browser.cjs");
+const { connectToPage } = require("./cdp_client.cjs");
 
 // ─── CLI Parsing ───────────────────────────────────────────────────────────
 
@@ -57,7 +57,7 @@ function parseArgs(argv) {
   return args;
 }
 
-const USAGE = `Usage: node harness.js [options]
+const USAGE = `Usage: node harness.cjs [options]
 
 Options:
   --browser <firefox|chrome>   Browser to use (default: firefox)
