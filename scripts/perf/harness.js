@@ -104,7 +104,9 @@ function base64Encode(data) {
 
 // ─── Color ──────────────────────────────────────────────────────────────────
 
-const USE_COLOR = process.stdout.isTTY !== false;
+// `isTTY` is undefined when stdout is a pipe, so compare against true: piping
+// the run into a file or a PR comment must not embed ANSI escape sequences.
+const USE_COLOR = process.stdout.isTTY === true;
 
 const COLORS = {
   reset: "\x1b[0m",

@@ -22,7 +22,6 @@ import json
 import os
 import subprocess
 import sys
-import textwrap
 
 MARKER = "<!-- perf-benchmark-comment -->"
 MAX_CHARS = 60000
@@ -68,23 +67,34 @@ def build_body(output, repo, run_id):
 
     truncation_note = "⚠️ Output was truncated due to length." if truncated else ""
 
-    body = textwrap.dedent(f"""\
-        {MARKER}
-        ## 📊 Performance Benchmark Results
+    # The command is passed in rather than hardcoded so this label cannot drift
+    # away from what the workflow actually ran.
+    command_label = os.environ.get("PERF_COMMAND", "make perf")
 
-        <details>
-        <summary><code>make perf BROWSER=chrome DRY=1</code> output</summary>
-
-        ```
-        {output}
-        ```
-
-        </details>
-
-        {truncation_note}
-
-        [Full run]({run_link})
-        """)
+    # Built without textwrap.dedent: dedent would run after substitution, and
+    # `output` contains column-0 lines, so the common prefix would be empty and
+    # the template's own indentation would survive. An indented "##" is a code
+    # block in Markdown, not a heading.
+    body = "\n".join(
+        [
+            MARKER,
+            "## 📊 Performance Benchmark Results",
+            "",
+            "<details>",
+            f"<summary><code>{command_label}</code> output</summary>",
+            "",
+            "```",
+            output,
+            "```",
+            "",
+            "</details>",
+            "",
+            truncation_note,
+            "",
+            f"[Full run]({run_link})",
+            "",
+        ]
+    )
     return body
 
 
