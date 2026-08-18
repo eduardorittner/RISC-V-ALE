@@ -638,9 +638,37 @@ function runSimulation() {
       if (typeof finishExec === "function") finishExec();
     }
   } catch (e) {
-    console.error("riscv-rs execution failure:", e);
-    if (typeof finishExec === "function") finishExec();
+    reportSimulatorFailure(e);
   }
+}
+
+/**
+ * Report a simulator failure to the UI: a visible error notification followed by
+ * a finish status flagged as an error, so no success statistics are shown.
+ */
+function reportSimulatorFailure(e) {
+  console.error("riscv-rs execution failure:", e);
+  const detail = (e && (e.stack || e.message)) || String(e);
+  postMessage({
+    type: "message",
+    msg: {
+      type: "error",
+      title: "Simulator Error",
+      text: "The simulator stopped unexpectedly.\n" + detail,
+      delay: Infinity,
+    },
+  });
+  if (self.execFinished) return;
+  self.execFinished = true;
+  try {
+    bus_sync.sync();
+  } catch (syncErr) {
+    console.warn("Failed to flush the bus after a simulator failure:", syncErr);
+  }
+  postMessage({
+    type: "status",
+    status: { finish: true, error: true, errorMessage: detail },
+  });
 }
 
 function finishExec(passedSnapshot) {
@@ -664,7 +692,30 @@ function finishExec(passedSnapshot) {
     }
   }
 
-  let totalInstructions = snapshot ? snapshot.step_count || 0 : 0;
+  if (!snapshot) {
+    // Without a snapshot there are no statistics to report, and emitting zeroed
+    // ones would look like a successful run.
+    postMessage({
+      type: "message",
+      msg: {
+        type: "error",
+        title: "Simulator Error",
+        text: "Execution ended without a machine state snapshot.",
+        delay: Infinity,
+      },
+    });
+    postMessage({
+      type: "status",
+      status: {
+        finish: true,
+        error: true,
+        errorMessage: "Execution ended without a machine state snapshot.",
+      },
+    });
+    return;
+  }
+
+  let totalInstructions = snapshot.step_count || 0;
   let elapsedSeconds = elapsedTimeMs / 1000;
   let ips =
     elapsedSeconds > 0 ? Math.round(totalInstructions / elapsedSeconds) : 0;
@@ -672,15 +723,25 @@ function finishExec(passedSnapshot) {
     elapsedSeconds > 0
       ? Number((totalInstructions / (elapsedSeconds * 1000000)).toFixed(3))
       : 0;
-  let finalPC = snapshot
-    ? (snapshot.pc >>> 0).toString(16).padStart(8, "0")
-    : null;
-  let exitCode = snapshot && snapshot.gpr ? snapshot.gpr[10] >>> 0 : 0;
+  let finalPC = (snapshot.pc >>> 0).toString(16).padStart(8, "0");
+  // The CPU carries the exit status explicitly; a trap sets it to a nonzero
+  // value even when a0 happens to hold zero.
+  let exitCode =
+    typeof snapshot.exit_code === "number"
+      ? snapshot.exit_code | 0
+      : snapshot.gpr
+        ? snapshot.gpr[10] >>> 0
+        : 0;
+  let trapped = snapshot.trapped === true;
 
   postMessage({
     type: "status",
     status: {
       finish: true,
+      error: trapped,
+      errorMessage: trapped
+        ? "The program stopped on a trap at PC 0x" + finalPC + "."
+        : undefined,
       stats: {
         elapsedTimeMs,
         totalInstructions,
@@ -688,6 +749,7 @@ function finishExec(passedSnapshot) {
         mips,
         finalPC,
         exitCode,
+        trapped,
       },
     },
   });

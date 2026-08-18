@@ -43,16 +43,18 @@ _start:
       await window.run_simulator(false);
     });
 
-    // 4. Assert that the unknown syscall toast error notification is displayed in the DOM
-    const toastTitleLocator = page.locator(
-      ".toast-item.toast-error .toast-title"
-    );
-    await expect(toastTitleLocator).toBeVisible({ timeout: 10000 });
+    // 4. Assert that the unknown syscall toast error notification is displayed
+    // in the DOM. The trap also raises the generic "Execution Failed" toast, so
+    // scope the assertions to the unknown-syscall one.
+    const syscallToast = page
+      .locator(".toast-item.toast-error")
+      .filter({ hasText: "Unknown Syscall Error" });
+    await expect(syscallToast).toBeVisible({ timeout: 10000 });
+
+    const toastTitleLocator = syscallToast.locator(".toast-title");
     await expect(toastTitleLocator).toHaveText("Unknown Syscall Error");
 
-    const toastBodyLocator = page.locator(
-      ".toast-item.toast-error .toast-body"
-    );
+    const toastBodyLocator = syscallToast.locator(".toast-body");
     await expect(toastBodyLocator).toContainText("Syscall Number: 999");
     await expect(toastBodyLocator).toContainText("a0=0x123");
     await expect(toastBodyLocator).toContainText("a1=0x456");

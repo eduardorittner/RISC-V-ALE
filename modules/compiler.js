@@ -67,6 +67,36 @@ class Compiler {
   }
 
   setup_worker(w, file_callback) {
+    const report_failure = (detail) => {
+      console.error("Compiler Worker Error:", detail);
+      this.sim_status_ch.postMessage({
+        type: "message",
+        msg: {
+          type: "error",
+          title: "Compiler Worker Error",
+          text: String(detail),
+          delay: Infinity,
+        },
+      });
+      this.sim_status_ch.postMessage({
+        type: "clang_status",
+        status: { finish: true, error: true },
+      });
+      // Settle the pending invoke_clang promise so the UI never hangs.
+      file_callback(-1);
+    };
+
+    w.onerror = function (ev) {
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      report_failure(ev.message || "The compiler worker crashed.");
+    };
+
+    w.onmessageerror = function () {
+      report_failure(
+        "A message from the compiler worker could not be deserialized.",
+      );
+    };
+
     w.onmessage = function (ev) {
       switch (ev.data.type) {
         case "stdio":

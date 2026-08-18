@@ -230,20 +230,22 @@ export class VisualDebuggerUI {
       }
 
       if (isPC && item.label) {
-        activeSymbol = `<${item.label}>`;
+        activeSymbol = `&lt;${escapeHtml(item.label)}&gt;`;
       }
 
+      // `highlightAsm` escapes its input before it adds any markup.
       const highlightedAsm = highlightAsm(item.asm_text);
-      const addrHex = "0x" + (item.address >>> 0).toString(16).padStart(8, "0");
+      const addr = item.address >>> 0;
+      const addrHex = "0x" + addr.toString(16).padStart(8, "0");
 
       html += `
-        <div class="editor-line ${pcClass}" data-addr="${item.address.toString(16)}">
+        <div class="editor-line ${pcClass}" data-addr="${addr.toString(16)}">
           <div class="editor-gutter">
-            <span class="gutter-bp ${bpClass}" data-bp-addr="${item.address}" title="Toggle Breakpoint">●</span>
+            <span class="gutter-bp ${bpClass}" data-bp-addr="${addr}" title="Toggle Breakpoint">●</span>
             <span class="gutter-pc">${pcMarker}</span>
             <span class="gutter-addr">${addrHex}</span>
           </div>
-          <div class="editor-content"><span class="asm-opcode">${item.opcode_hex}</span>${highlightedAsm}</div>
+          <div class="editor-content"><span class="asm-opcode">${escapeHtml(item.opcode_hex)}</span>${highlightedAsm}</div>
         </div>
       `;
     };
@@ -288,10 +290,11 @@ export class VisualDebuggerUI {
       for (let i = 0; i < items.length; i++) {
         if (items[i].address <= this.currentPC && items[i].label) {
           const offset = this.currentPC - items[i].address;
+          const label = escapeHtml(items[i].label);
           activeSymbol =
             offset === 0
-              ? `<${items[i].label}>`
-              : `<${items[i].label} + 0x${offset.toString(16)}>`;
+              ? `&lt;${label}&gt;`
+              : `&lt;${label} + 0x${(offset >>> 0).toString(16)}&gt;`;
         }
       }
     }

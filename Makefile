@@ -21,6 +21,8 @@ test:
 #   make perf DRY=1            Dry run (no save/compare)
 #   make perf NO_COMPARE=1     Save but don't compare
 #   make perf ITERATIONS=3     Run each workload 3 times (median)
+#   make perf FAIL_THRESHOLD=20  Fail when a workload is >20% slower than the
+#                                saved baseline
 #
 # Before the first run: cd scripts/perf && npm install
 
@@ -28,7 +30,8 @@ PERF_BROWSER := $(if $(BROWSER),--browser $(BROWSER),)
 PERF_DRY := $(if $(DRY),--dry,)
 PERF_NO_COMPARE := $(if $(NO_COMPARE),--no-compare,)
 PERF_ITERATIONS := $(if $(ITERATIONS),--iterations $(ITERATIONS),)
-PERF_ARGS := $(PERF_BROWSER) $(PERF_DRY) $(PERF_NO_COMPARE) $(PERF_ITERATIONS)
+PERF_FAIL_THRESHOLD := $(if $(FAIL_THRESHOLD),--fail-threshold $(FAIL_THRESHOLD),)
+PERF_ARGS := $(PERF_BROWSER) $(PERF_DRY) $(PERF_NO_COMPARE) $(PERF_ITERATIONS) $(PERF_FAIL_THRESHOLD)
 
 ifeq ($(filter HEAD,$(MAKECMDGOALS)),HEAD)
 perf:

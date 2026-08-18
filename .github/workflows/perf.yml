@@ -22,26 +22,59 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@wasm-pack
+
+      # The harness drives the real application, so the WASM modules the page
+      # loads have to be built from this commit.
+      - name: Build WASM modules
+        run: make build
 
       - name: Install perf dependencies
         working-directory: scripts/perf
         run: npm install
 
+      # Earlier results are restored only to fill in the comparison table in the
+      # PR comment. Restore keys stay scoped to this base branch so the numbers
+      # are never compared against an unrelated branch's run.
+      - name: Cache perf baseline
+        uses: actions/cache@v4
+        with:
+          path: scripts/perf/results
+          key: perf-baseline-${{ github.base_ref || github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            perf-baseline-${{ github.base_ref || github.ref_name }}-
+
+      # No --fail-threshold: wall-clock timings on shared runners are far too
+      # noisy to gate on. Two runs of identical code differed by 183% here, so a
+      # threshold produces false failures rather than a regression signal. The
+      # job still fails when a workload errors or prints the wrong output, which
+      # is deterministic, and the timings go to the PR comment for a human to
+      # read. Use `make perf FAIL_THRESHOLD=<pct>` locally, where the machine is
+      # quiet enough for the comparison to mean something.
       - name: Run make perf
         id: perf
         run: |
           set -o pipefail
-          make perf BROWSER=chrome DRY=1 2>&1 | tee perf_output.txt
-        continue-on-error: true
+          make perf BROWSER=chrome 2>&1 | tee perf_output.txt
 
       - name: Post perf results as PR comment
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PERF_COMMAND: make perf BROWSER=chrome
         run: |
           python3 scripts/perf/post_pr_comment.py perf_output.txt
