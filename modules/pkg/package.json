@@ -1,0 +1,15 @@
+{
+  "name": "riscv-rs",
+  "collaborators": [
+    "RISC-V ALE Team"
+  ],
+  "description": "High-performance Rust WASM emulator",
+  "version": "0.1.0",
+  "files": [
+    "riscv_rs_bg.wasm",
+    "riscv_rs.js",
+    "riscv_rs.d.ts"
+  ],
+  "browser": "riscv_rs.js",
+  "types": "riscv_rs.d.ts"
+}

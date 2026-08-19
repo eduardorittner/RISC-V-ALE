@@ -1,0 +1,87 @@
+# Runs the performance harness (`make perf`) on every pull request and posts
+# the results as a comment on the PR.  The comment is updated on subsequent
+# pushes so the PR doesn't accumulate duplicate comments.
+name: perf
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # `true`, not `recursive`: this job needs `extensions` and
+      # `crates/riscv-rs`, and never the nested SweRV-ISS-1 oracle.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@wasm-pack
+
+      # The harness drives the real application, so the WASM modules the page
+      # loads have to be built from this commit.
+      - name: Build WASM modules
+        run: make build
+
+      # The harness uses the root npm project; there is no separate perf project.
+      - name: Install dependencies
+        run: npm ci
+
+      # Earlier results are restored only to fill in the comparison table in the
+      # PR comment. Restore keys stay scoped to this base branch so the numbers
+      # are never compared against an unrelated branch's run.
+      - name: Cache perf baseline
+        uses: actions/cache@v4
+        with:
+          path: scripts/perf/results
+          key: perf-baseline-${{ github.base_ref || github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            perf-baseline-${{ github.base_ref || github.ref_name }}-
+
+      # No --fail-threshold: wall-clock timings on shared runners are far too
+      # noisy to gate on. Two runs of identical code differed by 183% here, so a
+      # threshold produces false failures rather than a regression signal. The
+      # job still fails when a workload errors or prints the wrong output, which
+      # is deterministic, and the timings go to the PR comment for a human to
+      # read. Use `make perf FAIL_THRESHOLD=<pct>` locally, where the machine is
+      # quiet enough for the comparison to mean something.
+      - name: Run make perf
+        id: perf
+        run: |
+          set -o pipefail
+          make perf BROWSER=chrome 2>&1 | tee perf_output.txt
+
+      - name: Post perf results as PR comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PERF_COMMAND: make perf BROWSER=chrome
+        run: |
+          python3 scripts/perf/post_pr_comment.py perf_output.txt

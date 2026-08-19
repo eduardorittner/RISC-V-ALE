@@ -1,0 +1,111 @@
+# This workflow runs whenever a PR is opened or updated, or a commit is pushed to main. It runs
+# several checks:
+# - fmt: checks that the code is formatted according to rustfmt
+# - clippy: checks that the code does not contain any clippy warnings
+# - doc: checks that the code can be documented without errors
+permissions:
+  contents: read
+# This configuration allows maintainers of this repo to create a branch and pull request based on
+# the new branch. Restricting the push trigger to the main branch ensures that the PR only gets
+# built once.
+on:
+  push:
+    branches: [main]
+  pull_request:
+# If new code is pushed to a PR branch, then cancel in progress workflows for that PR. Ensures that
+# we don't waste CI time, and returns results quicker https://github.com/jonhoo/rust-ci-conf/pull/5
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+name: check
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    name: node / typecheck
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          # The device sources live in the `extensions` submodule and are part of
+          # the checked program. Not recursive: the nested SweRV-ISS oracle is
+          # large and nothing here reads it.
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # No Rust toolchain and no WASM build are needed: the generated
+      # declarations are committed as `modules/types/riscv_rs.generated.d.ts`,
+      # and the `ui-integration` job proves that copy is current.
+      - name: npm run typecheck
+        run: npm run typecheck
+  fmt:
+    runs-on: ubuntu-latest
+    name: stable / fmt
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          # Not recursive: this job builds only `crates/riscv-rs`, and the
+          # nested SweRV-ISS-1 oracle is a large clone nothing here reads.
+          submodules: true
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: cargo fmt --check
+        working-directory: crates/riscv-rs
+        run: cargo fmt --check
+  clippy:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.toolchain }} / clippy
+    permissions:
+      contents: read
+      checks: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # Get early warning of new lints which are regularly introduced in beta channels.
+        toolchain: [stable, beta]
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          # Not recursive: this job builds only `crates/riscv-rs`, and the
+          # nested SweRV-ISS-1 oracle is a large clone nothing here reads.
+          submodules: true
+      - name: Install ${{ matrix.toolchain }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
+      - name: cargo clippy
+        working-directory: crates/riscv-rs
+        run: cargo clippy --all-targets --all-features -- -D warnings
+  doc:
+    # run docs generation on nightly rather than stable. This enables features like
+    # https://doc.rust-lang.org/beta/unstable-book/language-features/doc-cfg.html which allows an
+    # API be documented as only available in some specific platforms.
+    runs-on: ubuntu-latest
+    name: nightly / doc
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          # Not recursive: this job builds only `crates/riscv-rs`, and the
+          # nested SweRV-ISS-1 oracle is a large clone nothing here reads.
+          submodules: true
+      - name: Install nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
+      - name: Install cargo-docs-rs
+        uses: dtolnay/install@cargo-docs-rs
+      - name: cargo docs-rs
+        working-directory: crates/riscv-rs
+        run: cargo docs-rs

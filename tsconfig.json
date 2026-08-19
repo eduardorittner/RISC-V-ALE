@@ -1,0 +1,61 @@
+{
+  // The main-thread configuration. It uses the DOM library, which conflicts
+  // with WebWorker, so the two workers are checked by tsconfig.worker.json.
+  //
+  // The compiler only checks; it never emits. `strict` stays off on purpose:
+  // the value here is the narrowing of the IPC messages and the exhaustiveness
+  // of the switches, not full strictness.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "types": []
+  },
+  "include": [
+    "modules/types/ipc.d.ts",
+    "modules/types/globals.d.ts",
+    "modules/types/riscv_rs.generated.d.ts",
+    "modules/assistant.js",
+    "modules/compiler.js",
+    "modules/connection.js",
+    "modules/debugger.js",
+    "modules/mmio_manager.js",
+    "modules/simulator.js",
+    "modules/terminal.js",
+    "modules/utils.js",
+    "assets/js/data_table.js",
+    "assets/js/dropdown.js",
+    "assets/js/interface_elements.js",
+    "assets/js/modal.js",
+    "assets/js/tabs.js",
+    "assets/js/toast.js",
+    "extensions/devices/*.js",
+    "tests/unit/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    // A repository-level test: it reads `service_worker.js` from disk with the
+    // Node builtins. This project is checked against the DOM library with
+    // `types: []`, so the Node module declarations are not available here. The
+    // test still runs under vitest.
+    "tests/unit/precache.test.js",
+    "modules/clang.js",
+    "modules/ld.lld.js",
+    "modules/pkg",
+    "modules/simulator_worker.js",
+    "modules/clang_worker.js",
+    "assets/js/zip.min.js",
+    "assets/js/z-worker.js",
+    "assets/js/xterm.min.js",
+    "assets/js/xterm-addon-fit.min.js",
+    "assets/js/lz-string.min.js",
+    "extensions/devices/dependencies"
+  ]
+}

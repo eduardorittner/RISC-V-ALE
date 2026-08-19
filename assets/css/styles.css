@@ -1,0 +1,1016 @@
+.modal {
+  pointer-events: none;
+}
+
+/* Shadow removal for the template's shadowed components. */
+.shadow, .shadow-sm, .shadow-lg, .card, .navbar, .first-menu, .submenu, .sub-submenu {
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  -moz-box-shadow: none !important;
+}
+
+/* Instant Open/Close Left Hamburger Sidebar (No Animations) */
+aside nav,
+aside nav ul,
+aside nav span,
+aside nav ul ul,
+aside nav ul ul ul {
+  transition: none !important;
+  -webkit-transition: none !important;
+  transition-delay: 0s !important;
+  -webkit-transition-delay: 0s !important;
+}
+
+aside,
+aside nav,
+aside nav > ul {
+  z-index: 1040 !important;
+}
+
+#content-wrapper {
+  margin: 0 0 0 62px !important;
+  padding: 0 !important;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.content_area {
+  height: calc(100vh - 49px) !important;
+  width: 100%;
+  margin-top: 49px !important;
+  padding-bottom: 75px !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+  transition: width .5s;
+}
+
+.pointer {
+  cursor: pointer;
+}
+
+#xterm-container {
+  height: 40vh;
+  width: 100%;
+}
+
+/* Debugger Layout Styles */
+.debug-container {
+    background-color: #f8f9fc;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.debug-panel-scrollable {
+    max-height: 380px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Read-Only Source Text Editor View */
+.source-editor-view {
+    background-color: #fafbfc;
+    font-family: 'Fira Code', 'Cascadia Code', 'Courier Prime', SFMono-Regular, Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    user-select: text;
+}
+
+.source-editor-code {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.editor-line {
+    display: table-row;
+    transition: none !important;
+}
+
+.editor-line:hover {
+    background-color: #f1f3f5;
+}
+
+.editor-line.pc-line {
+    background-color: #fff9db !important;
+    border-left: 3px solid #f59f00;
+}
+
+.editor-line.pc-line-halted {
+    background-color: #ffe3e3 !important;
+    border-left: 3px solid #e74a3b !important;
+}
+
+.btn-pulse-highlight {
+    animation: pulse-border 1.5s infinite;
+}
+
+@keyframes pulse-border {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.editor-gutter {
+    display: table-cell;
+    vertical-align: middle;
+    user-select: none;
+    text-align: right;
+    white-space: nowrap;
+    padding-right: 8px;
+    padding-left: 6px;
+    background-color: #f8f9fa;
+    border-right: 1px solid #e9ecef;
+}
+
+.gutter-bp {
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+    cursor: pointer;
+    color: #ced4da;
+    font-size: 0.75rem;
+}
+
+.gutter-bp.active-bp {
+    color: #e03131;
+}
+
+.gutter-pc {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: #f59f00;
+    font-weight: bold;
+    visibility: hidden;
+}
+
+.editor-line.pc-line .gutter-pc {
+    visibility: visible;
+}
+
+.gutter-addr {
+    display: inline-block;
+    color: #adb5bd;
+    font-size: 0.78rem;
+    padding-left: 4px;
+}
+
+.editor-content {
+    display: table-cell;
+    vertical-align: middle;
+    padding: 2px 10px;
+    white-space: pre;
+}
+
+.editor-label-line {
+    display: table-row;
+    background-color: #e9ecef;
+}
+
+.editor-label-line .editor-content {
+    color: #1971c2;
+    font-weight: bold;
+    padding-top: 6px;
+    padding-bottom: 2px;
+}
+
+/* Minimal Assembly Syntax Highlighting */
+.asm-inst {
+    color: #7048e8;
+    font-weight: 600;
+}
+
+.asm-reg {
+    color: #e8590c;
+}
+
+.asm-imm {
+    color: #0c8599;
+}
+
+.asm-sym-ref {
+    color: #1971c2;
+    font-weight: 500;
+}
+
+.asm-opcode {
+    color: #868e96;
+    font-size: 0.78rem;
+    margin-right: 12px;
+}
+
+/* Classic Three-Column Raw Memory Inspector */
+.debug-mem-table {
+    font-family: 'Fira Code', 'Cascadia Code', 'Courier Prime', monospace;
+    font-size: 0.82rem;
+    margin-bottom: 0;
+}
+
+.debug-mem-table th {
+    background-color: #f8f9fa;
+    color: #495057;
+    font-weight: 600;
+    border-bottom: 2px solid #dee2e6;
+    padding: 6px 10px;
+}
+
+.debug-mem-table td {
+    padding: 4px 10px;
+    vertical-align: middle;
+    border-top: 1px solid #e9ecef;
+}
+
+.mem-col-addr {
+    color: #4e73df;
+    font-weight: 600;
+    user-select: all;
+}
+
+.mem-col-hex {
+    white-space: nowrap;
+}
+
+.hex-group {
+    display: inline-block;
+}
+
+.hex-group + .hex-group {
+    margin-left: 12px;
+}
+
+.hex-byte {
+    display: inline-block;
+    padding: 1px 3px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.hex-byte:hover {
+    background-color: #4e73df;
+    color: #ffffff;
+}
+
+.hex-byte.zero-byte {
+    color: #adb5bd;
+}
+
+.mem-col-ascii {
+    white-space: pre;
+    color: #2b2b2b;
+}
+
+.ascii-sidecar {
+    background-color: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid #e9ecef;
+    color: #2b2b2b;
+}
+
+.ascii-nonprint {
+    color: #adb5bd;
+}
+
+/* Footer Styling with Bottom Padding */
+#footer {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    background-color: #ffffff !important;
+    border-top: 1px solid #e3e6f0 !important;
+    z-index: 1000;
+}
+
+/* Zero-Gap Seamless IDE Dock Layout for Debugger UI */
+.debug-tab-seamless {
+    padding: 0 !important;
+    background-color: #f8f9fc;
+}
+
+.debug-tab-seamless .debug-toolbar-card {
+    height: 32px !important;
+    min-height: 32px !important;
+    max-height: 32px !important;
+    border: none;
+    border-bottom: 1px solid #d1d3e2;
+    border-radius: 0;
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: #f8f9fa;
+}
+
+.debug-tab-seamless .debug-toolbar-card .card-body {
+    height: 32px !important;
+    min-height: 32px !important;
+    max-height: 32px !important;
+    padding: 0 8px !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+#debug_toolbar {
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+.debug-tab-seamless .debug-toolbar-card .btn,
+.debug-tab-seamless .debug-toolbar-card .btn-sm,
+.debug-toolbar-card button,
+#debug_toolbar button {
+    height: 32px !important;
+    min-height: 32px !important;
+    max-height: 32px !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.debug-tab-seamless .card {
+    border-radius: 0 !important;
+    border: 1px solid #d1d3e2;
+    margin: 0 !important;
+}
+
+.debug-tab-seamless .row.no-gutters > [class*="col-"] + [class*="col-"] .card {
+    border-left: none !important;
+}
+
+.debug-tab-seamless .row.no-gutters + .row.no-gutters .card {
+    border-top: none !important;
+}
+
+.debug-tab-seamless .card-header {
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    border-radius: 0 !important;
+    border-bottom: 1px solid #d1d3e2;
+    background-color: #eaecf4;
+    box-sizing: border-box;
+}
+
+.debug-tab-seamless .card-header .form-control,
+.debug-tab-seamless .card-header .form-control-sm,
+.debug-tab-seamless .card-header .btn,
+.debug-tab-seamless .card-header .btn-sm {
+    height: 30px !important;
+    max-height: 30px !important;
+    padding-top: 0.125rem !important;
+    padding-bottom: 0.125rem !important;
+    line-height: 1.2 !important;
+    font-size: 0.8rem !important;
+    box-sizing: border-box !important;
+}
+
+.debug-tab-seamless .card-header .form-inline {
+    margin: 0 !important;
+}
+
+/* Resizable Dock Layout System */
+.debug-dock-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 125px);
+    width: 100%;
+    overflow: hidden;
+}
+
+.dock-row {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    overflow: hidden;
+}
+
+#dock_top_row {
+    height: 50%;
+    min-height: 100px;
+}
+
+#dock_bottom_row {
+    height: 50%;
+    min-height: 100px;
+}
+
+.dock-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 100px;
+    height: 100%;
+    overflow: hidden;
+}
+
+.dock-panel .card {
+    display: flex;
+    flex-direction: column;
+    height: 100% !important;
+    border-radius: 0 !important;
+    border: 1px solid #d1d3e2;
+}
+
+.dock-panel .card-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+}
+
+/* Resizer Gutters */
+.gutter-v {
+    width: 6px;
+    background-color: #d1d3e2;
+    cursor: col-resize;
+    z-index: 20;
+    flex-shrink: 0;
+    user-select: none;
+    transition: background-color 0.15s ease;
+}
+
+.gutter-v:hover, .gutter-v.active-dragging {
+    background-color: #4e73df;
+}
+
+.gutter-h {
+    height: 6px;
+    background-color: #d1d3e2;
+    cursor: row-resize;
+    z-index: 20;
+    flex-shrink: 0;
+    user-select: none;
+    transition: background-color 0.15s ease;
+}
+
+.gutter-h:hover, .gutter-h.active-dragging {
+    background-color: #4e73df;
+}
+
+/* Drag and Drop Panel Reordering */
+.dock-panel .card-header[draggable="true"] {
+    cursor: grab;
+    user-select: none;
+}
+
+.dock-panel .card-header[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.dock-panel.drag-over-slot {
+    outline: 2px dashed #4e73df;
+    outline-offset: -3px;
+    background-color: rgba(78, 115, 223, 0.08);
+}
+
+.card.dragging-panel {
+    opacity: 0.4;
+}
+
+/* ========================================================================
+   Zero-Class / Low-Class Architectural Component Styles
+   ======================================================================== */
+
+/* App Topbar Header */
+header#topbar {
+  display: flex;
+  align-items: center;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 49px;
+  background-color: #041e42 !important;
+  z-index: 1030;
+  padding: 0;
+}
+
+header#topbar nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 15px;
+}
+
+header#topbar nav > a img,
+header#topbar nav img {
+  height: 35px;
+  width: auto;
+}
+
+header#topbar nav h1 {
+  margin: 0;
+  margin-left: 1.5rem;
+  margin-right: auto;
+  font-size: 1.25rem;
+  color: #d29c4e;
+  font-weight: bold;
+  font-family: 'Courier Prime', monospace;
+  line-height: 1;
+}
+
+header#topbar nav ul {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#topbar button {
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+#file_select_button {
+  height: 49px;
+  width: 63px;
+  background-color: #17a2b8;
+  color: #ffffff;
+}
+
+.split-button {
+  display: inline-flex;
+  height: 49px;
+  position: relative;
+}
+
+.split-button #run_button {
+  background-color: #ffffff;
+  color: #041e42;
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding: 0 15px;
+  font-weight: bold;
+}
+
+.split-button #run_options_selector {
+  background-color: #ffffff;
+  color: #041e42;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+  padding: 0 10px;
+  border-left: 1px solid rgba(0,0,0,0.1);
+}
+
+.split-button #run_options_selector::after {
+  content: "";
+  display: inline-block;
+  margin-left: 0.255em;
+  vertical-align: 0.255em;
+  border-top: 0.3em solid;
+  border-right: 0.3em solid transparent;
+  border-bottom: 0;
+  border-left: 0.3em solid transparent;
+}
+
+/* Scoped Tab Panels & Grids */
+.tab-panel {
+  padding: 0.75rem 1.5rem 1.5rem 1.5rem;
+  box-sizing: border-box;
+}
+
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.panel-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.split-view {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-top: 0;
+}
+
+.split-view h2 {
+  margin-top: 0;
+}
+
+.panel-card, .card {
+  background-color: #ffffff;
+  border: 1px solid #e3e6f0;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-card fieldset {
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 1rem;
+  margin: 0;
+}
+
+.panel-card legend {
+  font-weight: bold;
+  padding: 0 0.5rem;
+  color: #041e42;
+  font-size: 1.1rem;
+  width: auto;
+}
+
+.panel-header {
+  margin-bottom: 0.75rem;
+}
+
+.panel-header h3, .panel-header h5, .panel-header h6 {
+  margin: 0;
+  color: #041e42;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.form-row label {
+  font-weight: 600;
+  min-width: 120px;
+}
+
+/* Custom Input & Range Styling */
+.isa-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: 'Courier Prime', monospace;
+  margin-bottom: 1rem;
+}
+
+.isa-options label, .checkbox-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.isa-options input[type="checkbox"],
+.checkbox-option input[type="checkbox"] {
+  accent-color: #041e42;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.toggle-switch input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: #041e42;
+}
+
+.switch-option {
+  margin-bottom: 0.25rem;
+}
+
+.panel-column > .switch-option {
+  margin-bottom: -0.75rem;
+}
+
+.switch-option.centered {
+  text-align: center;
+}
+
+.radio-options {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.radio-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.stdio-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+#os_tab_stdio_textarea {
+  width: 100%;
+  height: 180px;
+  max-height: 30vh;
+  margin-top: 8px;
+  overflow-y: auto;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.button-group {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.button-group.right {
+  margin-left: auto;
+  justify-content: flex-end;
+  display: flex;
+  margin-bottom: 0.5rem;
+}
+
+.debug-status-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Footer layout */
+#footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px !important;
+  background-color: #ffffff !important;
+  border-top: 1px solid #e3e6f0 !important;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+}
+
+#footer .footer-center {
+  text-align: center;
+  flex: 1;
+}
+
+#footer .footer-right {
+  text-align: right;
+  flex: 1;
+}
+
+/* Clean Tables & Lists */
+.table-container table, table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-container th, table th,
+.table-container td, table td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #dee2e6;
+  text-align: left;
+}
+
+.table-container th, table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+}
+
+.table-container tr:hover, table tr:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.item-list li {
+  padding: 0.75rem 1rem;
+  border: 1px solid #e3e6f0;
+  margin-bottom: -1px;
+  background-color: #ffffff;
+}
+
+.item-list li:first-child {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+}
+
+.item-list li:last-child {
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+/* Strict Terminal Sizing & Fit */
+#terminal_tab {
+  height: calc(100vh - 49px) !important;
+  box-sizing: border-box !important;
+  padding: 15px 15px 75px 15px !important;
+  overflow: hidden !important;
+}
+
+#terminal_tab .card {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+#terminal_tab .card-header {
+  flex: 0 0 auto !important;
+  padding: 0.5rem 1rem !important;
+  margin: 0 !important;
+}
+
+#terminal_tab .card-body {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: #000000 !important;
+  overflow: hidden !important;
+}
+
+#xterm-container {
+  height: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+#xterm-container .xterm {
+  height: 100% !important;
+  width: 100% !important;
+  padding: 4px !important;
+  box-sizing: border-box !important;
+}
+
+/* Topbar Header Alignment Overrides */
+header#topbar, header#topbar nav {
+  min-height: 49px !important;
+  height: 49px !important;
+  max-height: 49px !important;
+  padding: 0 1rem !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+header#topbar nav h1 {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+
+
+
+/* ─── Merged from Top--Right--Left-Navigation-by-Jigar-Mistry.css ──────────
+ *
+ * The rest of that template styled a right sidebar, a search box, a
+ * notification tray and a multi-level dropdown. None of those elements exist
+ * in this application, and its `#content` and `#content-wrapper` rules were
+ * already fully overridden above.
+ */
+.nav.nav-tabs:hover {
+  outline: none !important;
+  border: none;
+}
+
+header#topbar nav > a {
+  width: 200px;
+  height: 35px;
+  margin: 5px 0px;
+}
+
+/* ─── Merged from Vertical-Left-SideBar-by-Jigar-Mistry.css ────────────────
+ *
+ * The sidebar is a single flat list: every entry, including the ones the
+ * device extensions inject through `addTab`, is a direct `<li>` of one `<ul>`.
+ * The template's nested `ul ul` and `ul ul ul` submenu rules matched nothing
+ * and are dropped. The `z-index`, `transition` and `box-shadow` declarations
+ * that this file repeated are already set above.
+ */
+aside {
+  position: fixed;
+}
+
+aside nav {
+  position: fixed;
+}
+
+aside nav > ul {
+  position: fixed;
+  background-color: #ffffff;
+  height: 100vh !important;
+  width: 62px;
+  top: 49px !important;
+  padding-top: 0.5rem;
+  padding-left: 0 !important;
+  margin: 0 !important;
+  list-style: none !important;
+  list-style-type: none !important;
+  border-color: white;
+  border-right: 1px solid #e3e6f0;
+  overflow: auto !important;
+  overflow-x: hidden !important;
+}
+
+aside nav > ul > li {
+  list-style: none !important;
+  list-style-type: none !important;
+  margin: 0 !important;
+  border-radius: 0;
+  white-space: nowrap;
+  padding: 0.5rem 0 !important;
+  font-size: 15px;
+  background-color: transparent;
+  border: none;
+  width: 100%;
+}
+
+aside nav a {
+  color: #041e42;
+  display: block;
+  border-radius: 0;
+  padding: 0.2rem 0 !important;
+  text-decoration: none;
+}
+
+aside nav a div {
+  display: flex;
+  align-items: center;
+}
+
+aside nav i {
+  font-size: 24px;
+  width: 62px;
+  min-width: 62px;
+  text-align: center;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+aside nav span {
+  font-size: 15px;
+  font-family: 'Nunito Sans', sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+aside nav > ul:hover span {
+  opacity: 1;
+  visibility: visible;
+  display: initial;
+}
+
+aside nav > ul > li:hover {
+  background-color: rgba(7,7,7,0.06);
+  border-right: 5px solid rgb(255,199,44);
+}
+
+aside nav > ul:hover {
+  width: 220px;
+}

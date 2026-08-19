@@ -1,0 +1,207 @@
+# This is the main CI workflow that runs the test suite on all pushes to main and all pull requests.
+# It runs the following jobs:
+# - required: runs the test suite on ubuntu with stable and beta rust toolchains
+# - os-check: runs the test suite on mac and windows
+# - coverage: runs the test suite and collects coverage information
+# See check.yml for information about how the concurrency cancellation and workflow triggering works
+permissions:
+  contents: read
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+name: test
+jobs:
+  required:
+    runs-on: ubuntu-latest
+    name: ubuntu / ${{ matrix.toolchain }}
+    strategy:
+      matrix:
+        # run on stable and beta to ensure that tests won't break on the next version of the rust
+        # toolchain
+        toolchain: [stable, beta]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag=v6.0.2
+        with:
+          submodules: recursive
+      - name: Install ${{ matrix.toolchain }}
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # branch=master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
+      # The differential tests compare against the SweRV-ISS oracle. Building it
+      # takes several minutes, so key a cache on the pinned oracle revision.
+      - name: Record oracle revision
+        run: |
+          echo "ORACLE_SHA=$(git -C crates/riscv-rs rev-parse HEAD:SweRV-ISS-1)" >> "$GITHUB_ENV"
+      - name: Cache the SweRV-ISS oracle build
+        uses: actions/cache@v4
+        with:
+          path: |
+            crates/riscv-rs/SweRV-ISS-1/opt
+            crates/riscv-rs/vendor/stage
+          key: swerv-iss-${{ runner.os }}-${{ env.ORACLE_SHA }}-${{ hashFiles('crates/riscv-rs/vendor/GNUmakefile.vendor') }}
+      - name: cargo generate-lockfile
+        # enable this ci template to run regardless of whether the lockfile is checked in or not
+        if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
+        working-directory: crates/riscv-rs
+        run: cargo generate-lockfile
+      # https://twitter.com/jonhoo/status/1571290371124260865
+      - name: cargo test --locked
+        working-directory: crates/riscv-rs
+        # A missing or unbuildable oracle must fail this job rather than let the
+        # differential tests pass without ever comparing anything.
+        env:
+          RISCV_RS_REQUIRE_ORACLE: "1"
+        run: cargo test --locked --all-features --all-targets
+      - name: Run Syscall & Host Import Fuzz Tests
+        working-directory: crates/riscv-rs
+        run: cargo test --test syscall_fuzz --test host_imports_tests
+      # https://github.com/rust-lang/cargo/issues/6669
+      - name: cargo test --doc
+        working-directory: crates/riscv-rs
+        run: cargo test --locked --all-features --doc
+  os-check:
+    # run cargo test on mac and windows
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} / stable
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      # if your project needs OpenSSL, uncomment this to fix Windows builds.
+      # it's commented out by default as the install command takes 5-10m.
+      # - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      #   if: runner.os == 'Windows'
+      # - run: vcpkg install openssl:x64-windows-static-md
+      #   if: runner.os == 'Windows'
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag=v6.0.2
+        with:
+          # Not recursive: this job does not set RISCV_RS_REQUIRE_ORACLE, so the
+          # differential tests skip and the oracle clone is pure cost.
+          submodules: true
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # branch=master
+        with:
+          toolchain: stable
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
+      - name: cargo generate-lockfile
+        if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
+        working-directory: crates/riscv-rs
+        run: cargo generate-lockfile
+      - name: cargo test
+        working-directory: crates/riscv-rs
+        run: cargo test --locked --all-features --all-targets
+  coverage:
+    # use llvm-cov to build and collect coverage and outputs in a format that
+    # is compatible with codecov.io
+    #
+    # note that codecov as of v4 requires that CODECOV_TOKEN from
+    #
+    #   https://app.codecov.io/gh/<user or org>/<project>/settings
+    #
+    # is set in two places on your repo:
+    #
+    # - https://github.com/jonhoo/guardian/settings/secrets/actions
+    # - https://github.com/jonhoo/guardian/settings/secrets/dependabot
+    #
+    # (the former is needed for codecov uploads to work with Dependabot PRs)
+    #
+    # PRs coming from forks of your repo will not have access to the token, but
+    # for those, codecov allows uploading coverage reports without a token.
+    # it's all a little weird and inconvenient. see
+    #
+    #   https://github.com/codecov/feedback/issues/112
+    #
+    # for lots of more discussion
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / coverage
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag=v6.0.2
+        with:
+          submodules: recursive
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # branch=master
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - name: cargo install cargo-llvm-cov
+        uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # tag=v2.82.7
+        with:
+          tool: cargo-llvm-cov
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
+      - name: Record oracle revision
+        run: |
+          echo "ORACLE_SHA=$(git -C crates/riscv-rs rev-parse HEAD:SweRV-ISS-1)" >> "$GITHUB_ENV"
+      - name: Cache the SweRV-ISS oracle build
+        uses: actions/cache@v4
+        with:
+          path: |
+            crates/riscv-rs/SweRV-ISS-1/opt
+            crates/riscv-rs/vendor/stage
+          key: swerv-iss-${{ runner.os }}-${{ env.ORACLE_SHA }}-${{ hashFiles('crates/riscv-rs/vendor/GNUmakefile.vendor') }}
+      - name: cargo generate-lockfile
+        if: hashFiles('crates/riscv-rs/Cargo.lock') == ''
+        working-directory: crates/riscv-rs
+        run: cargo generate-lockfile
+      - name: cargo llvm-cov
+        working-directory: crates/riscv-rs
+        env:
+          RISCV_RS_REQUIRE_ORACLE: "1"
+        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
+      - name: Record Rust version
+        run: echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # tag=v7.0.0
+        with:
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          env_vars: OS,RUST
+  ui-integration:
+    name: ubuntu / Playwright UI Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag=v6.0.2
+        with:
+          # Not recursive: this job builds the WASM and drives the page. It
+          # never runs the differential tests, so it never needs the oracle.
+          submodules: true
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/riscv-rs
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@wasm-pack
+      - name: Build WASM modules
+        run: make build
+      # `make build` regenerates the committed TypeScript declarations. A stale
+      # copy means the typecheck job checked against an old Rust contract.
+      - name: Generated type declarations are current
+        run: git diff --exit-code modules/types/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Run unit tests
+        run: npm run test:unit
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+
+

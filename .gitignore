@@ -1,0 +1,16 @@
+node_modules/
+test-results/
+playwright-report/
+.githooks/
+mc404/
+modules/pkg/
+local/
+
+# Backstop against a return of the stale wasm-pack output copies. The real fix
+# is the absolute --out-dir in the Makefile.
+crates/modules/
+
+# Generated files that must never enter git.
+__pycache__/
+*.pyc
+.DS_Store
