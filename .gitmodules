@@ -1,6 +1,9 @@
 [submodule "extensions"]
 	path = extensions
-	url = https://github.com/antoniocgj/RISC-V-ALE-Extensions.git
+	# This fork, not antoniocgj/RISC-V-ALE-Extensions. The pinned commit is the
+	# one that drops the orphan roomba-unity build, and it exists only here, so
+	# a recursive clone cannot resolve the pointer against upstream.
+	url = https://github.com/eduardorittner/RISC-V-ALE-Extensions.git
 [submodule "crates/riscv-rs"]
 	path = crates/riscv-rs
 	url = https://github.com/eduardorittner/riscv-rs.git
