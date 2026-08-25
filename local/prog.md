@@ -17,7 +17,7 @@ The instruction is to do the steps 1 to 4 and then to stop.
 | 1. Add the benchmark harness | Complete | Baseline measured. Four of the six cells of gate 2 agree with the report. |
 | 2. Change the ISA string | Complete | 3.80x / 2.81x / 5.11x against an estimate of 3.46x / 2.07x / 6.17x |
 | 3. Rebuild with unchanged flags | Complete | 0.98x / 0.86x / 0.79x. `mixed` regresses by 21% and the step accepts it in writing. The figures of step 3 are the new baseline. |
-| 4. Add `-DFAST_SLOPPY` | In progress | |
+| 4. Add `-DFAST_SLOPPY` | Complete | 1.00x / 1.57x / 0.99x. The `memcpy` figure is below half of the plan estimate, and the cause is an error in the estimate. |
 
 A rebuild needed one link option that the GNUmakefile does not have. Without
 it a rebuild is twelve times slower than the module the fork shipped. The
@@ -490,3 +490,121 @@ the same module.
 ### Commit
 
 `build(whisper): rebuild from source with unchanged flags`
+
+## Step 4: Add -DFAST_SLOPPY
+
+**State: complete.**
+
+### What the step changes
+
+`EXTRA_FLAGS=-DFAST_SLOPPY` in the build. The flag is upstream, not a local
+patch. It replaces `Hart::load` with `Hart::fastLoad` and removes the
+attribute lookup, the triggers, the load queue, the stack check, the CLINT
+test and the console-io test from every load and store. It keeps the memory
+bound test and the `jsReadMMIO` and `jsWriteMMIO` hooks, so the RISC-V ALE
+devices continue to work.
+
+The plan says to add the flag to `OFLAGS` in the GNUmakefile. It goes into
+`scripts/build-whisper/build.sh` instead, for the reason that section "Step 3"
+gives: this branch does not track the GNUmakefile.
+
+### The result
+
+Session `step-4-fast-sloppy`, median of 5, MIPS:
+
+| Configuration | `alu` | `memcpy` | `mixed` |
+| --- | --- | --- | --- |
+| Rust (the control) | 200.8 | 203.0 | 263.5 |
+| C++ `--isa acdfimsu` | 27.8 | 27.7 | 27.1 |
+| C++ `--isa acdfim` | 133.3 | 122.0 | 140.8 |
+
+Against step 3, with `--isa acdfim`:
+
+| Workload | Step 3 | Step 4 | Measured | Plan estimate | Share |
+| --- | --- | --- | --- | --- | --- |
+| `alu` | 133.3 | 133.3 | 1.00x | 1.11x | 90% |
+| `memcpy` | 77.8 | 122.0 | **1.57x** | 3.35x | 47% |
+| `mixed` | 141.8 | 140.8 | 0.99x | 1.12x | 88% |
+
+No workload regresses beyond the tolerance. `memcpy` gains 57%.
+
+### The `memcpy` estimate is wrong, and the step is kept
+
+The `memcpy` figure is below half of its estimate, so the first decision rule
+of section 9 of the plan applies: stop, find the cause, and then keep, change
+or drop the step.
+
+**The cause is the estimate and not the step.** The plan takes 3.35x from the
+native figures of section 14.2 of `local/rs-cpp.md`: 98.6 MIPS without the
+flag and 330.0 MIPS with it. The 98.6 does not reproduce. Step 1 already
+recorded this: the same native binary that the report used gives 155.1 MIPS on
+the `memcpy` workload of this harness, not 98.6, and the difference is in the
+native figures, so it comes from the program and not from the browser.
+
+A native build of the same source with and without the flag, on this machine
+and on these exact ELF files (best of 3, MIPS):
+
+| Workload | Native, plain | Native, `-DFAST_SLOPPY` | Ratio |
+| --- | --- | --- | --- |
+| `alu` | 358.4 | 359.5 | 1.00x |
+| `memcpy` | 158.4 | 359.9 | **2.27x** |
+| `mixed` | 311.4 | 321.8 | 1.03x |
+
+The native ratio for `memcpy` is 2.27x and not 3.35x. Against that measured
+ratio, the browser delivers 69% (1.57 of 2.27), which is above half. The
+native ratios for `alu` and `mixed` are 1.00x and 1.03x, and the browser
+delivers 1.00x and 0.99x, which agree.
+
+The browser gain is smaller than the native gain for the reason that section
+14.4 of the report gives: in the browser the Asyncify instrumentation and the
+MMIO address tests of the `__EMSCRIPTEN__` build are a larger share of the
+per-instruction cost, so removing work from the load and the store path helps
+proportionally less.
+
+**Decision: keep the step.** It gives a real 1.57x on `memcpy`, it regresses
+nothing, and the functional checks pass. The plan estimates for step 4 should
+read 1.00x / 2.27x / 1.03x native, and the browser meets or nearly meets all
+three.
+
+### The differential check
+
+Section 7, item 5 of the plan recommends this check for step 4. A native
+whisper with `-DFAST_SLOPPY` replaced the oracle, and the differential harness
+of the fork ran against it:
+
+```
+running 8 tests
+test test_differential_addi16sp_scaling ... ok
+test test_failing_ci_sequence ... ok
+test test_differential_control_flow_instructions ... ok
+test test_differential_integer_instructions ... ok
+test test_differential_amo_and_csr_instructions ... ok
+test test_differential_floating_point_instructions ... ok
+test test_differential_random_instruction_sequences ... ok
+test test_differential_compressed_instructions ... ok
+
+test result: ok. 8 passed; 0 failed
+```
+
+All 8 tests pass, so the flag changes no behaviour that the harness can reach.
+The oracle was put back after the run and the submodule is clean.
+
+The check does not cover everything the flag removes. It generates aligned
+accesses inside one data window, so it does not test misaligned accesses, the
+triggers, the load queue, the CLINT or the console-io path. A separate test
+with a misaligned `lw` gives the same result on both binaries, because
+whisper permits misaligned accesses in this configuration in any case.
+
+### Functional checks
+
+| Check | Result |
+| --- | --- |
+| 1. Retired counts | PASS. Exact on all three workloads, both ISA strings. |
+| 2. The application | PASS |
+| 3. MMIO | PASS. This is the check that matters most for this flag, because `fastLoad` keeps the `jsReadMMIO` hook. |
+| 4. Interrupts | PASS |
+| 5. Differential | PASS. 8 of 8. |
+
+### Commit
+
+`perf(whisper): build with -DFAST_SLOPPY`
