@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>RISC-V ALE core benchmark</title>
+  </head>
+  <body>
+    <h1>RISC-V ALE core benchmark</h1>
+    <p>
+      The driver in <code>scripts/perf-core/run.cjs</code> calls
+      <code>runOne()</code> from this page. Each call runs one repetition of one
+      workload on one core.
+    </p>
+    <p>
+      The C++ core gets a new worker for each repetition, because its module is
+      one-shot: it runs <code>main</code> at load and stops the runtime at exit.
+      The Rust worker stays alive for the whole session, because the application
+      also calls <code>run_slice</code> many times in one worker. The comment at
+      the top of <code>worker_rust.js</code> explains why the difference
+      matters.
+    </p>
+    <pre id="log"></pre>
+    <script>
+      "use strict";
+
+      /** How long one repetition may take before the driver gets an error. */
+      const RUN_TIMEOUT_MS = 300000;
+
+      function log(text) {
+        document.getElementById("log").textContent += text + "\n";
+      }
+
+      /** The Rust worker, made on the first call and then kept. */
+      let rustWorker = null;
+      /** Resolver of the Rust run that is in progress. */
+      let rustPending = null;
+
+      function getRustWorker() {
+        if (rustWorker) return rustWorker;
+        rustWorker = new Worker("worker_rust.js");
+        rustWorker.onmessage = (e) => {
+          const pending = rustPending;
+          rustPending = null;
+          if (pending) pending(e.data);
+        };
+        rustWorker.onerror = (e) => {
+          const pending = rustPending;
+          rustPending = null;
+          if (pending)
+            pending({ type: "error", error: e.message || "worker error" });
+        };
+        return rustWorker;
+      }
+
+      /**
+       * Run one repetition of one workload on one core.
+       *
+       * @param {"cpp"|"rust"} core
+       * @param {string} elfName file name of the workload, for example alu.elf
+       * @param {string[]} args the argument list the core starts with. The
+       *   driver has already resolved the guest path in it.
+       * @returns {Promise<object>} the figure the core reported
+       */
+      window.runOne = function (core, elfName, args) {
+        // A unique query string keeps each fetch a cold fetch, together with
+        // the `no-store` header the server sends.
+        const stamp = Date.now() + "-" + Math.random().toString(36).slice(2);
+        const msg = {
+          type: "run",
+          elfName,
+          elfUrl: elfName + "?r=" + stamp,
+          args,
+        };
+
+        if (core === "rust") {
+          msg.glueUrl = "riscv_rs.js";
+          msg.wasmUrl = "riscv_rs_bg.wasm";
+          return new Promise((resolve) => {
+            let done = false;
+            const finish = (value) => {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              resolve(value);
+            };
+            const timer = setTimeout(
+              () => finish({ type: "error", error: "timeout" }),
+              RUN_TIMEOUT_MS,
+            );
+            rustPending = finish;
+            getRustWorker().postMessage(msg);
+          });
+        }
+
+        msg.moduleUrl = "whisper.js?r=" + stamp;
+        return new Promise((resolve) => {
+          const worker = new Worker("worker_cpp.js?r=" + stamp);
+          let done = false;
+          const finish = (value) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            worker.terminate();
+            resolve(value);
+          };
+          const timer = setTimeout(
+            () => finish({ type: "error", error: "timeout" }),
+            RUN_TIMEOUT_MS,
+          );
+          worker.onmessage = (e) => finish(e.data);
+          worker.onerror = (e) =>
+            finish({ type: "error", error: e.message || "worker error" });
+          worker.postMessage(msg);
+        });
+      };
+
+      window.harnessReady = true;
+      log("harness ready");
+    </script>
+  </body>
+</html>

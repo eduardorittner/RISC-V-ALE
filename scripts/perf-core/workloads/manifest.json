@@ -1,0 +1,23 @@
+{
+  "programBase": 4096,
+  "workloads": [
+    {
+      "name": "alu",
+      "file": "alu.elf",
+      "instructions": 20000005,
+      "bytes": 124
+    },
+    {
+      "name": "memcpy",
+      "file": "memcpy.elf",
+      "instructions": 20000009,
+      "bytes": 152
+    },
+    {
+      "name": "mixed",
+      "file": "mixed.elf",
+      "instructions": 20000003,
+      "bytes": 122
+    }
+  ]
+}
