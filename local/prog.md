@@ -608,3 +608,64 @@ whisper permits misaligned accesses in this configuration in any case.
 ### Commit
 
 `perf(whisper): build with -DFAST_SLOPPY`
+
+## Where the plan stands after step 4
+
+The instruction was to do the steps 1 to 4 and then to stop. This is the
+position.
+
+Median of 5, MIPS, with `--isa acdfim`, which is what the application uses
+after step 2. The Rust column is the live control of each session.
+
+| Milestone | `alu` | `memcpy` | `mixed` |
+| --- | --- | --- | --- |
+| Step 1, the module as shipped (`--isa acdfimsu`) | 35.8 | 31.6 | 35.3 |
+| Step 2, machine mode only | 136.1 | 90.1 | 180.2 |
+| Step 3, rebuilt from source | 133.3 | 77.8 | 141.8 |
+| Step 4, plus `-DFAST_SLOPPY` | 133.3 | 122.0 | 140.8 |
+| The Rust control, step 4 session | 200.8 | 203.0 | 263.5 |
+| Share of the control | 66% | 60% | 53% |
+
+Against the projection of section 10 of the plan:
+
+| Milestone | `alu` | `memcpy` | `mixed` |
+| --- | --- | --- | --- |
+| After step 2, projected | 121.2 | 51.7 | 173.9 |
+| After step 2, measured | 136.1 | 90.1 | 180.2 |
+| After step 4, projected | 134–179 | 173–192 | 195–196 |
+| After step 4, measured | 133.3 | 122.0 | 140.8 |
+
+Step 2 was better than its projection on all three workloads. Step 4 is at the
+low edge of the `alu` projection and below the `memcpy` and `mixed`
+projections. Two measured facts explain the difference, and both are recorded
+above:
+
+1. The rebuild of step 3 is slower than the module the fork shipped on
+   `memcpy` (−14%) and on `mixed` (−21%). The toolchain that made the shipped
+   module is not known and cannot be found.
+2. The estimate for `-DFAST_SLOPPY` on `memcpy` came from a native figure that
+   does not reproduce. The measured native ratio on this machine is 2.27x and
+   not 3.35x.
+
+The total against the state RISC-V ALE shipped is 3.7x on `alu`, 3.9x on
+`memcpy` and 4.0x on `mixed`.
+
+### What the next steps should know
+
+- **The baseline moved.** Compare step 5 against the step 4 session and not
+  against step 2.
+- **Steps 5, 6 and 7 do not target throughput.** Their metrics are the module
+  size, the memory reservation and the time to the first instruction. The
+  harness reports the module sizes in each results file.
+- **The estimate for step 8 is too low.** The plan projects 1.12x to 1.39x
+  from the ratio change 0.55 to 0.69. A direct measurement during the work on
+  step 3 gives a much larger figure: with the same objects, a module without
+  `-s ASYNCIFY` reached 58.7 MIPS where the module with it reached 11.8 MIPS.
+  That measurement was made before the repair of step 3, so it is not a
+  prediction of the gain from the present state, but it does show that
+  Asyncify costs far more than the plan assumes. Measure it again after
+  step 8.
+- **Do not remove `-sBINARYEN_EXTRA_PASSES=-ocimfs=1`.** Step 8 removes
+  Asyncify, which makes `Hart::execute` smaller, and a later reader could
+  believe the option is no longer necessary. The option controls a rule that
+  has nothing to do with Asyncify.
