@@ -11,22 +11,38 @@ The module that RISC-V ALE shipped was a prebuilt artifact from an unknown
 SDK. Step 3 rebuilds it with the same flags, so that a later step can change
 one flag at a time and know what moved the figures.
 
-## Known problem: a rebuild is 12 times slower
+## The one option that is not in the GNUmakefile
 
-**A module from this script is correct but very slow.** It runs at 11 MIPS
-where the module that RISC-V ALE shipped runs at 127 MIPS. Do not put a
-module from this script into `modules/` until the problem has a solution.
+The script adds `-sBINARYEN_EXTRA_PASSES=-ocimfs=1` to the link. **Without it a
+rebuild is twelve times slower than the module RISC-V ALE shipped: 11 MIPS
+against 127 MIPS.**
 
-The cause is `Hart::execute`. Its source uses a GNU computed goto over about
-500 label addresses. WebAssembly has no indirect branch instruction, so LLVM
-must remove the irreducible control flow, and every LLVM available today makes
-the function 9 times as large as it is in the shipped module: 694 KB against
-about 75 KB. V8 does not apply its optimizing tier to a function of that size,
-so the whole interpreter runs in the baseline tier.
+`wasm-opt -O3` inlines a function that has one caller, whatever its size,
+because the original body then costs nothing. Each of the 482 instruction
+handlers (`execAddi`, `execLw` and so on) is called from exactly one place,
+the dispatch in `Hart<URV>::execute`. Binaryen therefore puts all of them
+inside it and makes one function of about 700 KB.
 
-The Emscripten version is not the cause. Versions 2.0.34, 3.1.74 and 6.0.8 all
-give the same figure. `local/prog.md`, section "Step 3", gives the full
-evidence and names the solution: replace the computed goto with a `switch`.
+V8 does not apply its optimizing tier to a function of that size. The whole
+interpreter then runs in the baseline tier. A measurement with
+`--js-flags=--liftoff-only`, which stops V8 from ever using the optimizing
+tier, proves it: the shipped module falls from 119 to 106 MIPS and a module
+without this option does not move at all.
+
+`-ocimfs=1` (`one-caller-inline-max-function-size`) sets the size limit of
+that rule to 1, so a handler stays a function of its own:
+
+| Measure | Without the option | With it | The shipped module |
+| --- | --- | --- | --- |
+| Largest function | 694 KB | 234 KB | 231 KB |
+| Functions in the module | 2,277 | 5,298 | 5,122 |
+| `alu`, MIPS | 11 | 133 | 136 |
+
+The two numbers on the right are close, which shows that the toolchain that
+made the shipped module did not have this behaviour. The Emscripten version is
+not the cause: 2.0.34, 3.1.74 and 6.0.8 all need the option and all give the
+same figures with it. `local/prog.md`, section "Step 3", records the
+measurements.
 
 ## Commands
 
@@ -49,7 +65,9 @@ All options come through the environment.
 | Name | Default | Function |
 | --- | --- | --- |
 | `EMSDK_DIR` | `$HOME/emsdk` | The Emscripten SDK |
+| `EMSDK_VERSION` | `6.0.8` | The SDK version. It is pinned so that a rebuild gives the same module. |
 | `EMSDK_PYTHON` | from `uv`, if present | A Python 3.10 or later |
+| `NO_PATCHES` | not set | Set it to skip `patches/*.patch`. No patch is necessary today. |
 | `SWERV_DIR` | `crates/riscv-rs/SweRV-ISS-1` | The C++ source |
 | `BOOST_DIR` | `crates/riscv-rs/vendor` | The vendored Boost |
 | `EXTRA_FLAGS` | empty | More compile flags |
@@ -133,3 +151,18 @@ program does.
    nothing unless it is asked. The RISC-V ALE worker calls `FS` and `WORKERFS`
    in `initFS`, and the `EM_JS` shims of `Syscall.cpp` and `Interactive.cpp`
    call the other three.
+
+3. **`-sBINARYEN_EXTRA_PASSES=-ocimfs=1`.** This one does change the module:
+   it keeps the instruction handlers out of `Hart::execute`. The section above
+   explains why it is necessary.
+
+## The source copy and the patches
+
+The build never writes into the SweRV-ISS submodule. It copies the source into
+`.build/<BUILD_TAG>/src/` with `rsync` and builds there, so the submodule stays
+clean and the differential harness keeps its oracle.
+
+`patches/*.patch` are applied to the copy with `patch -p1` before the build.
+The directory is empty today: the only change a rebuild needs is the link
+option above, and no source change is necessary. Step 8 of the plan (remove
+Asyncify) will need patches, and this is where they go.

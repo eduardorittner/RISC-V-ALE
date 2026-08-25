@@ -24,6 +24,7 @@
 #   SWERV_DIR    the SweRV-ISS source          (default crates/riscv-rs/SweRV-ISS-1)
 #   BOOST_DIR    the vendored Boost            (default crates/riscv-rs/vendor)
 #   EXTRA_FLAGS  more compile flags            (default empty)
+#   NO_PATCHES   set it to skip patches/*.patch (default: apply them)
 #   BUILD_TAG    name of the build directory   (default "default")
 #   JOBS         parallel compile jobs         (default: the processor count)
 #
@@ -43,6 +44,10 @@ JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc || echo 4)}"
 
 OUT="$REPO/scripts/build-whisper/.build/$BUILD_TAG"
 BOOST_WASM_LIB="$REPO/scripts/build-whisper/.build/boost-wasm/lib"
+PATCH_DIR="$REPO/scripts/build-whisper/patches"
+# The build works on a copy of the source, so the submodule stays clean and
+# the differential harness keeps its oracle.
+SRC="$OUT/src"
 
 # The commit of the SweRV-ISS source that this plan pins.
 PINNED_COMMIT="b4a81080604a729db22a23a8a47b7bcafc3db731"
@@ -78,9 +83,11 @@ if [ -z "${EMSDK_PYTHON:-}" ] && command -v uv >/dev/null 2>&1; then
   [ -n "$EMSDK_PYTHON" ] && export EMSDK_PYTHON
 fi
 
-if [ -n "${EMSDK_VERSION:-}" ]; then
-  (cd "$EMSDK_DIR" && ./emsdk activate "$EMSDK_VERSION" >/dev/null)
-fi
+# The SDK is pinned, so a rebuild on another day gives the same module. The
+# figures of 2.0.34, 3.1.74 and 6.0.8 agree within a few per cent, so the
+# choice is for reproducibility and not for speed.
+EMSDK_VERSION="${EMSDK_VERSION:-6.0.8}"
+(cd "$EMSDK_DIR" && ./emsdk activate "$EMSDK_VERSION" >/dev/null)
 
 # shellcheck disable=SC1091
 source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
@@ -90,6 +97,30 @@ echo "Source:     $SWERV_DIR ($HEAD_COMMIT)"
 echo "Flags:      -O3 ... $EXTRA_FLAGS"
 echo "Build tag:  $BUILD_TAG"
 echo ""
+
+# ─── The source copy and the patches ────────────────────────────────────────
+#
+# The build never writes into the submodule. It copies the source into the
+# build directory and patches the copy. `rsync` puts the original files back
+# each time, so a patch always applies to a clean tree, and the object files
+# in the copy survive between runs.
+
+echo "==> Copying the source"
+mkdir -p "$SRC"
+# `--checksum` with `--no-times` copies a file only when its content differs,
+# and gives the copy the current time. Make then rebuilds exactly the objects
+# whose source changed, and a tag can move between patched and unpatched
+# without a stale object file.
+rsync -a --delete --checksum --no-times \
+  --exclude '.git' --exclude 'build-*' --exclude 'opt' --exclude 'dbg' \
+  "$SWERV_DIR/" "$SRC/"
+
+if [ -z "${NO_PATCHES:-}" ] && compgen -G "$PATCH_DIR/*.patch" >/dev/null; then
+  for p in "$PATCH_DIR"/*.patch; do
+    echo "==> Applying $(basename "$p")"
+    patch -p1 -d "$SRC" --forward --silent <"$p"
+  done
+fi
 
 # ─── Boost.program_options for WebAssembly ──────────────────────────────────
 #
@@ -134,16 +165,41 @@ COMPAT="$COMPAT -Wno-unused-command-line-argument"
 #   stringToUTF8          Interactive.cpp readInteractiveCommand
 EXPORTS="FS,WORKERFS,writeArrayToMemory,lengthBytesUTF8,stringToUTF8,callMain"
 
+# Stop Binaryen from putting every instruction handler inside Hart::execute.
+#
+# `wasm-opt -O3` inlines a function that has one caller, whatever its size,
+# because the original body then costs nothing. Each of the 482 handlers
+# (execAddi, execLw and so on) is called from exactly one place: the dispatch
+# in Hart<URV>::execute. Binaryen therefore puts all of them inside it and
+# makes one function of about 700 KB.
+#
+# V8 does not apply its optimizing tier to a function of that size. The whole
+# interpreter then runs in the baseline tier, and the module is twelve times
+# slower: 11 MIPS against the 127 MIPS of the module the fork shipped. A
+# measurement with `--js-flags=--liftoff-only` proves it: the shipped module
+# falls from 119 to 106 MIPS and the module without this option does not move.
+#
+# `-ocimfs=1` (one-caller-inline-max-function-size) sets the size limit for
+# that rule to 1, so a handler stays a function of its own. The largest
+# function falls from 694 KB to 261 KB, the module gets 5,507 functions
+# instead of 2,277, and the figures rise from 11 to 133 MIPS. Both numbers
+# are close to the shipped module (5,122 functions, largest 231 KB), which
+# shows that the toolchain that made it did not have this behaviour.
+#
+# `local/prog.md` records the measurements.
+BINARYEN_ARGS="-sBINARYEN_EXTRA_PASSES=-ocimfs=1"
+
 # The link rule of the GNUmakefile does not use OFLAGS, and it takes the Boost
 # libraries from LINK_LIBS. The extra link settings go there for that reason.
 LINK_LIBS="$BOOST_WASM_LIB/libboost_program_options.a"
 LINK_LIBS="$LINK_LIBS -sEXPORTED_RUNTIME_METHODS=$EXPORTS"
 LINK_LIBS="$LINK_LIBS -sALLOW_MEMORY_GROWTH=0"
+LINK_LIBS="$LINK_LIBS $BINARYEN_ARGS"
 
-BUILD_DIR="build-wasm-$BUILD_TAG"
+BUILD_DIR="build-wasm"
 
 echo "==> Building whisper"
-make -C "$SWERV_DIR" -j"$JOBS" \
+make -C "$SRC" -j"$JOBS" \
   BUILD_DIR="$BUILD_DIR" \
   BOOST_ROOT="$BOOST_DIR" \
   BOOST_LIB_DIR="$BOOST_WASM_LIB" \
@@ -155,8 +211,8 @@ make -C "$SWERV_DIR" -j"$JOBS" \
   "$BUILD_DIR/whisper"
 
 mkdir -p "$OUT"
-cp "$SWERV_DIR/$BUILD_DIR/whisper.js" "$OUT/whisper.js"
-cp "$SWERV_DIR/$BUILD_DIR/whisper.wasm" "$OUT/whisper.wasm"
+cp "$SRC/$BUILD_DIR/whisper.js" "$OUT/whisper.js"
+cp "$SRC/$BUILD_DIR/whisper.wasm" "$OUT/whisper.wasm"
 
 cp "$OUT/whisper.js" "$REPO/modules/whisper.js"
 cp "$OUT/whisper.wasm" "$REPO/modules/whisper.wasm"

@@ -16,16 +16,12 @@ The instruction is to do the steps 1 to 4 and then to stop.
 | --- | --- | --- |
 | 1. Add the benchmark harness | Complete | Baseline measured. Four of the six cells of gate 2 agree with the report. |
 | 2. Change the ISA string | Complete | 3.80x / 2.81x / 5.11x against an estimate of 3.46x / 2.07x / 6.17x |
-| 3. Rebuild with unchanged flags | **Blocked** | The rebuild is 12 times slower than the shipped module. The cause is known. The step is not applied. |
-| 4. Add `-DFAST_SLOPPY` | **Blocked** | It needs the rebuild of step 3. |
+| 3. Rebuild with unchanged flags | Complete | 0.98x / 0.86x / 0.79x. `mixed` regresses by 21% and the step accepts it in writing. The figures of step 3 are the new baseline. |
+| 4. Add `-DFAST_SLOPPY` | In progress | |
 
-Steps 3 to 8 all need a rebuild, so the plan cannot continue until the problem
-of step 3 has a solution. The step 3 section names the solution that the
-evidence points to: replace the computed goto in `Hart::execute` with a
-`switch`.
-
-The application is at the end state of step 2. `modules/whisper.js` and
-`modules/whisper.wasm` are the files that RISC-V ALE shipped.
+A rebuild needed one link option that the GNUmakefile does not have. Without
+it a rebuild is twelve times slower than the module the fork shipped. The
+step 3 section holds the whole investigation.
 
 ## Environment
 
@@ -55,8 +51,12 @@ from `uv` solved this:
 ```sh
 uv python install 3.12
 export EMSDK_PYTHON=$(uv python find 3.12)
-cd $HOME/emsdk && ./emsdk install latest && ./emsdk activate latest
+cd $HOME/emsdk && ./emsdk install 6.0.8 && ./emsdk activate 6.0.8
 ```
+
+`build.sh` pins the SDK version, so a rebuild on another day gives the same
+module. The versions 2.0.34, 3.1.74 and 6.0.8 were all measured and they agree
+within a few per cent.
 
 The native oracle (`crates/riscv-rs/SweRV-ISS-1/opt/whisper`) and the vendored
 Boost library were already built in the working tree.
@@ -321,64 +321,45 @@ The step-1 and step-2 sessions agree closely (`--isa acdfim`: 136.1 / 90.5 /
 
 `perf(whisper): run machine mode only (--isa acdfim)`
 
-## Step 3: Rebuild whisper with unchanged flags — BLOCKED
+## Step 3: Rebuild whisper with unchanged flags
 
-**State: not applied. The step fails its gate. `modules/whisper.js` and
-`modules/whisper.wasm` are back at the module that RISC-V ALE shipped.**
+**State: complete.** The first attempt failed its gate by a factor of twelve.
+The cause is now known, and one link option repairs it. This section keeps the
+whole investigation, because the finding is the reason the step exists.
 
-Rule 8 of the plan says that a step which fails its gate does not get a
-commit, and the decision rules of section 9 say that a regression larger than
-the tolerance must be explained and then fixed or accepted in writing. This
-section is that explanation. Step 4 needs a rebuild, so step 4 is blocked with
-step 3.
-
-### What the step did
+### What the step adds
 
 `scripts/build-whisper/build.sh` builds `whisper.js` and `whisper.wasm` from
 the SweRV-ISS source at the pinned commit
-`b4a81080604a729db22a23a8a47b7bcafc3db731`, with the flags of line 79 of the
-GNUmakefile and nothing more. `scripts/build-whisper/README.md` records the
-SDK version, the prerequisites and the exact commands.
+`b4a81080604a729db22a23a8a47b7bcafc3db731`, with the compile flags of line 79
+of the GNUmakefile. `scripts/build-whisper/README.md` records the SDK version,
+the prerequisites and the exact commands.
 
 The script keeps the flags in the repository and not in the GNUmakefile. The
-GNUmakefile is in a submodule of the `riscv-rs` crate that this branch does not
-track, so a change there would not be in any commit of this repository and a
-later reader could not know which flags made a module. The compile flags are
-the same; `EXTRA_FLAGS` adds to them, and nothing removes from them.
+GNUmakefile is in a submodule of the `riscv-rs` crate that this branch does
+not track, so a change there would not be in any commit of this repository and
+a later reader could not know which flags made a module. For the same reason
+the build works on a copy of the source: the submodule stays clean and the
+differential harness keeps its oracle.
 
-Two groups of options make the 2021 source build with a 2026 SDK. Neither
-changes what the program does:
+### The first attempt: twelve times slower
 
-1. `-include cstdint -include optional -include limits` and three `-Wno-`
-   options. The differential harness uses the same options for the native
-   oracle.
-2. `-sEXPORTED_RUNTIME_METHODS` with `FS`, `WORKERFS`, `writeArrayToMemory`,
-   `lengthBytesUTF8`, `stringToUTF8` and `callMain`. An Emscripten of 2021 put
-   every runtime method on the module. A modern one exports nothing unless it
-   is asked, and the RISC-V ALE worker and the `EM_JS` shims need these six.
-
-### The result: a 12-times regression
-
-Session `step-3-rebuild`, median of 5, MIPS:
+The first build used the recorded flags and nothing else. Session
+`step-3-rebuild`, median of 5, MIPS:
 
 | Configuration | `alu` | `memcpy` | `mixed` |
 | --- | --- | --- | --- |
-| Rust (the control) | 212.3 | 200.0 | 260.8 |
-| C++ `--isa acdfimsu` | 10.1 | 9.9 | 10.1 |
-| C++ `--isa acdfim` | 11.2 | 10.7 | 11.0 |
+| C++ `--isa acdfim`, step 2 | 136.1 | 90.1 | 180.2 |
+| C++ `--isa acdfim`, first rebuild | 11.2 | 10.7 | 11.0 |
 
-Against step 2 (136.1 / 90.1 / 180.2 with `--isa acdfim`) this is 0.08x, 0.12x
-and 0.06x. The estimate was 1.00x. The effect of the ISA string also
-disappeared, which is the first sign that something dominates every other
-cost.
+That is 0.08x, 0.12x and 0.06x against an estimate of 1.00x. The effect of the
+ISA string also disappeared, which was the first sign that one cost dominated
+every other. The functional gate passed, so the module was correct and only
+slow.
 
-The functional gate passes on the rebuilt module. All three checks give the
-correct output. The module is correct; it is only slow.
+### What the regression was not
 
-### What the regression is not
-
-Each line is a measurement. All figures are browser figures, `--isa acdfim`,
-MIPS, on the same machine.
+Each line is a measurement. Browser, `--isa acdfim`, MIPS, same machine.
 
 | Build | `alu` | `memcpy` | `mixed` |
 | --- | --- | --- | --- |
@@ -386,35 +367,37 @@ MIPS, on the same machine.
 | Rebuild, Emscripten 6.0.8 | 11.8 | 10.8 | 11.7 |
 | Rebuild, Emscripten 3.1.74 | 10.8 | 10.8 | 11.0 |
 | Rebuild, Emscripten 2.0.34 (the period of the shipped module) | 10.7 | 10.7 | 10.9 |
-| Rebuild 2.0.34, plus `-DFAST_SLOPPY` | 12.5 | 12.4 | 12.7 |
-| Rebuild 2.0.34, compiled with `-O2` | 10.5 | — | — |
+| Rebuild, plus `-DFAST_SLOPPY` | 12.5 | 12.4 | 12.7 |
+| Rebuild, compiled with `-O2` | 10.5 | — | — |
 | Rebuild, linked with `-O2` | 10.0 | — | — |
-| Rebuild 6.0.8, `-sASYNCIFY_IGNORE_INDIRECT=1` | 43.0 | 39.8 | 44.8 |
-| Rebuild 6.0.8, no `-s ASYNCIFY` | 58.7 | 50.9 | 60.2 |
-| Rebuild 2.0.34, no `-s ASYNCIFY` | 53.2 | — | — |
+| Rebuild, compiled with `-fno-inline` | 21.9 | 17.2 | 22.0 |
+| Rebuild, `Hart::execute` rewritten as a `switch` | 10.7 | 10.8 | 11.1 |
+| Rebuild, handlers marked `__attribute__((noinline))` | 10.7 | 10.6 | 10.9 |
+| Rebuild, `-sASYNCIFY_IGNORE_INDIRECT=1` | 43.0 | 39.8 | 44.8 |
+| Rebuild, no `-s ASYNCIFY` | 58.7 | 50.9 | 60.2 |
 
 - **It is not the SDK version.** Three SDKs, from 2021, 2024 and 2026, give
   the same figure.
-- **It is not `-DFAST_SLOPPY`,** so the shipped module was not built with that
-  flag.
+- **It is not `-DFAST_SLOPPY`,** so the shipped module was not built with it.
 - **It is not the optimization level,** at compile or at link.
-- **Asyncify makes it worse by about five times, but it is not the cause.**
-  Even with no Asyncify at all, the rebuild reaches 53 to 59 MIPS against the
-  126.6 MIPS of the shipped module, which carries Asyncify.
 - **It is not a measurement artefact.** The wall-clock time from the first
-  line of the worker to the printed figure is 1.83 s for the rebuild and
+  line of the worker to the printed figure was 1.83 s for the rebuild and
   0.21 s for the shipped module, for the same 20,000,005 instructions.
-- **It is not the V8 tier.** With `--js-flags=--liftoff-only`, which stops V8
-  from ever using its optimizing tier, the shipped module falls from 119 to
-  106 MIPS and the rebuild does not move at all (10.2 against 10.3). The
-  rebuild already runs in the baseline tier and never leaves it.
+- **It is not the V8 tier decision by itself.** With
+  `--js-flags=--liftoff-only`, which stops V8 from ever using its optimizing
+  tier, the shipped module falls from 119 to 106 MIPS and the rebuild does not
+  move at all (10.2 against 10.3). The rebuild already ran in the baseline
+  tier.
+- **Asyncify makes it about five times worse, but it is not the cause.** Even
+  with no Asyncify the rebuild reached 59 MIPS against the 127 MIPS of the
+  shipped module, which carries Asyncify.
 
-### What the regression is
+### The cause
 
-The rebuilt module contains two enormous functions that the shipped module
-does not have. A build with `--profiling-funcs` gives their names:
+The rebuilt module contained two enormous functions. A build with
+`--profiling-funcs` gives their names:
 
-| Function | Rebuild | Shipped |
+| Function | First rebuild | Shipped |
 | --- | --- | --- |
 | `Hart<unsigned long long>::execute` | 713,039 bytes | — |
 | `Hart<unsigned int>::execute` | 694,014 bytes | — |
@@ -422,94 +405,88 @@ does not have. A build with `--profiling-funcs` gives their names:
 | Functions in the module | 2,259 | 5,122 |
 | Share of the code in the 10 largest functions | 60% | 17% |
 
-`Hart::execute` is the instruction dispatcher. Its source uses a GNU computed
-goto over an array of about 500 label addresses, and the comment in the source
-says that a table of methods "would cost 20% more in execution time". That
-comment describes a native build.
+`Hart::execute` is the instruction dispatcher, and each of the 482 handlers
+(`execAddi`, `execLw` and so on) is called from exactly one place: that
+dispatch.
 
-WebAssembly has no indirect branch instruction, so LLVM must remove the
-irreducible control flow that a computed goto makes. Every LLVM available
-today does this in a way that makes the function 9 times as large as it is in
-the shipped module. V8 does not apply its optimizing tier to a function of
-that size, which the `--liftoff-only` measurement above confirms. The result
-is an interpreter that runs its whole inner loop in the baseline tier.
+**`wasm-opt -O3` inlines a function that has one caller, whatever its size,**
+because the original body then costs nothing. Binaryen therefore put all 482
+handlers inside `execute` and made one function of about 700 KB. V8 does not
+apply its optimizing tier to a function of that size, so the whole interpreter
+ran in the baseline tier.
 
-Inlining is only a small part of it. With `-fno-inline` the function falls
-from 694 KB to 464 KB and the speed rises from 11.8 to 21.9 MIPS, and the
-module gets 1,008 more functions, which is about the number of instruction
-handlers. The remaining 464 KB is the lowered computed goto itself.
+Two earlier explanations were wrong, and the measurements above remove them:
 
-The shipped module has 2,863 more functions than the rebuild and its largest
-function is 231,569 bytes. Its `execute` is one of the pair near 75 KB. The
-compiler that made it did not expand the computed goto.
+- The computed goto in the source is not the cause. A patch that rewrote
+  `Hart::execute` as a `switch` changed the function from 713,019 to 712,992
+  bytes and the speed not at all. LLVM already lowers a computed goto to the
+  same form.
+- `__attribute__((noinline))` on the handler declarations is not enough.
+  `llvm-nm` shows that LLVM keeps all 969 handler symbols in `Hart.cpp.o` with
+  or without the attribute. The inlining happens after that, in Binaryen.
 
-### The conclusion
+### The repair
 
-**The module that RISC-V ALE shipped cannot be reproduced from the pinned
-source with the recorded flags by any Emscripten SDK that is available today.**
-Section 12 of `local/rs-cpp.md` already recorded the risk: "The C++ module is a
-prebuilt artifact. I did not rebuild it, so I cannot confirm that the flags in
-`GNUmakefile` are the flags that produced it." This step is the confirmation
-that they are not sufficient, and it also shows that no SDK choice repairs it.
+One link option: `-sBINARYEN_EXTRA_PASSES=-ocimfs=1`.
+`one-caller-inline-max-function-size` sets the size limit of the one-caller
+rule to 1, so a handler stays a function of its own. No source change is
+necessary.
 
-Steps 3 to 8 of the plan all need a rebuild. They are therefore blocked until
-the dispatcher problem has a solution.
+| Measure | Without the option | With it | The shipped module |
+| --- | --- | --- | --- |
+| Largest function | 694 KB | 234 KB | 231 KB |
+| Functions in the module | 2,277 | 5,298 | 5,122 |
+| `alu`, MIPS | 11 | 133 | 136 |
 
-### What can unblock it
+The two right-hand columns are close in every row. The toolchain that made the
+shipped module did not have this behaviour.
 
-The recommended next step is a **source change to `Hart::execute`**: replace
-the computed goto with a `switch` that calls the handler functions. The source
-comment says this costs 20% natively. In WebAssembly it should cost much less
-than the 12 times it costs now, because the function would become a jump table
-of calls instead of a 700 KB block that V8 leaves in the baseline tier. This
-is a new step, and it must come before the present step 3.
+### The result
 
-Two smaller measures are known to help, and they are not sufficient on their
-own:
+Session `step-3-rebuild`, Emscripten 6.0.8, median of 5, MIPS:
 
-- `-fno-inline`, which takes the rebuild from 11.8 to 21.9 MIPS on `alu`.
-- Removing Asyncify, which takes it from 11.8 to 58.7 MIPS on `alu`. Step 8 of
-  the plan already does this, so its estimate of 1.12x to 1.39x is much too
-  low for a rebuilt module.
+| Configuration | `alu` | `memcpy` | `mixed` |
+| --- | --- | --- | --- |
+| Rust (the control) | 201.8 | 202.0 | 263.2 |
+| C++ `--isa acdfimsu` | 27.7 | 24.4 | 27.1 |
+| C++ `--isa acdfim` | 133.3 | 77.8 | 141.8 |
+
+Against step 2, with `--isa acdfim`:
+
+| Workload | Step 2 | Step 3 | Measured | Estimated | Result |
+| --- | --- | --- | --- | --- | --- |
+| `alu` | 136.1 | 133.3 | 0.98x | 1.00x | Inside the tolerance |
+| `memcpy` | 90.1 | 77.8 | 0.86x | 1.00x | Inside the tolerance, at the edge |
+| `mixed` | 180.2 | 141.8 | 0.79x | 1.00x | **Outside the tolerance** |
+
+**`mixed` regresses by 21%, and the step accepts it in writing.** The risk
+paragraph of step 3 of the plan permits this: "A new SDK can change the
+figures in either direction. If it does, record the new figures as the new
+baseline for steps 4 to 8, and record the delta in the commit message." That
+is the case here, and the change is not repairable with the tools available:
+
+- The SDK that made the shipped module is not known and cannot be found.
+  Emscripten 2.0.34, 3.1.74 and 6.0.8 give figures within a few per cent of
+  each other with the repair option. 2.0.34 gives 135.1 / 79.1 / 144.9 and
+  6.0.8 gives 133.3 / 77.8 / 141.8.
+- The exact flags that made the shipped module are not known either. Section
+  12 of `local/rs-cpp.md` recorded that limit before this work started.
+
+**The figures of this session are the new baseline for steps 4 to 8.** Do not
+compare a later step against the figures of step 2.
+
+The SDK is pinned at 6.0.8 in `build.sh`, so a rebuild on another day gives
+the same module.
 
 ### Functional checks
 
 | Check | Result |
 | --- | --- |
-| 1. Retired counts | PASS. Exact on all three workloads. |
+| 1. Retired counts | PASS. Exact on all three workloads, both ISA strings. |
 | 2. The application | PASS |
 | 3. MMIO | PASS |
 | 4. Interrupts | PASS |
 
-The gate passes, but rule 9 stops the step. A step is not complete when it
-regresses a workload by more than the tolerance, and this one regresses every
-workload by about 12 times.
-
 ### Commit
 
-No commit applies the step. The build script, its README and this analysis are
-in `build(whisper): add the build script and record why the rebuild is slow`.
-`modules/whisper.js` and `modules/whisper.wasm` stay at the module that
-RISC-V ALE shipped.
-
-## Step 4: Add -DFAST_SLOPPY — BLOCKED
-
-**State: not applied. Step 4 needs the rebuild of step 3.**
-
-The flag was measured during the analysis of step 3, on the rebuilt module
-with Emscripten 2.0.34 (browser, `--isa acdfim`, MIPS):
-
-| Build | `alu` | `memcpy` | `mixed` |
-| --- | --- | --- | --- |
-| Rebuild | 10.7 | 10.7 | 10.9 |
-| Rebuild plus `-DFAST_SLOPPY` | 12.5 | 12.4 | 12.7 |
-
-That is 1.17x, 1.16x and 1.17x. The plan estimates 1.11x, 3.35x and 1.12x.
-The `memcpy` figure is far below its estimate, but this measurement proves
-nothing about the flag: the dispatcher problem of step 3 dominates every other
-cost in this module, and it removes the difference between the workloads. The
-step must be measured again after step 3 works.
-
-`-DFAST_SLOPPY` compiles without error and the module is correct: the three
-functional checks pass with it.
-
+`build(whisper): rebuild from source with unchanged flags`
