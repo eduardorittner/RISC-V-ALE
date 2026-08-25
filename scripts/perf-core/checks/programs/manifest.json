@@ -1,0 +1,30 @@
+{
+  "base": 4096,
+  "mmio": {
+    "address": 4294901776,
+    "value": 90
+  },
+  "programs": [
+    {
+      "name": "hello",
+      "file": "hello.elf",
+      "bytes": 140,
+      "expectStdout": "Hello, RISC-V ALE!",
+      "describe": "the --newlib write syscall and the terminal path"
+    },
+    {
+      "name": "mmio",
+      "file": "mmio.elf",
+      "bytes": 152,
+      "expectStdout": "Z",
+      "describe": "the jsWriteMMIO and jsReadMMIO hooks"
+    },
+    {
+      "name": "stdin",
+      "file": "stdin.elf",
+      "bytes": 156,
+      "expectStdout": null,
+      "describe": "the --newlib read syscall and the emscripten_sleep wait"
+    }
+  ]
+}

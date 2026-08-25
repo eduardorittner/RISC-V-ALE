@@ -37,8 +37,10 @@ carries.
 
 | File | Function |
 | --- | --- |
+| `riscv_asm.cjs` | A small RV32 assembler and ELF32 writer, shared by the two generators |
 | `gen_workloads.cjs` | Writes the three ELF32 workloads and `workloads/manifest.json` |
 | `validate_native.cjs` | Runs the native whisper oracle on each workload and checks the retired counts |
+| `checks/` | The functional gate of section 7 of the plan |
 | `run.cjs` | The driver. Serves the page, drives Chromium and writes the results |
 | `page/index.html` | The page. It gives the driver a `runOne()` function |
 | `page/worker_cpp.js` | The C++ core in a worker |
@@ -65,7 +67,31 @@ node scripts/perf-core/validate_native.cjs
 
 # One benchmark session.
 node scripts/perf-core/run.cjs --label step-1-baseline --reps 5
+
+# The functional gate (checks 2, 3 and 4 of section 7 of the plan).
+node scripts/perf-core/checks/gen_check_programs.cjs   # only after a change
+node scripts/perf-core/checks/run_checks.cjs
 ```
+
+## The functional gate
+
+`checks/run_checks.cjs` serves the repository, opens `checks/check.html` in
+headless Chromium and drives the real application worker
+(`modules/simulator_worker.js`) with the real module. It uses the same message
+protocol as `modules/simulator.js`, so it tests what the application runs.
+
+| Program | What it proves |
+| --- | --- |
+| `hello.elf` | The `--newlib` write syscall reaches the terminal |
+| `mmio.elf` | `jsWriteMMIO` and `jsReadMMIO` work. The program writes `0x5A` to `0xffff0010`, reads it back and writes the byte to the terminal. The host also sees the write in the sync message. |
+| `stdin.elf` | The `--newlib` read syscall works with interrupts on. Until the host sends a character, `readFromStdin` reports -1 and `Syscall.cpp` waits in a loop around `emscripten_sleep(10)`. |
+
+The driver takes the ISA string from the checkboxes of `index.html`, because
+that is where the application takes it from. `get_checked_ISAs()` in
+`assets/js/interface_elements.js` reads those checkboxes and pushes `--isa` in
+front of `simulator_controller.start_execution`. The `Module.arguments` value
+in `modules/simulator_worker.js` is only a fallback, and the `start` message
+replaces it.
 
 The native oracle is `crates/riscv-rs/SweRV-ISS-1/opt/whisper`. Build it with:
 

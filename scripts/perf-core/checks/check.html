@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>RISC-V ALE functional checks</title>
+  </head>
+  <body>
+    <h1>RISC-V ALE functional checks</h1>
+    <p>
+      The driver in <code>scripts/perf-core/checks/run_checks.cjs</code> calls
+      <code>runCheck()</code> from this page. The page drives the real
+      application worker, <code>/modules/simulator_worker.js</code>, with the
+      same message protocol that <code>modules/simulator.js</code> uses. It
+      therefore tests the module and the worker that the application ships.
+    </p>
+    <pre id="log"></pre>
+    <script>
+      "use strict";
+
+      function log(text) {
+        document.getElementById("log").textContent += text + "\n";
+      }
+
+      /**
+       * Run one guest program on the application worker.
+       *
+       * @param {object} opts
+       * @param {string} opts.elfUrl where to fetch the program
+       * @param {string} opts.elfName the name it gets in the worker file system
+       * @param {string[]} opts.args the argument list, as the application builds it
+       * @param {boolean} opts.interrupts whether the interrupt path is on
+       * @param {string} [opts.stdin] text to send to the guest
+       * @param {number} [opts.stdinAfterMs] when to send it
+       * @param {number} opts.timeoutMs
+       * @returns {Promise<object>}
+       */
+      window.runCheck = function (opts) {
+        return new Promise((resolve) => {
+          const out = {
+            stdout: "",
+            stderr: "",
+            mmio: {},
+            logs: [],
+            deviceMessages: [],
+            finished: false,
+            timedOut: false,
+          };
+
+          let worker;
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            clearTimeout(stdinTimer);
+            try {
+              worker.terminate();
+            } catch (e) {}
+            resolve(out);
+          };
+
+          const timer = setTimeout(() => {
+            out.timedOut = true;
+            finish();
+          }, opts.timeoutMs);
+
+          let stdinTimer = null;
+
+          fetch(opts.elfUrl)
+            .then((r) => r.arrayBuffer())
+            .then((buf) => {
+              const file = new File([new Uint8Array(buf)], opts.elfName);
+              worker = new Worker("/modules/simulator_worker.js");
+
+              // `modules/simulator.js` keeps this buffer and sends it back to
+              // the worker with every sync. The checks write no MMIO from the
+              // host side, so it stays empty.
+              const hostMmioBuffer = [];
+
+              worker.onmessage = (e) => {
+                const msg = e.data;
+                switch (msg.type) {
+                  case "sync":
+                    if (msg.stdout) out.stdout += msg.stdout;
+                    if (msg.stderr) out.stderr += msg.stderr;
+                    for (const i in msg.mmio_buffer) {
+                      out.mmio[i] = msg.mmio_buffer[i];
+                    }
+                    setTimeout(() => {
+                      if (!done)
+                        worker.postMessage({
+                          type: "sync",
+                          buffer: hostMmioBuffer,
+                        });
+                    }, 0);
+                    break;
+                  case "status":
+                    out.logs.push(msg);
+                    if (msg.status && msg.status.finish) {
+                      out.finished = true;
+                      // One last sync, so the buffered output arrives before
+                      // the worker goes away.
+                      worker.postMessage({ type: "sync", buffer: [] });
+                      setTimeout(finish, 300);
+                    }
+                    break;
+                  case "sim_log":
+                    out.logs.push(msg);
+                    break;
+                  case "device_message":
+                    out.deviceMessages.push(msg);
+                    break;
+                  default:
+                    out.logs.push(msg);
+                }
+              };
+
+              worker.onerror = (e) => {
+                out.logs.push({ type: "worker_error", msg: e.message });
+                finish();
+              };
+
+              worker.postMessage({ type: "add_files", files: [file] });
+              worker.postMessage({
+                type: "interrupt_enabled",
+                value: opts.interrupts ? 1 : 0,
+              });
+              // The values `modules/simulator.js` uses at start.
+              worker.postMessage({
+                type: "set_int_delay",
+                value: Math.pow(2, 32 - 25) - 1,
+              });
+              worker.postMessage({ type: "set_freq_limit", value: 30 });
+              worker.postMessage({ type: "start", args: opts.args });
+              setTimeout(() => {
+                if (!done)
+                  worker.postMessage({ type: "sync", buffer: hostMmioBuffer });
+              }, 0);
+
+              if (opts.stdin !== undefined) {
+                stdinTimer = setTimeout(() => {
+                  if (!done)
+                    worker.postMessage({ type: "stdin", stdin: opts.stdin });
+                }, opts.stdinAfterMs || 500);
+              }
+            })
+            .catch((err) => {
+              out.logs.push({ type: "fetch_error", msg: String(err) });
+              finish();
+            });
+        });
+      };
+
+      window.checksReady = true;
+      log("checks ready");
+    </script>
+  </body>
+</html>
