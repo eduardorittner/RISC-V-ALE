@@ -294,7 +294,10 @@ function sendDebugMsg(msg){
 
 var Module = {
   // arguments : ["--version"],
-  arguments : ["--newlib", "/working/ex2", "--isa", "acdfimsu", "--setreg", "sp=0x10000"],
+  // No "s" and no "u": RISC-V ALE runs machine mode only. The "s" makes
+  // Hart::isRvs() true, which makes Hart::run treat every run as complex and
+  // use the slow runUntilAddress loop instead of simpleRun.
+  arguments : ["--newlib", "/working/ex2", "--isa", "acdfim", "--setreg", "sp=0x10000"],
   preRun : [initFS],
   print : bus_sync.add_stdout.bind(bus_sync),
   printErr : bus_sync.add_stderr.bind(bus_sync)

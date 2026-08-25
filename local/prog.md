@@ -198,3 +198,108 @@ repetition"), and it is what each core does in the application.
 ### Commit
 
 `perf(whisper): add the core benchmark harness`
+
+## The functional gate harness
+
+**State: complete.** Commit `test(whisper): add the functional gate harness`.
+
+Checks 2, 3 and 4 of section 7 of the plan need the application. They are now
+automatic. `scripts/perf-core/checks/run_checks.cjs` serves the repository,
+opens a page in headless Chromium and drives the real application worker
+(`modules/simulator_worker.js`) with the real module, through the same message
+protocol that `modules/simulator.js` uses.
+
+| Program | What it proves |
+| --- | --- |
+| `hello.elf` | The `--newlib` write syscall reaches the terminal |
+| `mmio.elf` | `jsWriteMMIO` and `jsReadMMIO` work |
+| `stdin.elf` | The `--newlib` read syscall works with interrupts on, which is the `emscripten_sleep` path |
+
+The gate does not compile a program with clang and lld in the browser. The
+three programs are prebuilt ELF32 files from the same generator that makes the
+benchmark workloads. Check 2 of the plan says "compiles, runs and writes to
+the terminal"; this harness covers "runs and writes to the terminal", which is
+the part that the steps of this plan can break. No step in the range 1 to 4
+touches the compiler.
+
+## Step 2: Change the ISA string
+
+**State: complete.**
+
+### Finding: the plan changes the wrong line
+
+The plan says to change one line, `modules/simulator_worker.js` line 297. That
+line is **not** where the application takes its ISA string from.
+
+- `modules/simulator_worker.js` line 297 sets `Module.arguments` as a default.
+- The `start` message replaces it: `case "start": Module.arguments =
+  e.data.args`.
+- The application always sends a `start` message.
+  `assets/js/interface_elements.js` line 406 and `modules/assistant.js` line
+  234 both push `--isa` with the result of `get_checked_ISAs()`.
+- `get_checked_ISAs()` reads eight checkboxes in `index.html`. The `S` box
+  (`config_isaS`) and the `U` box (`config_isaU`) had `checked=""`, so the
+  application always used `--isa acdfimsu`.
+
+Section 3.4 of `local/rs-cpp.md` names `Module.arguments` as the source of the
+shipped ISA string. That identification is not correct, although the ISA
+string it reports is.
+
+The step therefore changed three lines and not one:
+
+1. `modules/simulator_worker.js` line 297: `acdfimsu` to `acdfim`. This makes
+   the fallback agree with the application.
+2. `index.html`: the `config_isaS` checkbox is no longer checked.
+3. `index.html`: the `config_isaU` checkbox is no longer checked.
+
+The two checkboxes stay in the interface. A user who needs supervisor mode or
+user mode can turn them on and gets the old behaviour, with the old speed.
+
+The functional gate reads the ISA string from `index.html` for the same
+reason, and it reported `--isa acdfimsu` before the change and `--isa acdfim`
+after it. This is the proof that the change reaches the application.
+
+### Results
+
+Session `step-2-isa-acdfim`, median of 5, MIPS:
+
+| Configuration | `alu` | `memcpy` | `mixed` |
+| --- | --- | --- | --- |
+| Rust (the control) | 201.0 | 202.0 | 262.8 |
+| C++ `--isa acdfimsu` (before the step) | 35.8 | 32.1 | 35.3 |
+| C++ `--isa acdfim` (after the step) | 136.1 | 90.1 | 180.2 |
+
+The harness measures both ISA strings in every session, so the speedup of this
+step comes from two rows of one session. This removes all drift between the
+two figures.
+
+| Workload | Before | After | Measured | Estimated | Share of the estimate |
+| --- | --- | --- | --- | --- | --- |
+| `alu` | 35.8 | 136.1 | **3.80x** | 3.46x | 110% |
+| `memcpy` | 32.1 | 90.1 | **2.81x** | 2.07x | 136% |
+| `mixed` | 35.3 | 180.2 | **5.11x** | 6.17x | 83% |
+
+Against the absolute figures that the plan projects (`alu` 121.2, `memcpy`
+51.7, `mixed` 173.9), all three workloads are above the projection.
+
+The decision rules of section 9 do not apply: no workload delivers less than
+half of its estimate, and no workload regresses.
+
+The C++ core is now at 68% of the Rust control on `alu`, 45% on `memcpy` and
+69% on `mixed`.
+
+The step-1 and step-2 sessions agree closely (`--isa acdfim`: 136.1 / 90.5 /
+178.6 against 136.1 / 90.1 / 180.2), which shows that the harness repeats.
+
+### Functional checks
+
+| Check | Result |
+| --- | --- |
+| 1. Retired counts | PASS. Exact in the benchmark session. |
+| 2. The application | PASS. `hello.elf` writes to the terminal with `--isa acdfim`. |
+| 3. MMIO | PASS. `mmio.elf` writes and reads `0xffff0010`. |
+| 4. Interrupts | PASS. `stdin.elf` receives its character with interrupts on. |
+
+### Commit
+
+`perf(whisper): run machine mode only (--isa acdfim)`
