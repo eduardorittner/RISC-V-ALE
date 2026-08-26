@@ -44,14 +44,35 @@ not the cause: 2.0.34, 3.1.74 and 6.0.8 all need the option and all give the
 same figures with it. `local/prog.md`, section "Step 3", records the
 measurements.
 
+## The linear memory
+
+`TOTAL_MEMORY` sets the size of the WebAssembly linear memory. The default is
+160 MB. The GNUmakefile had 256 MB.
+
+The floor is the guest memory of whisper. `whisper.cpp` line 1672 makes it
+`1 << 27`, which is 128 MB, and the application puts the guest stack at the top
+of it: `so_stack_pointer_value` in `index.html` is `0x7FFFFFC`. A module needs
+10.5 to 12 MB more than the guest memory for its own heap, which is mostly the
+128K-entry decode cache. Measured: 140 MB runs and 138 MB stops with
+`Aborted(OOM)`. 160 MB leaves 32 MB for the heap, which is 2.7 times the
+measured need.
+
+**Do not go below 140 MB.** The functional gate finds it: a 138 MB module fails
+all three checks with `Aborted(OOM)`.
+
 ## Commands
 
 ```sh
-# Step 3: the same flags the GNUmakefile has.
-scripts/build-whisper/build.sh
+# Step 3: the same flags the GNUmakefile has, and 256 MB of linear memory.
+TOTAL_MEMORY=268435456 scripts/build-whisper/build.sh
 
 # Step 4: one flag more.
-EXTRA_FLAGS=-DFAST_SLOPPY BUILD_TAG=fast-sloppy scripts/build-whisper/build.sh
+EXTRA_FLAGS=-DFAST_SLOPPY TOTAL_MEMORY=268435456 BUILD_TAG=fast-sloppy \
+  scripts/build-whisper/build.sh
+
+# Step 5: the same flag and the smaller linear memory. This is the module the
+# branch carries.
+EXTRA_FLAGS=-DFAST_SLOPPY BUILD_TAG=step-5 scripts/build-whisper/build.sh
 ```
 
 The script writes into `scripts/build-whisper/.build/<BUILD_TAG>/` and then
@@ -67,9 +88,10 @@ All options come through the environment.
 | `EMSDK_DIR` | `$HOME/emsdk` | The Emscripten SDK |
 | `EMSDK_VERSION` | `6.0.8` | The SDK version. It is pinned so that a rebuild gives the same module. |
 | `EMSDK_PYTHON` | from `uv`, if present | A Python 3.10 or later |
-| `NO_PATCHES` | not set | Set it to skip `patches/*.patch`. No patch is necessary today. |
+| `NO_PATCHES` | not set | Set it to skip `patches/*.patch` |
 | `SWERV_DIR` | `crates/riscv-rs/SweRV-ISS-1` | The C++ source |
 | `BOOST_DIR` | `crates/riscv-rs/vendor` | The vendored Boost |
+| `TOTAL_MEMORY` | `167772160` | The linear memory, in bytes. See the section above. |
 | `EXTRA_FLAGS` | empty | More compile flags |
 | `BUILD_TAG` | `default` | Name of the build directory |
 | `JOBS` | the processor count | Parallel compile jobs |
@@ -163,6 +185,9 @@ The build never writes into the SweRV-ISS submodule. It copies the source into
 clean and the differential harness keeps its oracle.
 
 `patches/*.patch` are applied to the copy with `patch -p1` before the build.
-The directory is empty today: the only change a rebuild needs is the link
-option above, and no source change is necessary. Step 8 of the plan (remove
-Asyncify) will need patches, and this is where they go.
+Step 8 of the plan (remove Asyncify) will need more of them, and this is where
+they go.
+
+| Patch | What it does |
+| --- | --- |
+| `0001-parameterize-the-link-flags.patch` | The link rule of the GNUmakefile had `-s TOTAL_MEMORY=268435456 -lworkerfs.js -s ASYNCIFY` written into it, after `LINK_LIBS`. An Emscripten setting that comes later on the command line wins, so nothing that `build.sh` passes could change the memory size. The patch moves those three settings into an `EM_LINK_FLAGS` variable with `?=`, so a build that does not set the variable gives the same module as before the patch. |

@@ -19,11 +19,17 @@
  *
  * Check 1 (the retired counts) is part of `run.cjs`.
  *
- * The ISA string comes from the checkboxes of `index.html`, because that is
- * where the application takes it from: `get_checked_ISAs()` in
- * `assets/js/interface_elements.js` reads them and pushes `--isa` in front of
- * `simulator_controller.start_execution`. The default in
+ * The ISA string and the stack pointer come from `index.html`, because that is
+ * where the application takes them from: `run_simulator()` in
+ * `assets/js/interface_elements.js` reads the ISA checkboxes and the
+ * `so_stack_pointer_value` field, and pushes `--isa` and `--setreg sp=...` in
+ * front of `simulator_controller.start_execution`. The default in
  * `modules/simulator_worker.js` is only a fallback.
+ *
+ * The stack pointer matters to this gate from step 5 of the plan. It is
+ * 0x7FFFFFC, which is the top of the 128 MB guest memory of whisper, so it is
+ * the highest guest address the application uses. A gate that used a low stack
+ * pointer would not find a memory that is too small.
  *
  * Usage:
  *   node scripts/perf-core/checks/run_checks.cjs
@@ -63,12 +69,26 @@ function isaStringFromIndexHtml() {
   return isa;
 }
 
+/**
+ * The stack pointer the application starts a program with, read from the
+ * `so_stack_pointer_value` field of `index.html`.
+ */
+function stackPointerFromIndexHtml() {
+  const html = fs.readFileSync(path.join(REPO, "index.html"), "utf8");
+  const tag = /<input[^>]*id="so_stack_pointer_value"[^>]*>/.exec(html);
+  if (!tag) throw new Error("no so_stack_pointer_value field in index.html");
+  const value = /\svalue="([^"]+)"/.exec(tag[0]);
+  if (!value) throw new Error("so_stack_pointer_value has no default value");
+  return value[1];
+}
+
 async function main() {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(HERE, "programs", "manifest.json"), "utf8"),
   );
   const isa = isaStringFromIndexHtml();
-  console.log(`The application ISA string is --isa ${isa}\n`);
+  const sp = stackPointerFromIndexHtml();
+  console.log(`The application starts with --isa ${isa} and sp=${sp}\n`);
 
   const { server, port } = await createServer(REPO);
   const browser = await launchBrowser("chrome");
@@ -92,7 +112,7 @@ async function main() {
           "--newlib",
           `/working/${p.file}`,
           "--setreg",
-          "sp=0x10000",
+          `sp=${sp}`,
           "--isa",
           isa,
         ],

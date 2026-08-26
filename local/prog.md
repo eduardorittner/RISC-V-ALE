@@ -8,8 +8,6 @@ This document records the work of `local/optimize-whisper.md`. It gives the
 result of each step, the comparison against the estimate of that step, and
 each finding that a later step must know.
 
-The instruction is to do the steps 1 to 4 and then to stop.
-
 ## Status
 
 | Step | State | Result |
@@ -18,6 +16,7 @@ The instruction is to do the steps 1 to 4 and then to stop.
 | 2. Change the ISA string | Complete | 3.80x / 2.81x / 5.11x against an estimate of 3.46x / 2.07x / 6.17x |
 | 3. Rebuild with unchanged flags | Complete | 0.98x / 0.86x / 0.79x. `mixed` regresses by 21% and the step accepts it in writing. The figures of step 3 are the new baseline. |
 | 4. Add `-DFAST_SLOPPY` | Complete | 1.00x / 1.57x / 0.99x. The `memcpy` figure is below half of the plan estimate, and the cause is an error in the estimate. |
+| 5. Size the linear memory | Complete | 256 MB to 160 MB. The 64 MB target of the plan is not reachable: the stack pointer of the application pins the guest memory at 128 MB. |
 
 A rebuild needed one link option that the GNUmakefile does not have. Without
 it a rebuild is twelve times slower than the module the fork shipped. The
@@ -609,10 +608,166 @@ whisper permits misaligned accesses in this configuration in any case.
 
 `perf(whisper): build with -DFAST_SLOPPY`
 
-## Where the plan stands after step 4
+## Step 5: Size the linear memory
 
-The instruction was to do the steps 1 to 4 and then to stop. This is the
-position.
+**State: complete.** The reservation goes from 256 MB to 160 MB. The 64 MB
+target of the plan is not reachable, and the audit that the plan asks for is
+the reason.
+
+### The audit: what pins the guest memory
+
+The plan says to "find the highest guest address that the RISC-V ALE toolchain,
+the syscalls and the stack use". This is the answer:
+
+| Item | Address | Source |
+| --- | --- | --- |
+| The guest stack pointer | `0x7FFFFFC` | `index.html`, the `so_stack_pointer_value` field |
+| The guest memory of whisper | 128 MB, so the top address is `0x7FFFFFF` | `whisper.cpp` line 1672, `memorySize = size_t(1) << 27` |
+| The MMIO window | `0xffff0000` and above | Not in the guest memory. `Hart.cpp` tests `addr > 0xffff0000` **before** `memory_.read`, so the window goes through `jsReadMMIO` and `jsWriteMMIO` and does not constrain the size. |
+| The program image | `0x1000` and up, a few kilobytes | The ELF that `ld.lld` writes |
+| The `--newlib` heap | Between the program image and the stack | `Syscall.cpp` |
+
+**The stack pointer is the highest guest address, and it is 4 bytes below the
+top of the 128 MB guest memory.** The guest memory of whisper is therefore
+already the smallest safe value. It cannot go down while the application starts
+a program with that stack pointer.
+
+Two facts of the plan are not correct, and this changes what step 5 can do:
+
+1. **The 256 MB reservation is not the guest memory.** Section 6.3 of
+   `local/rs-cpp.md` reads the 256 MB of `-s TOTAL_MEMORY=268435456` as the
+   guest memory. It is the WebAssembly linear memory, which holds the guest
+   memory **and** the heap of the module. The guest memory is 128 MB inside it.
+2. **The 64 MB target needs an application change, not a build flag.** To get
+   the reservation to 64 MB, the stack pointer must go to `0x3FFFFFC` or lower.
+   That is not a safe change: the stack pointer is part of every saved project
+   link. `data/home.json` holds two of them, and both carry
+   `"so_stack_pointer_value": "0x7FFFFFC"`. A link that a user saved a year ago
+   would set the field back to `0x7FFFFFC`, and the first push would fault. The
+   links that users hold cannot be found or changed.
+
+### What the step changes
+
+1. **`TOTAL_MEMORY` from 268435456 (256 MB) to 167772160 (160 MB)** in
+   `scripts/build-whisper/build.sh`.
+2. **`patches/0001-parameterize-the-link-flags.patch`.** The link rule of the
+   GNUmakefile had `-s TOTAL_MEMORY=268435456 -lworkerfs.js -s ASYNCIFY`
+   written into it, after `LINK_LIBS`. An Emscripten setting that comes later
+   on the command line wins, so nothing that `build.sh` passed could change the
+   memory size. The first attempt of this step proved it: the link line still
+   showed 268435456. The patch moves the three settings into an `EM_LINK_FLAGS`
+   variable with `?=`, so a build that does not set the variable gives the same
+   module as before the patch. **Step 8 needs this patch too**, because
+   `-s ASYNCIFY` is on the same line.
+3. **The functional gate now takes the stack pointer from `index.html`.** It
+   took the ISA string from there since step 2, but it used `sp=0x10000`. A
+   gate with a low stack pointer cannot find a linear memory that is too small,
+   which is exactly the failure that step 5 risks.
+
+### How 160 MB was chosen
+
+The floor is the 128 MB guest memory plus the heap of the module, which is
+mostly the 128K-entry decode cache (`Hart.cpp` line 112). The measurement is a
+bisection: build the module, run it, and see whether it starts.
+
+| Linear memory | Non-guest heap | Result |
+| --- | --- | --- |
+| 160 MB | 32 MB | Runs |
+| 144 MB | 16 MB | Runs |
+| 140 MB | 12 MB | Runs |
+| 138 MB | 10.5 MB | `Aborted(OOM)` |
+
+The need is therefore between 10.5 and 12 MB above the guest memory. 160 MB
+leaves 32 MB, which is 2.7 times the measured need. The margin is for what the
+application does and the probe does not: WORKERFS, a real ELF file of some
+megabytes, the terminal buffers and the interactive shell.
+
+**The functional gate finds a memory that is too small.** A 138 MB module fails
+all three checks with `Aborted(OOM)`, which is the proof that the gate has
+teeth for this step.
+
+### The new metrics
+
+The benchmark harness cannot show the effect of this step, so
+`scripts/perf-core/startup/` is new. It reports the reservation, the time to
+the first instruction and the module sizes. The probe program writes to the
+MMIO window on its third instruction, and both cores have that hook, so the
+timestamp has the same meaning for both.
+
+Median of 7, milliseconds. Both sessions are on the same machine, one after the
+other.
+
+| Configuration | Step 4 | Step 5 | Reservation, step 4 | Reservation, step 5 |
+| --- | --- | --- | --- | --- |
+| Rust (the control) | 6.5 | 6.2 | 1.8 MB | 1.8 MB |
+| C++ `--isa acdfim` | 46.8 | 48.0 | 256 MB | 160 MB |
+| C++ as the application starts it | 46.2 | 47.0 | 256 MB | 160 MB |
+
+| Metric | Step 4 | Step 5 | Change |
+| --- | --- | --- | --- |
+| Reservation | 256 MB | 160 MB | **−37.5%** |
+| Time to the first instruction | 46.2 ms | 47.0 ms | +0.8 ms, inside the noise |
+| `whisper.wasm` | 4,095,232 bytes | 4,095,232 bytes | none |
+
+### Finding: the reservation costs almost no time
+
+The plan expects the reservation to add to the startup time (section 15.3 of
+the report). It does not. 96 MB less reservation changed the time to the first
+instruction by less than 1 ms, which is inside the spread of the samples.
+
+The cause is that a `WebAssembly.Memory` reservation is virtual. The browser
+does not touch the pages until the module writes to them. What does cost time
+is the write: the guest memory is an `mmap` of 128 MB, and Emscripten
+implements an anonymous `mmap` as an allocation that it fills with zeros.
+
+The `cpp-16mb` row of the startup results measures that cost. It gives whisper
+a 16 MB guest memory with `--memorysize`, which is a run-time option and needs
+no rebuild:
+
+| Configuration | To the first instruction | To the exit |
+| --- | --- | --- |
+| C++, 128 MB guest memory (the application) | 47.0 ms | 150.7 ms |
+| C++, 16 MB guest memory | 32.0 ms | 136.6 ms |
+| Rust (the control) | 6.2 ms | 6.4 ms |
+
+**The 128 MB guest memory costs 15 ms of the 47 ms.** That is the whole prize
+for a smaller guest memory, and it is the number to weigh against breaking
+every saved project link. The row stays in the harness so that a later reader
+does not have to measure it again.
+
+The remaining 32 ms is the fetch, the compile and the instantiation of a 4 MB
+module, against 6 ms for the 129 KB Rust module. **Steps 6, 7 and 8 attack that
+32 ms**, because they make the module smaller.
+
+### Throughput
+
+Step 5 does not target throughput, and the estimate is 1.00x. Session
+`step-5-memory`, median of 5, MIPS, `--isa acdfim`:
+
+| Workload | Step 4 | Step 5 | Measured | Estimated | Result |
+| --- | --- | --- | --- | --- | --- |
+| `alu` | 133.3 | 131.6 | 0.99x | 1.00x | Inside the tolerance |
+| `memcpy` | 122.0 | 122.0 | 1.00x | 1.00x | Inside the tolerance |
+| `mixed` | 140.8 | 140.8 | 1.00x | 1.00x | Inside the tolerance |
+
+The Rust control of this session is 211.4 / 207.3 / 263.9 MIPS, against 200.8 /
+203.0 / 263.5 in the step 4 session. The control moved up by 5% on `alu`, so
+the machine was a little faster in this session, not slower.
+
+### Functional checks
+
+| Check | Result |
+| --- | --- |
+| 1. Retired counts | PASS. Exact on all three workloads, both ISA strings. |
+| 2. The application | PASS, with `sp=0x7FFFFFC` from `index.html` |
+| 3. MMIO | PASS |
+| 4. Interrupts | PASS |
+
+### Commit
+
+`perf(whisper): reduce the linear memory reservation`
+
+## Where the plan stands
 
 Median of 5, MIPS, with `--isa acdfim`, which is what the application uses
 after step 2. The Rust column is the live control of each session.
@@ -623,8 +778,17 @@ after step 2. The Rust column is the live control of each session.
 | Step 2, machine mode only | 136.1 | 90.1 | 180.2 |
 | Step 3, rebuilt from source | 133.3 | 77.8 | 141.8 |
 | Step 4, plus `-DFAST_SLOPPY` | 133.3 | 122.0 | 140.8 |
-| The Rust control, step 4 session | 200.8 | 203.0 | 263.5 |
-| Share of the control | 66% | 60% | 53% |
+| Step 5, a 160 MB linear memory | 131.6 | 122.0 | 140.8 |
+| The Rust control, step 5 session | 211.4 | 207.3 | 263.9 |
+| Share of the control | 62% | 59% | 53% |
+
+The secondary metrics, which steps 5, 6 and 7 target:
+
+| Milestone | Reservation | To the first instruction | `whisper.wasm` |
+| --- | --- | --- | --- |
+| Step 4 | 256 MB | 46.2 ms | 4,095,232 bytes |
+| Step 5 | 160 MB | 47.0 ms | 4,095,232 bytes |
+| The Rust core | 1.8 MB | 6.5 ms | 132,561 bytes |
 
 Against the projection of section 10 of the plan:
 
@@ -652,11 +816,19 @@ The total against the state RISC-V ALE shipped is 3.7x on `alu`, 3.9x on
 
 ### What the next steps should know
 
-- **The baseline moved.** Compare step 5 against the step 4 session and not
-  against step 2.
-- **Steps 5, 6 and 7 do not target throughput.** Their metrics are the module
-  size, the memory reservation and the time to the first instruction. The
-  harness reports the module sizes in each results file.
+- **The baseline moved at step 3.** Compare a step against the session before
+  it, and not against step 2.
+- **Steps 6 and 7 do not target throughput.** Their metrics are the module
+  size, the memory reservation and the time to the first instruction.
+  `scripts/perf-core/startup/` reports all three.
+- **The module size is the startup cost that is left.** Step 5 measured it: of
+  the 47 ms to the first instruction, 15 ms is the 128 MB guest memory (which
+  cannot go down) and about 32 ms is the fetch, the compile and the
+  instantiation of a 4 MB module. The Rust core needs 6 ms for a 129 KB module.
+- **The 64 MB reservation target of the plan is closed, not reached.** The
+  stack pointer of the application (`0x7FFFFFC`) pins the guest memory at
+  128 MB, and that stack pointer is in every saved project link. The step 5
+  section holds the audit.
 - **The estimate for step 8 is too low.** The plan projects 1.12x to 1.39x
   from the ratio change 0.55 to 0.69. A direct measurement during the work on
   step 3 gives a much larger figure: with the same objects, a module without

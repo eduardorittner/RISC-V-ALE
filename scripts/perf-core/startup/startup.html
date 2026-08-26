@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>RISC-V ALE core startup metric</title>
+  </head>
+  <body>
+    <h1>RISC-V ALE core startup metric</h1>
+    <p>
+      The driver in <code>scripts/perf-core/startup/run_startup.cjs</code> calls
+      <code>runStartup()</code> from this page. Each call is one cold start of
+      one core: a new worker, a new fetch of the module and one run of
+      <code>probe.elf</code>, which writes to the MMIO window on its third
+      instruction.
+    </p>
+    <p>
+      Both cores get a new worker for each repetition here. A startup figure
+      must be a cold start. The throughput harness keeps one Rust worker for the
+      whole session, for the reason that <code>page/worker_rust.js</code> gives,
+      and that rule is about throughput and not about startup.
+    </p>
+    <pre id="log"></pre>
+    <script>
+      "use strict";
+
+      /** How long one cold start may take before the driver gets an error. */
+      const RUN_TIMEOUT_MS = 120000;
+
+      function log(text) {
+        document.getElementById("log").textContent += text + "\n";
+      }
+
+      /**
+       * One cold start of one core.
+       *
+       * @param {"cpp"|"rust"} core
+       * @param {string[]} args the argument list the core starts with
+       * @returns {Promise<object>} the timestamps the worker took
+       */
+      window.runStartup = function (core, args) {
+        // A unique query string keeps each fetch a cold fetch, together with
+        // the `no-store` header the server sends.
+        const stamp = Date.now() + "-" + Math.random().toString(36).slice(2);
+        const msg = {
+          type: "run",
+          elfName: "probe.elf",
+          elfUrl: "probe.elf?r=" + stamp,
+          args,
+        };
+
+        let workerUrl;
+        if (core === "rust") {
+          workerUrl = "worker_rust.js?r=" + stamp;
+          msg.glueUrl = "riscv_rs.js";
+          msg.wasmUrl = "riscv_rs_bg.wasm?r=" + stamp;
+        } else {
+          workerUrl = "worker_cpp.js?r=" + stamp;
+          msg.moduleUrl = "whisper.js?r=" + stamp;
+        }
+
+        return new Promise((resolve) => {
+          const worker = new Worker(workerUrl);
+          let done = false;
+          const finish = (value) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            worker.terminate();
+            resolve(value);
+          };
+          const timer = setTimeout(
+            () => finish({ type: "error", error: "timeout" }),
+            RUN_TIMEOUT_MS,
+          );
+          worker.onmessage = (e) => finish(e.data);
+          worker.onerror = (e) =>
+            finish({ type: "error", error: e.message || "worker error" });
+          worker.postMessage(msg);
+        });
+      };
+
+      window.harnessReady = true;
+      log("startup harness ready");
+    </script>
+  </body>
+</html>

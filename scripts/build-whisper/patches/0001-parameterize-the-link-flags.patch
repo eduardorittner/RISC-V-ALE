@@ -1,0 +1,25 @@
+--- a/GNUmakefile	2026-08-26 07:35:51
++++ b/GNUmakefile	2026-08-26 07:35:51
+@@ -78,6 +78,13 @@
+ # Optimization flags.  Use -g for debug.
+ OFLAGS := -O3 -Wno-c++11-narrowing  -fno-builtin -D__EMSCRIPTEN__ -DDISABLE_EXCEPTIONS -s TOTAL_MEMORY=268435456 -s ASYNCIFY
+ 
++# Emscripten link flags. The link rule below had these values written into it,
++# which made the linear memory size and Asyncify impossible to change from the
++# make command line. `?=` keeps the original values when nothing overrides
++# them, so a build that does not set EM_LINK_FLAGS gives the same module as
++# before this patch.
++EM_LINK_FLAGS ?= -s TOTAL_MEMORY=268435456 -lworkerfs.js -s ASYNCIFY
++
+ # Include paths.
+ IFLAGS := $(addprefix -isystem ,$(BOOST_INC)) -I.
+ 
+@@ -105,7 +112,7 @@
+ $(BUILD_DIR)/$(PROJECT): $(BUILD_DIR)/whisper.cpp.o \
+                          $(BUILD_DIR)/librvcore.a \
+ 			 $(soft_float_lib)
+-	$(CXX) -O3 -o $@.js $^ $(LINK_DIRS) $(LINK_LIBS) -s TOTAL_MEMORY=268435456 -lworkerfs.js -s ASYNCIFY
++	$(CXX) -O3 -o $@.js $^ $(LINK_DIRS) $(LINK_LIBS) $(EM_LINK_FLAGS)
+ 
+ # List of all CPP sources needed for librvcore.a
+ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \

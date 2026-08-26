@@ -41,6 +41,7 @@ carries.
 | `gen_workloads.cjs` | Writes the three ELF32 workloads and `workloads/manifest.json` |
 | `validate_native.cjs` | Runs the native whisper oracle on each workload and checks the retired counts |
 | `checks/` | The functional gate of section 7 of the plan |
+| `startup/` | The startup and footprint metric of steps 5, 6 and 7 of the plan |
 | `run.cjs` | The driver. Serves the page, drives Chromium and writes the results |
 | `page/index.html` | The page. It gives the driver a `runOne()` function |
 | `page/worker_cpp.js` | The C++ core in a worker |
@@ -71,6 +72,10 @@ node scripts/perf-core/run.cjs --label step-1-baseline --reps 5
 # The functional gate (checks 2, 3 and 4 of section 7 of the plan).
 node scripts/perf-core/checks/gen_check_programs.cjs   # only after a change
 node scripts/perf-core/checks/run_checks.cjs
+
+# The startup and footprint metric (steps 5, 6 and 7 of the plan).
+node scripts/perf-core/startup/gen_probe.cjs           # only after a change
+node scripts/perf-core/startup/run_startup.cjs --label step-5-memory --reps 7
 ```
 
 ## The functional gate
@@ -92,6 +97,31 @@ that is where the application takes it from. `get_checked_ISAs()` in
 front of `simulator_controller.start_execution`. The `Module.arguments` value
 in `modules/simulator_worker.js` is only a fallback, and the `start` message
 replaces it.
+
+The gate takes the ISA string **and the stack pointer** from `index.html`. The
+stack pointer is `0x7FFFFFC`, which is the top of the 128 MB guest memory of
+whisper, so it is the highest guest address the application uses. Step 5 needs
+that: a gate with a low stack pointer would not find a linear memory that is
+too small.
+
+## The startup and footprint metric
+
+`startup/run_startup.cjs` measures what steps 5, 6 and 7 change. Those steps do
+not target throughput, so the benchmark harness cannot show their effect.
+
+| Figure | What it is |
+| --- | --- |
+| Reservation | The initial size of the linear memory, from the memory section of the `.wasm` file. The worker confirms it at run time. |
+| To the first instruction | The time from the run message in the worker to the first guest write to the MMIO window. `startup/probe.elf` does that on its third instruction. It contains the fetch, the compile, the instantiation, the core startup and the program load. |
+| To the exit | The same clock, to the end of the program. |
+| Size | The raw and the gzip size of each module file. |
+
+Both cores get a new worker for each repetition here, which is not what the
+throughput harness does. A startup figure must be a cold start.
+
+The harness is a separate directory, and not an option of `run.cjs`, because
+rule 3 of the plan says that no step may change how the benchmark harness
+measures.
 
 The native oracle is `crates/riscv-rs/SweRV-ISS-1/opt/whisper`. Build it with:
 

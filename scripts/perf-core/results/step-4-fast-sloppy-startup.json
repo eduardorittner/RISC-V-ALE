@@ -1,0 +1,131 @@
+{
+  "label": "step-4-fast-sloppy",
+  "commit": "445b118",
+  "reps": 7,
+  "node": "v26.7.0",
+  "platform": "darwin arm64",
+  "probe": {
+    "file": "probe.elf",
+    "base": 4096,
+    "bytes": 108,
+    "mmio": {
+      "address": 4294901776,
+      "value": 1
+    },
+    "instructionsToMmio": 3,
+    "instructions": 6
+  },
+  "sizes": {
+    "whisper.js": {
+      "raw": 96479,
+      "gzip": 26416
+    },
+    "whisper.wasm": {
+      "raw": 4095232,
+      "gzip": 942411
+    },
+    "riscv_rs.js": {
+      "raw": 21889,
+      "gzip": 4591
+    },
+    "riscv_rs_bg.wasm": {
+      "raw": 132561,
+      "gzip": 53078
+    }
+  },
+  "reservations": {
+    "whisper.wasm": {
+      "pages": 4096,
+      "bytes": 268435456,
+      "maxPages": 4096
+    },
+    "riscv_rs_bg.wasm": {
+      "pages": 17,
+      "bytes": 1114112,
+      "maxPages": null
+    }
+  },
+  "summary": {
+    "rust": {
+      "firstInstMs": {
+        "median": 6.5,
+        "best": 4.1,
+        "samples": [
+          10.4,
+          6.5,
+          5.6,
+          5.8,
+          6.8,
+          7.1,
+          4.1
+        ]
+      },
+      "exitMs": {
+        "median": 6.8,
+        "best": 4.3
+      },
+      "memoryBytes": 1835008
+    },
+    "cpp-acdfim": {
+      "firstInstMs": {
+        "median": 46.8,
+        "best": 39.5,
+        "samples": [
+          57.9,
+          46.8,
+          44.8,
+          45,
+          47.8,
+          47.2,
+          39.5
+        ]
+      },
+      "exitMs": {
+        "median": 154.2,
+        "best": 147.4
+      },
+      "memoryBytes": 268435456
+    },
+    "cpp-app": {
+      "firstInstMs": {
+        "median": 46.2,
+        "best": 40.3,
+        "samples": [
+          45.5,
+          49.4,
+          46,
+          40.3,
+          50.1,
+          49.8,
+          46.2
+        ]
+      },
+      "exitMs": {
+        "median": 153.3,
+        "best": 147.6
+      },
+      "memoryBytes": 268435456
+    },
+    "cpp-16mb": {
+      "firstInstMs": {
+        "median": 31.6,
+        "best": 27.5,
+        "samples": [
+          31.6,
+          34.6,
+          27.7,
+          31.4,
+          35.9,
+          27.5,
+          32.9
+        ]
+      },
+      "exitMs": {
+        "median": 137,
+        "best": 132.5
+      },
+      "memoryBytes": 268435456
+    }
+  },
+  "failures": []
+}

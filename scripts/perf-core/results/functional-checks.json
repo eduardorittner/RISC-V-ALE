@@ -11,7 +11,7 @@
     {
       "name": "mmio",
       "stdout": "Z\n",
-      "stderr": "Target program exited with code 0\nStopped -- interrupted\nUser stop\nRetired 16 instructions in 0.00s  16000 inst/s\n",
+      "stderr": "Target program exited with code 0\nStopped -- interrupted\nUser stop\nRetired 16 instructions in 0.00s  8000 inst/s\n",
       "mmio": {
         "16": 90,
         "17": 0,

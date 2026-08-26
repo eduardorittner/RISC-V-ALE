@@ -23,6 +23,7 @@
 #   EMSDK_PYTHON a Python 3.10 or later        (default: from uv, if present)
 #   SWERV_DIR    the SweRV-ISS source          (default crates/riscv-rs/SweRV-ISS-1)
 #   BOOST_DIR    the vendored Boost            (default crates/riscv-rs/vendor)
+#   TOTAL_MEMORY the linear memory, in bytes   (default 167772160, 160 MB)
 #   EXTRA_FLAGS  more compile flags            (default empty)
 #   NO_PATCHES   set it to skip patches/*.patch (default: apply them)
 #   BUILD_TAG    name of the build directory   (default "default")
@@ -39,6 +40,14 @@ EMSDK_DIR="${EMSDK_DIR:-$HOME/emsdk}"
 SWERV_DIR="${SWERV_DIR:-$REPO/crates/riscv-rs/SweRV-ISS-1}"
 BOOST_DIR="${BOOST_DIR:-$REPO/crates/riscv-rs/vendor}"
 EXTRA_FLAGS="${EXTRA_FLAGS:-}"
+# 160 MB. The guest memory of whisper is 128 MB (`1 << 27`, whisper.cpp line
+# 1672) and the application puts the guest stack at the top of it
+# (`so_stack_pointer_value` is 0x7FFFFFC in index.html), so 128 MB is the
+# smallest safe guest memory. A module needs 10.5 to 12 MB more than that for
+# its own heap: 140 MB runs and 138 MB stops with `Aborted(OOM)`. 160 MB
+# leaves 32 MB for the heap, which is 2.7 times the measured need.
+# `local/prog.md`, section "Step 5", records the measurements.
+TOTAL_MEMORY="${TOTAL_MEMORY:-167772160}"
 BUILD_TAG="${BUILD_TAG:-default}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc || echo 4)}"
 
@@ -95,6 +104,7 @@ source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
 echo "Emscripten: $(em++ --version | head -1)"
 echo "Source:     $SWERV_DIR ($HEAD_COMMIT)"
 echo "Flags:      -O3 ... $EXTRA_FLAGS"
+echo "Memory:     $TOTAL_MEMORY bytes ($((TOTAL_MEMORY / 1048576)) MB)"
 echo "Build tag:  $BUILD_TAG"
 echo ""
 
@@ -147,7 +157,7 @@ fi
 
 # Line 79 of the GNUmakefile, and nothing else, plus what a step adds.
 OFLAGS="-O3 -Wno-c++11-narrowing -fno-builtin -D__EMSCRIPTEN__"
-OFLAGS="$OFLAGS -DDISABLE_EXCEPTIONS -s TOTAL_MEMORY=268435456 -s ASYNCIFY"
+OFLAGS="$OFLAGS -DDISABLE_EXCEPTIONS -s TOTAL_MEMORY=$TOTAL_MEMORY -s ASYNCIFY"
 OFLAGS="$OFLAGS $EXTRA_FLAGS"
 
 # The source is from 2021 and the compiler is from 2026. These force-includes
@@ -196,6 +206,13 @@ LINK_LIBS="$LINK_LIBS -sEXPORTED_RUNTIME_METHODS=$EXPORTS"
 LINK_LIBS="$LINK_LIBS -sALLOW_MEMORY_GROWTH=0"
 LINK_LIBS="$LINK_LIBS $BINARYEN_ARGS"
 
+# The link rule had `-s TOTAL_MEMORY=268435456 -lworkerfs.js -s ASYNCIFY`
+# written into it, after LINK_LIBS. An Emscripten setting that comes later on
+# the command line wins, so nothing in LINK_LIBS can change the memory size.
+# `patches/0001-parameterize-the-link-flags.patch` puts those three settings
+# into EM_LINK_FLAGS, which this line then sets.
+EM_LINK_FLAGS="-s TOTAL_MEMORY=$TOTAL_MEMORY -lworkerfs.js -s ASYNCIFY"
+
 BUILD_DIR="build-wasm"
 
 echo "==> Building whisper"
@@ -205,6 +222,7 @@ make -C "$SRC" -j"$JOBS" \
   BOOST_LIB_DIR="$BOOST_WASM_LIB" \
   LINK_DIRS="" \
   LINK_LIBS="$LINK_LIBS" \
+  EM_LINK_FLAGS="$EM_LINK_FLAGS" \
   OFLAGS="$OFLAGS" \
   CXXFLAGS="$COMPAT" \
   CFLAGS="$COMPAT" \

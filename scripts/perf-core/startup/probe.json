@@ -1,0 +1,11 @@
+{
+  "file": "probe.elf",
+  "base": 4096,
+  "bytes": 108,
+  "mmio": {
+    "address": 4294901776,
+    "value": 1
+  },
+  "instructionsToMmio": 3,
+  "instructions": 6
+}
