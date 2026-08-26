@@ -26,7 +26,10 @@
 #   TOTAL_MEMORY the linear memory, in bytes   (default 167772160, 160 MB)
 #   SLOPPY_FLAGS -DFAST_SLOPPY                 (step 4; set it empty to undo)
 #   TRIM_FLAGS   the -DALE_NO_* guards         (step 6; set it empty to undo)
+#   RV32_FLAGS   -DALE_NO_RV64                 (step 7; set it empty to undo)
 #   EXTRA_FLAGS  more compile flags            (default empty)
+#   LINK_EXTRA   more link flags               (default empty)
+#   NO_INSTALL   set it to keep the module out of modules/ (default: install)
 #   NO_PATCHES   set it to skip patches/*.patch (default: apply them)
 #   BUILD_TAG    name of the build directory   (default "default")
 #   JOBS         parallel compile jobs         (default: the processor count)
@@ -37,8 +40,8 @@
 #
 # Usage:
 #   scripts/build-whisper/build.sh
-#   SLOPPY_FLAGS= TRIM_FLAGS= TOTAL_MEMORY=268435456 BUILD_TAG=step-3 \
-#     scripts/build-whisper/build.sh
+#   SLOPPY_FLAGS= TRIM_FLAGS= RV32_FLAGS= TOTAL_MEMORY=268435456 \
+#     BUILD_TAG=step-3 scripts/build-whisper/build.sh
 
 set -euo pipefail
 
@@ -79,6 +82,15 @@ SLOPPY_FLAGS="${SLOPPY_FLAGS--DFAST_SLOPPY}"
 # The interactive shell is **not** in this list. The application uses it: the
 # "run with debug" button passes --interactive.
 TRIM_FLAGS="${TRIM_FLAGS--DALE_NO_VECTOR -DALE_NO_BITMANIP -DALE_NO_GDB -DALE_NO_SERVER -DALE_NO_SNAPSHOT}"
+
+# Step 7. Every template of the core is instantiated two times, one for
+# `uint32_t` and one for `uint64_t`. RISC-V ALE has no RV64 toolchain and no way
+# to ask for one: the ISA checkboxes of index.html make an RV32 string, and the
+# clang of the application builds an RV32 ELF. `patches/0004` puts the second
+# instantiation of each template behind this macro. The `--xlen 64` path of
+# whisper.cpp goes with it, and it then answers "This build has no RV64
+# support".
+RV32_FLAGS="${RV32_FLAGS--DALE_NO_RV64}"
 
 BUILD_TAG="${BUILD_TAG:-default}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc || echo 4)}"
@@ -135,7 +147,7 @@ source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
 
 echo "Emscripten: $(em++ --version | head -1)"
 echo "Source:     $SWERV_DIR ($HEAD_COMMIT)"
-echo "Flags:      -O3 ... $SLOPPY_FLAGS $TRIM_FLAGS $EXTRA_FLAGS"
+echo "Flags:      -O3 ... $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $EXTRA_FLAGS"
 echo "Memory:     $TOTAL_MEMORY bytes ($((TOTAL_MEMORY / 1048576)) MB)"
 echo "Build tag:  $BUILD_TAG"
 echo ""
@@ -190,7 +202,7 @@ fi
 # Line 79 of the GNUmakefile, and nothing else, plus what a step adds.
 OFLAGS="-O3 -Wno-c++11-narrowing -fno-builtin -D__EMSCRIPTEN__"
 OFLAGS="$OFLAGS -DDISABLE_EXCEPTIONS -s TOTAL_MEMORY=$TOTAL_MEMORY -s ASYNCIFY"
-OFLAGS="$OFLAGS $SLOPPY_FLAGS $TRIM_FLAGS $EXTRA_FLAGS"
+OFLAGS="$OFLAGS $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $EXTRA_FLAGS"
 
 # The source is from 2021 and the compiler is from 2026. These force-includes
 # are the ones that the differential harness already uses for the native
@@ -237,6 +249,11 @@ LINK_LIBS="$BOOST_WASM_LIB/libboost_program_options.a"
 LINK_LIBS="$LINK_LIBS -sEXPORTED_RUNTIME_METHODS=$EXPORTS"
 LINK_LIBS="$LINK_LIBS -sALLOW_MEMORY_GROWTH=0"
 LINK_LIBS="$LINK_LIBS $BINARYEN_ARGS"
+# LINK_EXTRA is for a measurement and not for a step. `--emit-symbol-map`
+# writes `whisper.js.symbols`, which `scripts/perf-core/startup/wasm_sizes.cjs`
+# needs to say how large each subsystem is. Use it with NO_INSTALL, because a
+# module for a measurement must not become the module that the branch ships.
+LINK_LIBS="$LINK_LIBS ${LINK_EXTRA:-}"
 
 # The link rule had `-s TOTAL_MEMORY=268435456 -lworkerfs.js -s ASYNCIFY`
 # written into it, after LINK_LIBS. An Emscripten setting that comes later on
@@ -263,10 +280,16 @@ make -C "$SRC" -j"$JOBS" \
 mkdir -p "$OUT"
 cp "$SRC/$BUILD_DIR/whisper.js" "$OUT/whisper.js"
 cp "$SRC/$BUILD_DIR/whisper.wasm" "$OUT/whisper.wasm"
-
-cp "$OUT/whisper.js" "$REPO/modules/whisper.js"
-cp "$OUT/whisper.wasm" "$REPO/modules/whisper.wasm"
+[ -f "$SRC/$BUILD_DIR/whisper.js.symbols" ] &&
+  cp "$SRC/$BUILD_DIR/whisper.js.symbols" "$OUT/whisper.js.symbols"
 
 echo ""
 echo "==> Done"
-ls -l "$REPO/modules/whisper.js" "$REPO/modules/whisper.wasm"
+if [ -n "${NO_INSTALL:-}" ]; then
+  echo "NO_INSTALL is set, so modules/ does not change."
+  ls -l "$OUT/whisper.js" "$OUT/whisper.wasm"
+else
+  cp "$OUT/whisper.js" "$REPO/modules/whisper.js"
+  cp "$OUT/whisper.wasm" "$REPO/modules/whisper.wasm"
+  ls -l "$REPO/modules/whisper.js" "$REPO/modules/whisper.wasm"
+fi

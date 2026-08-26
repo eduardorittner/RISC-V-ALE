@@ -1,0 +1,286 @@
+--- a/bitmanip.cpp
++++ b/bitmanip.cpp
+@@ -2283,4 +2283,6 @@
+ 
+ 
+ template class WdRiscv::Hart<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Hart<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/Core.cpp
++++ b/Core.cpp
+@@ -38,4 +38,6 @@
+ 
+ 
+ template class WdRiscv::Core<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Core<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/CsRegs.cpp
++++ b/CsRegs.cpp
+@@ -1770,4 +1770,6 @@
+ 
+ 
+ template class WdRiscv::CsRegs<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::CsRegs<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/decode.cpp
++++ b/decode.cpp
+@@ -2100,4 +2100,6 @@
+ 
+ 
+ template class WdRiscv::Hart<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Hart<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/disas.cpp
++++ b/disas.cpp
+@@ -2902,4 +2902,6 @@
+ 
+ 
+ template class WdRiscv::Hart<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Hart<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/float.cpp
++++ b/float.cpp
+@@ -2685,4 +2685,6 @@
+ 
+ 
+ template class WdRiscv::Hart<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Hart<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/gdb.cpp
++++ b/gdb.cpp
+@@ -47,7 +47,9 @@
+ }
+ 
+ template void handleExceptionForGdb<uint32_t>(WdRiscv::Hart<uint32_t>&, int);
++#ifndef ALE_NO_RV64
+ template void handleExceptionForGdb<uint64_t>(WdRiscv::Hart<uint64_t>&, int);
++#endif  // ALE_NO_RV64
+ 
+ #else
+ 
+@@ -832,6 +834,8 @@
+ 
+ 
+ template void handleExceptionForGdb<uint32_t>(WdRiscv::Hart<uint32_t>&, int);
++#ifndef ALE_NO_RV64
+ template void handleExceptionForGdb<uint64_t>(WdRiscv::Hart<uint64_t>&, int);
++#endif  // ALE_NO_RV64
+ 
+ #endif  // ALE_NO_GDB
+--- a/Hart.cpp
++++ b/Hart.cpp
+@@ -11445,46 +11445,65 @@
+ bool
+ WdRiscv::Hart<uint32_t>::store<uint64_t>(uint32_t, uint32_t, uint32_t, uint64_t);
+ 
++#ifndef ALE_NO_RV64
+ template
+ bool
+ WdRiscv::Hart<uint64_t>::store<uint32_t>(uint32_t, uint64_t, uint64_t, uint32_t);
++#endif  // ALE_NO_RV64
+ 
++#ifndef ALE_NO_RV64
+ template
+ bool
+ WdRiscv::Hart<uint64_t>::store<uint64_t>(uint32_t, uint64_t, uint64_t, uint64_t);
++#endif  // ALE_NO_RV64
+ 
+ template
+ ExceptionCause
+ WdRiscv::Hart<uint32_t>::determineStoreException<uint8_t>(uint32_t, uint32_t, uint64_t&, uint8_t&, WdRiscv::SecondaryCause&, bool&);
+ 
++#ifndef ALE_NO_RV64
+ template
+ ExceptionCause
+ WdRiscv::Hart<uint64_t>::determineStoreException<uint8_t>(uint32_t, uint64_t, uint64_t&, uint8_t&, WdRiscv::SecondaryCause&, bool&);
++#endif  // ALE_NO_RV64
+ 
+ template
+ ExceptionCause
+ WdRiscv::Hart<uint32_t>::determineStoreException<uint16_t>(uint32_t, uint32_t, uint64_t&, uint16_t&, WdRiscv::SecondaryCause&, bool&);
+ 
++#ifndef ALE_NO_RV64
+ template
+ ExceptionCause
+ WdRiscv::Hart<uint64_t>::determineStoreException<uint16_t>(uint32_t, uint64_t, uint64_t&, uint16_t&, WdRiscv::SecondaryCause&, bool&);
++#endif  // ALE_NO_RV64
+ 
+ template
+ ExceptionCause
+ WdRiscv::Hart<uint32_t>::determineStoreException<uint32_t>(uint32_t, uint32_t, uint64_t&, uint32_t&, WdRiscv::SecondaryCause&, bool&);
+ 
++#ifndef ALE_NO_RV64
+ template
+ ExceptionCause
+ WdRiscv::Hart<uint64_t>::determineStoreException<uint32_t>(uint32_t, uint64_t, uint64_t&, uint32_t&, WdRiscv::SecondaryCause&, bool&);
++#endif  // ALE_NO_RV64
+ 
+ template
+ ExceptionCause
+ WdRiscv::Hart<uint32_t>::determineStoreException<uint64_t>(uint32_t, uint32_t, uint64_t&, uint64_t&, WdRiscv::SecondaryCause&, bool&);
+ 
++#ifndef ALE_NO_RV64
+ template
+ ExceptionCause
+ WdRiscv::Hart<uint64_t>::determineStoreException<uint64_t>(uint32_t, uint64_t, uint64_t&, uint64_t&, WdRiscv::SecondaryCause&, bool&);
++#endif  // ALE_NO_RV64
+ 
+ 
+ template class WdRiscv::Hart<uint32_t>;
++// RISC-V ALE has no RV64 toolchain and no way to ask for one: the ISA
++// checkboxes of index.html make an RV32 string, and clang builds an RV32 ELF.
++// ALE_NO_RV64 therefore takes the second instantiation of every template out
++// of the module. The primary template and the RV32 instantiation do not
++// change, so no guest program sees a difference.
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Hart<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/HartConfig.cpp
++++ b/HartConfig.cpp
+@@ -1808,32 +1808,42 @@
+ template bool
+ HartConfig::applyConfig<uint32_t>(Hart<uint32_t>&, bool, bool) const;
+ 
++#ifndef ALE_NO_RV64
+ template bool
+ HartConfig::applyConfig<uint64_t>(Hart<uint64_t>&, bool, bool) const;
++#endif  // ALE_NO_RV64
+ 
+ template bool
+ HartConfig::configHarts<uint32_t>(System<uint32_t>&, const std::string&,
+                                   bool) const;
+ 
++#ifndef ALE_NO_RV64
+ template bool
+ HartConfig::configHarts<uint64_t>(System<uint64_t>&, const std::string&,
+                                   bool) const;
++#endif  // ALE_NO_RV64
+ 
+ template bool
+ HartConfig::configMemory(System<uint32_t>&, bool, bool, bool) const;
+ 
++#ifndef ALE_NO_RV64
+ template bool
+ HartConfig::configMemory(System<uint64_t>&, bool, bool, bool) const;
++#endif  // ALE_NO_RV64
+ 
+ 
+ template bool
+ HartConfig::applyMemoryConfig<uint32_t>(Hart<uint32_t>&, bool, bool) const;
+ 
++#ifndef ALE_NO_RV64
+ template bool
+ HartConfig::applyMemoryConfig<uint64_t>(Hart<uint64_t>&, bool, bool) const;
++#endif  // ALE_NO_RV64
+ 
+ template bool
+ HartConfig::finalizeCsrConfig<uint32_t>(System<uint32_t>&) const;
+ 
++#ifndef ALE_NO_RV64
+ template bool
+ HartConfig::finalizeCsrConfig<uint64_t>(System<uint64_t>&) const;
++#endif  // ALE_NO_RV64
+--- a/Interactive.cpp
++++ b/Interactive.cpp
+@@ -1686,4 +1686,6 @@
+ 
+ 
+ template class WdRiscv::Interactive<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Interactive<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/IntRegs.cpp
++++ b/IntRegs.cpp
+@@ -64,4 +64,6 @@
+ 
+ 
+ template class WdRiscv::IntRegs<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::IntRegs<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/Server.cpp
++++ b/Server.cpp
+@@ -973,4 +973,6 @@
+ 
+ 
+ template class WdRiscv::Server<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Server<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/snapshot.cpp
++++ b/snapshot.cpp
+@@ -256,4 +256,6 @@
+ 
+ 
+ template class WdRiscv::Hart<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Hart<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/Syscall.cpp
++++ b/Syscall.cpp
+@@ -1573,4 +1573,6 @@
+ }
+ 
+ template class WdRiscv::Syscall<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Syscall<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/System.cpp
++++ b/System.cpp
+@@ -63,4 +63,6 @@
+ 
+ 
+ template class WdRiscv::System<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::System<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/Triggers.cpp
++++ b/Triggers.cpp
+@@ -679,7 +679,11 @@
+ 
+ 
+ template class WdRiscv::Trigger<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Trigger<uint64_t>;
++#endif  // ALE_NO_RV64
+ 
+ template class WdRiscv::Triggers<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Triggers<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/vector.cpp
++++ b/vector.cpp
+@@ -10530,4 +10530,6 @@
+ 
+ 
+ template class WdRiscv::Hart<uint32_t>;
++#ifndef ALE_NO_RV64
+ template class WdRiscv::Hart<uint64_t>;
++#endif  // ALE_NO_RV64
+--- a/whisper.cpp
++++ b/whisper.cpp
+@@ -1832,8 +1832,18 @@
+     {
+       if (regWidth == 32)
+ 	ok = session<uint32_t>(args, config);
++#ifndef ALE_NO_RV64
+       else if (regWidth == 64)
+ 	ok = session<uint64_t>(args, config);
++#else
++      else if (regWidth == 64)
++	{
++	  // This build instantiates the templates for RV32 only. RISC-V ALE
++	  // has no RV64 toolchain, so nothing can reach this.
++	  std::cerr << "This build has no RV64 support\n";
++	  ok = false;
++	}
++#endif
+       else
+ 	{
+ 	  std::cerr << "Invalid register width: " << regWidth;

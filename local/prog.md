@@ -18,6 +18,7 @@ each finding that a later step must know.
 | 4. Add `-DFAST_SLOPPY` | Complete | 1.00x / 1.57x / 0.99x. The `memcpy` figure is below half of the plan estimate, and the cause is an error in the estimate. |
 | 5. Size the linear memory | Complete | 256 MB to 160 MB. The 64 MB target of the plan is not reachable: the stack pointer of the application pins the guest memory at 128 MB. |
 | 6. Trim the source list | Complete | `whisper.wasm` from 4,095,232 to 2,393,197 bytes (−41.6%). No source list edit was necessary. The interactive shell stays: the application uses it. |
+| 7. RV32-only build | Complete | `whisper.wasm` from 2,393,197 to 1,757,149 bytes (−26.6%). The 1 to 1.5 MB target of steps 6 and 7 is not reached: 909 KB of the module does not depend on the register width. |
 
 A rebuild needed one link option that the GNUmakefile does not have. Without
 it a rebuild is twelve times slower than the module the fork shipped. The
@@ -834,9 +835,10 @@ again.
 | `whisper.js`, gzip | 26,416 | 21,873 | −17.2% |
 
 The module has 2,771 functions after the step, and the largest is 234,376
-bytes, which is `Hart<URV>::execute`. The Rust module is 132,561 bytes, so the
-C++ module is 18 times as large after this step and 31 times as large before
-it.
+bytes. (Step 7 named that function with a symbol map: it is
+`InstTable::setupInstVec()`, and not `Hart<URV>::execute`.) The Rust module is
+132,561 bytes, so the C++ module is 18 times as large after this step and 31
+times as large before it.
 
 The combined target of steps 6 and 7 is a raw module of 1 MB to 1.5 MB. Step 6
 gives 2.39 MB.
@@ -926,6 +928,180 @@ not use that configuration after step 2. The cause was not investigated.
 
 `build(whisper): remove the subsystems that ALE does not use`
 
+## Step 7: RV32-only build
+
+**State: complete.** `whisper.wasm` goes from 2,393,197 to 1,757,149 bytes,
+which is 26.6% less. The combined target of steps 6 and 7 is a raw module of
+1 MB to 1.5 MB, and the module is 1.76 MB, so the target is not reached. A
+symbol map says why, and the answer is below: 909 KB of what is left has no
+connection to the register width.
+
+### What the step changes
+
+`RV32_FLAGS=-DALE_NO_RV64` and `patches/0004`. Each template of the core is
+instantiated two times, one for `uint32_t` and one for `uint64_t`. The patch
+puts the second instantiation of each one behind the macro:
+
+| Site | Count |
+| --- | --- |
+| `template class WdRiscv::X<uint64_t>;` at the end of a `.cpp` file | 16 |
+| `handleExceptionForGdb<uint64_t>` in `gdb.cpp`, one in each branch of the `ALE_NO_GDB` guard | 2 |
+| The member-template instantiations at the end of `Hart.cpp` (`store` and `determineStoreException`) | 6 |
+| The member-template instantiations at the end of `HartConfig.cpp` | 5 |
+| The `session<uint64_t>` call in `main` | 1 |
+
+The `template <>` member specializations for `Hart<uint64_t>` stay:
+`execMulh`, `execMulhsu`, `execMulhu` and `execLd` in `Hart.cpp`, and five
+`execFcvt` and `execFmv` functions in `float.cpp`. They are ten small
+functions, nothing references them when the class is not instantiated, and
+`wasm-ld --gc-sections` takes them out. The symbol map of the new module
+confirms that none of them is in it. The patch is therefore mechanical: it
+adds a guard and it removes no code.
+
+### RISC-V ALE cannot ask for RV64
+
+`whisper.cpp` takes the register width from the command line (`--xlen`), then
+from the configuration file, then from the class of the ELF file. All three say
+32 in RISC-V ALE:
+
+- Nothing in the application passes `--xlen`. The word does not appear outside
+  the SweRV-ISS source.
+- The clang of the application is hard-wired to RV32. `modules/clang_worker.js`
+  line 15 passes `-triple riscv32--` and `-target-abi ilp32d`, and line 23 does
+  the same for the assembler. A user cannot change it from the interface.
+- The ELF file that `ld.lld` then writes is ELFCLASS32.
+
+With the guard, an RV64 ELF gets the answer "This build has no RV64 support"
+and the program does not run. Before the guard it ran.
+
+### The result: the module size
+
+| File | Step 6 | Step 7 | Change |
+| --- | --- | --- | --- |
+| `whisper.wasm`, raw | 2,393,197 | 1,757,149 | **−26.6%** |
+| `whisper.wasm`, gzip | 605,256 | 475,406 | −21.5% |
+| `whisper.js`, raw | 79,734 | 79,734 | none |
+| Functions | 2,771 | 2,271 | −500 |
+
+`whisper.js` does not change at all. It is the Emscripten loader, and it holds
+no core code.
+
+Against the state before step 6, `whisper.wasm` goes from 4,095,232 to
+1,757,149 bytes, which is 57.1% less. It is 13.3 times the size of the Rust
+module, against 30.9 times before step 6.
+
+### Where the module is
+
+The step needed to know what is in the module, so `build.sh` has two new
+options: `LINK_EXTRA=--emit-symbol-map` writes the symbol map, and
+`NO_INSTALL=1` keeps a module that is for a measurement out of `modules/`. The
+`.wasm` file of a symbol-map build has the same size as the module the branch
+ships (2,393,197 and 1,757,149 bytes), so the attribution below is an
+attribution of the shipped modules.
+
+`scripts/perf-core/startup/wasm_sizes.cjs --group` gives the size of each
+subsystem. The bytes are the sum of the function bodies.
+
+| Subsystem | Step 6 | Step 7 | Change | Templated on the width |
+| --- | --- | --- | --- | --- |
+| The interpreter (`Hart`, `Core`, `System`, `DecodedInst`) | 547,404 | 265,278 | −282,126 | Yes |
+| Other (libc, libc++, Emscripten, Asyncify) | 509,331 | 487,936 | −21,395 | No |
+| The instruction table | 242,367 | 239,995 | −2,372 | No |
+| The disassembler | 234,586 | 117,285 | −117,301 | Yes |
+| Boost.program_options | 181,153 | 180,818 | −335 | No |
+| The configuration file (JSON) | 165,103 | 107,759 | −57,344 | Yes |
+| The CSRs | 137,197 | 69,873 | −67,324 | Yes |
+| The interactive shell | 86,403 | 50,280 | −36,123 | Yes |
+| The syscalls | 73,632 | 36,792 | −36,840 | Yes |
+| Memory, PMA and PMP | 60,410 | 56,936 | −3,474 | Yes |
+| Virtual memory | 21,490 | 21,496 | +6 | Yes |
+| The triggers | 14,995 | 7,206 | −7,789 | Yes |
+| The command line | 14,962 | 20,052 | +5,090 | No |
+| The vector extension, what is left of it | 4,788 | 4,788 | none | No |
+| **Total** | **2,293,821** | **1,666,494** | **−627,327** | |
+
+**Why the module did not halve.** The groups that the register width does not
+touch hold 909 KB of the 1,666 KB that is left:
+
+| Group | Bytes | What it is |
+| --- | --- | --- |
+| Other | 487,936 | libc, libc++, the Emscripten runtime and the Asyncify instrumentation. Step 8 attacks the last part. |
+| The instruction table | 239,995 | One function, `InstTable::setupInstVec()`, which builds the 482-entry table. It is not a template. |
+| Boost.program_options | 180,818 | The command-line parser, 296 functions. Nothing in RISC-V ALE needs a general parser: the worker sends a fixed argument list. |
+
+The groups that the width does touch went from 1,319,730 to 711,409 bytes,
+which is 46.1% less, and that is the halving the plan expects. The "command
+line" group grew by 5 KB, because `main` now has only one `session` call and
+the linker inlines more into it.
+
+### Correction to the step 6 section
+
+The step 6 section says that the largest function of the module, 234,376
+bytes, is `Hart<URV>::execute`. The symbol map says that it is
+`WdRiscv::InstTable::setupInstVec()`. `Hart<unsigned int>::execute` is 7,728
+bytes, which is what `-sBINARYEN_EXTRA_PASSES=-ocimfs=1` gives: the 482
+handlers stay outside it. The step 3 finding does not change, because a
+`--profiling-funcs` build named the 713,039-byte function of the first rebuild
+directly.
+
+`setupInstVec()` is also the reason the largest function is the same in step 6
+and in step 7. It is not a template, so the register width does not touch it.
+
+### Startup
+
+Median of 9, milliseconds.
+
+| Configuration | To the first instruction | ... the module | ... the core startup | To the exit |
+| --- | --- | --- | --- | --- |
+| Rust, step 7 | 6.3 | 1.8 | 2.3 | 6.5 |
+| C++ as the application starts it, step 6 | 47.3 | 7.7 | 38.5 | 154.7 |
+| C++ as the application starts it, step 7 | 46.3 | 6.9 | 38.5 | 153.3 |
+| C++ `--isa acdfim`, step 6 | 47.4 | 7.1 | 39.3 | 154.6 |
+| C++ `--isa acdfim`, step 7 | 44.1 | 6.3 | 36.8 | 150.2 |
+| C++ with a 16 MB guest memory, step 7 | 31.5 | 6.9 | 23.4 | 137.4 |
+
+The module part falls by 0.8 ms for 636 KB less module. This repeats the
+finding of step 6, and it is now measured two times on two different size
+changes: **the module size is not where the startup time is.**
+
+### Throughput
+
+Step 7 does not target throughput, and the estimate is 1.00x. Session
+`step-7-rv32`, median of 5, MIPS:
+
+| Configuration | `alu` | `memcpy` | `mixed` |
+| --- | --- | --- | --- |
+| Rust (the control) | 206.8 | 210.1 | 265.6 |
+| C++ `--isa acdfimsu` | 25.8 | 25.8 | 25.5 |
+| C++ `--isa acdfim` | 137.0 | 126.6 | 147.1 |
+
+Against step 6, with `--isa acdfim`:
+
+| Workload | Step 6 | Step 7 | Measured | Estimated | Result |
+| --- | --- | --- | --- | --- | --- |
+| `alu` | 135.1 | 137.0 | 1.01x | 1.00x | Inside the tolerance |
+| `memcpy` | 125.0 | 126.6 | 1.01x | 1.00x | Inside the tolerance |
+| `mixed` | 144.9 | 147.1 | 1.02x | 1.00x | Inside the tolerance |
+
+The Rust control of this session is 1% to 4% above the control of the step 6
+session, so the small gain is machine drift and not the step. Against the live
+control, the C++ core is at 66% / 60% / 55%, which is the same place as after
+step 6.
+
+### Functional checks
+
+| Check | Result |
+| --- | --- |
+| 1. Retired counts | PASS. Exact on all three workloads, both ISA strings. |
+| 2. The application | PASS |
+| 3. MMIO | PASS |
+| 4. Interrupts | PASS |
+| 5. The interactive shell | PASS |
+
+### Commit
+
+`build(whisper): instantiate for RV32 only`
+
 ## Where the plan stands
 
 Median of 5, MIPS, with `--isa acdfim`, which is what the application uses
@@ -939,8 +1115,9 @@ after step 2. The Rust column is the live control of each session.
 | Step 4, plus `-DFAST_SLOPPY` | 133.3 | 122.0 | 140.8 |
 | Step 5, a 160 MB linear memory | 131.6 | 122.0 | 140.8 |
 | Step 6, the subsystems that ALE cannot reach | 135.1 | 125.0 | 144.9 |
-| The Rust control, step 6 session | 204.3 | 201.2 | 260.4 |
-| Share of the control | 66% | 62% | 56% |
+| Step 7, RV32 only | 137.0 | 126.6 | 147.1 |
+| The Rust control, step 7 session | 206.8 | 210.1 | 265.6 |
+| Share of the control | 66% | 60% | 55% |
 
 The secondary metrics, which steps 5, 6 and 7 target:
 
@@ -949,6 +1126,7 @@ The secondary metrics, which steps 5, 6 and 7 target:
 | Step 4 | 256 MB | 46.2 ms | 4,095,232 bytes |
 | Step 5 | 160 MB | 47.1 ms | 4,095,232 bytes |
 | Step 6 | 160 MB | 47.3 ms | 2,393,197 bytes |
+| Step 7 | 160 MB | 46.3 ms | 1,757,149 bytes |
 | The Rust core | 1.8 MB | 6.3 ms | 132,561 bytes |
 
 Against the projection of section 10 of the plan:
@@ -994,6 +1172,15 @@ The total against the state RISC-V ALE shipped is 3.7x on `alu`, 3.9x on
   stack pointer of the application (`0x7FFFFFC`) pins the guest memory at
   128 MB, and that stack pointer is in every saved project link. The step 5
   section holds the audit.
+- **The size target of steps 6 and 7 is closed, not reached.** The module is
+  1,757,149 bytes against a target of 1 MB to 1.5 MB. The step 7 section holds
+  the attribution: 909 KB of the module is libc and libc++, the Emscripten
+  runtime, the Asyncify instrumentation, the 240 KB `setupInstVec()` function
+  and the 181 KB Boost.program_options parser. None of them depends on the
+  register width, and only the Asyncify part is in the scope of this plan.
+- **Boost.program_options is 181 KB and RISC-V ALE does not need a parser.**
+  The worker sends a fixed argument list. This is the largest single item that
+  no step of this plan removes, and a later plan can take it.
 - **The estimate for step 8 is too low.** The plan projects 1.12x to 1.39x
   from the ratio change 0.55 to 0.69. A direct measurement during the work on
   step 3 gives a much larger figure: with the same objects, a module without

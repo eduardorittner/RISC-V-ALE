@@ -38,6 +38,10 @@ that rule to 1, so a handler stays a function of its own:
 | Functions in the module | 2,277 | 5,298 | 5,122 |
 | `alu`, MIPS | 11 | 133 | 136 |
 
+With the option, `Hart<unsigned int>::execute` is 7,728 bytes and the largest
+function of the module is a different one: `InstTable::setupInstVec()`, which
+builds the 482-entry instruction table and is not a template.
+
 The two numbers on the right are close, which shows that the toolchain that
 made the shipped module did not have this behaviour. The Emscripten version is
 not the cause: 2.0.34, 3.1.74 and 6.0.8 all need the option and all give the
@@ -88,22 +92,49 @@ linker could not drop one. When the guard points those array entries at the
 handler and everything behind it. `whisper.wasm` falls from 4,095,232 to
 2,393,197 bytes that way.
 
+## RV32 only
+
+`RV32_FLAGS` holds `-DALE_NO_RV64`, which is the guard of step 7.
+`patches/0004` puts it around the second instantiation of every template.
+
+Each template of the core is instantiated two times, one for `uint32_t` and
+one for `uint64_t`:
+
+```cpp
+template class WdRiscv::Hart<uint32_t>;
+template class WdRiscv::Hart<uint64_t>;
+```
+
+**RISC-V ALE cannot ask for RV64.** The ISA checkboxes of `index.html` make an
+RV32 string, the clang of the application builds an RV32 ELF, and nothing
+passes `--xlen 64`. `whisper.cpp` chooses the width from the command line, the
+configuration file or the class of the ELF file, and all three say 32.
+
+The patch guards 20 instantiations in 18 files, and the `session<uint64_t>`
+call in `main` with them. With the guard on, an RV64 ELF gets the answer "This
+build has no RV64 support" instead of a simulation. The primary template and
+the RV32 instantiation do not change, so no guest program of the application
+sees a difference.
+
 ## Commands
 
 ```sh
-# The module this branch ships: steps 4, 5 and 6 together.
+# The module this branch ships: steps 4, 5, 6 and 7 together.
 scripts/build-whisper/build.sh
 
 # Step 3: no FAST_SLOPPY, no guards, 256 MB of linear memory.
-SLOPPY_FLAGS= TRIM_FLAGS= TOTAL_MEMORY=268435456 BUILD_TAG=step-3 \
-  scripts/build-whisper/build.sh
+SLOPPY_FLAGS= TRIM_FLAGS= RV32_FLAGS= TOTAL_MEMORY=268435456 \
+  BUILD_TAG=step-3 scripts/build-whisper/build.sh
 
 # Step 4: FAST_SLOPPY, still 256 MB and no guards.
-TRIM_FLAGS= TOTAL_MEMORY=268435456 BUILD_TAG=step-4 \
+TRIM_FLAGS= RV32_FLAGS= TOTAL_MEMORY=268435456 BUILD_TAG=step-4 \
   scripts/build-whisper/build.sh
 
 # Step 5: the smaller linear memory, still no guards.
-TRIM_FLAGS= BUILD_TAG=step-5 scripts/build-whisper/build.sh
+TRIM_FLAGS= RV32_FLAGS= BUILD_TAG=step-5 scripts/build-whisper/build.sh
+
+# Step 6: the subsystem guards, and both widths.
+RV32_FLAGS= BUILD_TAG=step-6 scripts/build-whisper/build.sh
 ```
 
 The script writes into `scripts/build-whisper/.build/<BUILD_TAG>/` and then
@@ -123,9 +154,29 @@ All options come through the environment.
 | `SWERV_DIR` | `crates/riscv-rs/SweRV-ISS-1` | The C++ source |
 | `BOOST_DIR` | `crates/riscv-rs/vendor` | The vendored Boost |
 | `TOTAL_MEMORY` | `167772160` | The linear memory, in bytes. See the section above. |
+| `SLOPPY_FLAGS` | `-DFAST_SLOPPY` | Step 4. Set it empty to undo. |
+| `TRIM_FLAGS` | the five `-DALE_NO_*` guards | Step 6. Set it empty to undo. |
+| `RV32_FLAGS` | `-DALE_NO_RV64` | Step 7. Set it empty to undo. |
 | `EXTRA_FLAGS` | empty | More compile flags |
+| `LINK_EXTRA` | empty | More link flags. `--emit-symbol-map` writes `whisper.js.symbols`, which `scripts/perf-core/startup/wasm_sizes.cjs` needs. |
+| `NO_INSTALL` | not set | Set it to keep the module out of `modules/`. Use it with `LINK_EXTRA`. |
 | `BUILD_TAG` | `default` | Name of the build directory |
 | `JOBS` | the processor count | Parallel compile jobs |
+
+## What is in the module
+
+A build with the symbol map says how large each subsystem is:
+
+```sh
+LINK_EXTRA=--emit-symbol-map NO_INSTALL=1 BUILD_TAG=sym \
+  scripts/build-whisper/build.sh
+node scripts/perf-core/startup/wasm_sizes.cjs \
+  scripts/build-whisper/.build/sym/whisper.wasm --group
+```
+
+The `.wasm` file of a symbol-map build has the same size as the module the
+branch ships, so the report is a report of the shipped module. `local/prog.md`,
+section "Step 7", holds the table.
 
 ## Prerequisites
 
