@@ -31,6 +31,10 @@
        * @param {boolean} opts.interrupts whether the interrupt path is on
        * @param {string} [opts.stdin] text to send to the guest
        * @param {number} [opts.stdinAfterMs] when to send it
+       * @param {object[]} [opts.interactive] commands for the whisper shell,
+       *   each `{afterMs, cmd}`. The shell takes one command for each call of
+       *   `getInteractiveCommand`, so two commands that arrive together become
+       *   one line. The driver spaces them in time for that reason.
        * @param {number} opts.timeoutMs
        * @returns {Promise<object>}
        */
@@ -48,11 +52,13 @@
 
           let worker;
           let done = false;
+          const pending = [];
           const finish = () => {
             if (done) return;
             done = true;
             clearTimeout(timer);
             clearTimeout(stdinTimer);
+            pending.forEach(clearTimeout);
             try {
               worker.terminate();
             } catch (e) {}
@@ -142,6 +148,16 @@
                   if (!done)
                     worker.postMessage({ type: "stdin", stdin: opts.stdin });
                 }, opts.stdinAfterMs || 500);
+              }
+
+              for (const step of opts.interactive || []) {
+                pending.push(
+                  setTimeout(() => {
+                    if (done) return;
+                    out.logs.push({ type: "sent_command", cmd: step.cmd });
+                    worker.postMessage({ type: "interactive", cmd: step.cmd });
+                  }, step.afterMs),
+                );
               }
             })
             .catch((err) => {

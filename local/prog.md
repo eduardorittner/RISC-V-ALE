@@ -17,6 +17,7 @@ each finding that a later step must know.
 | 3. Rebuild with unchanged flags | Complete | 0.98x / 0.86x / 0.79x. `mixed` regresses by 21% and the step accepts it in writing. The figures of step 3 are the new baseline. |
 | 4. Add `-DFAST_SLOPPY` | Complete | 1.00x / 1.57x / 0.99x. The `memcpy` figure is below half of the plan estimate, and the cause is an error in the estimate. |
 | 5. Size the linear memory | Complete | 256 MB to 160 MB. The 64 MB target of the plan is not reachable: the stack pointer of the application pins the guest memory at 128 MB. |
+| 6. Trim the source list | Complete | `whisper.wasm` from 4,095,232 to 2,393,197 bytes (−41.6%). No source list edit was necessary. The interactive shell stays: the application uses it. |
 
 A rebuild needed one link option that the GNUmakefile does not have. Without
 it a rebuild is twelve times slower than the module the fork shipped. The
@@ -767,6 +768,164 @@ the machine was a little faster in this session, not slower.
 
 `perf(whisper): reduce the linear memory reservation`
 
+## Step 6: Trim the source list
+
+**State: complete.** `whisper.wasm` goes from 4,095,232 to 2,393,197 bytes,
+which is 41.6% less. Two statements of the plan are not correct, and the two
+findings below hold them.
+
+### What the step changes
+
+Five macros, one for each subsystem that RISC-V ALE cannot reach.
+`scripts/build-whisper/build.sh` puts them in `TRIM_FLAGS`, and
+`patches/0002` and `patches/0003` hold the guards.
+
+| Macro | Subsystem | Why RISC-V ALE cannot reach it |
+| --- | --- | --- |
+| `ALE_NO_VECTOR` | The V extension | `index.html` has no V checkbox, so `isRvv()` is always false and `decodeVec` already answers with the illegal entry |
+| `ALE_NO_BITMANIP` | The B extension, `zba` to `zbt` | No checkbox either, and every handler already starts with an `isRvzb*` test that traps |
+| `ALE_NO_GDB` | The GDB stub | It needs a socket, which a browser worker does not have, and nothing passes `--gdb` |
+| `ALE_NO_SERVER` | The socket server | Nothing passes `--server` |
+| `ALE_NO_SNAPSHOT` | Save and load a snapshot | Nothing passes `--loadfrom` or `--snapshotperiod` |
+
+No guard changes what a guest program can do. The V and the B handlers were
+already unreachable, because the ISA string of the application has no `v` and
+no `b`. The guard removes the code behind a test that was always false.
+
+### Finding: the application uses the interactive shell
+
+The plan lists "the interactive shell" as a subsystem to remove. **That is not
+correct.** The "run with debug" button of the application passes
+`--interactive` (`assets/js/interface_elements.js` line 405 and
+`modules/assistant.js` line 233). The shell stays, and the disassembler stays
+with it, because the instruction trace of the shell uses it.
+
+The functional gate now has a check for the shell, which is check 5 of the
+table below. It runs `hello.elf` with `--interactive` and sends `peek pc`,
+`run` and `quit` through the same `interactive` message that
+`modules/simulator.js` sends. A build that removes the shell fails this check.
+
+### Finding: no source list edit was necessary
+
+The plan says to "remove from the build" the unused subsystems. A build list
+edit is not possible for the V and the B handlers, and it is not necessary for
+any of the five subsystems:
+
+- `Hart<URV>::execute` dispatches with a computed goto, and its label array
+  holds the address of every handler. A handler is therefore always referenced,
+  and the linker cannot drop it, whatever the build list says. This is the
+  reason the first attempt of this step changed the module size by 0 bytes.
+- When the guard points those array entries at the `illegal` label, the
+  reference goes and `wasm-ld --gc-sections` takes the handler and everything
+  behind it. The `.cpp` file stays in the build list and the object file stays
+  in `librvcore.a`.
+
+The step therefore adds compile-time guards only. It changes no build list,
+which also means that a build with `TRIM_FLAGS=` gives the module of step 5
+again.
+
+### The result: the module size
+
+| File | Step 5 | Step 6 | Change |
+| --- | --- | --- | --- |
+| `whisper.wasm`, raw | 4,095,232 | 2,393,197 | **−41.6%** |
+| `whisper.wasm`, gzip | 942,427 | 605,256 | −35.8% |
+| `whisper.js`, raw | 96,479 | 79,734 | −17.4% |
+| `whisper.js`, gzip | 26,416 | 21,873 | −17.2% |
+
+The module has 2,771 functions after the step, and the largest is 234,376
+bytes, which is `Hart<URV>::execute`. The Rust module is 132,561 bytes, so the
+C++ module is 18 times as large after this step and 31 times as large before
+it.
+
+The combined target of steps 6 and 7 is a raw module of 1 MB to 1.5 MB. Step 6
+gives 2.39 MB.
+
+### Finding: the module size is not the startup cost
+
+The startup harness now splits the time to the first instruction into two
+parts. `moduleMs` is the fetch, the compile and the instantiation of the
+module, which ends at the Emscripten `preRun` hook. `coreInitMs` is everything
+after that hook and before the first guest instruction: the instruction table,
+the CSRs, the decode cache, the guest memory and the program load.
+
+Median of 9, milliseconds. Both sessions are on this machine, one after the
+other.
+
+| Configuration | To the first instruction | ... the module | ... the core startup | To the exit |
+| --- | --- | --- | --- | --- |
+| Rust, step 6 | 6.3 | 1.9 | 2.4 | 6.5 |
+| C++ as the application starts it, step 5 | 47.1 | 8.7 | 37.3 | 153.5 |
+| C++ as the application starts it, step 6 | 47.3 | 7.7 | 38.5 | 154.7 |
+| C++ `--isa acdfim`, step 5 | 50.1 | 9.1 | 39.8 | 157.7 |
+| C++ `--isa acdfim`, step 6 | 47.4 | 7.1 | 39.3 | 154.6 |
+| C++ with a 16 MB guest memory, step 6 | 31.6 | 7.3 | 23.1 | 137.1 |
+
+**The module part is 8 ms of the 47 ms, and not 32 ms.** A module that is 41.6%
+smaller made that part about 1 ms shorter, which is at the edge of the noise.
+
+This corrects the step 5 section. It says "about 32 ms is the fetch, the
+compile and the instantiation of a 4 MB module". That was an inference from the
+total time, and the split measurement shows that it is wrong. The 47 ms divides
+like this:
+
+| Part | Time | Can a step change it? |
+| --- | --- | --- |
+| Fetch, compile and instantiate the module | 8 ms | Yes, but the whole part is 8 ms |
+| Zero the 128 MB guest memory | 16 ms | No. Step 5 closed this: the stack pointer of the application pins the guest memory. |
+| The instruction table, the CSRs, the 128K-entry decode cache and the program load | 23 ms | Not measured further. This is the largest part. |
+
+The 16 ms for the guest memory is the difference between the `coreInit` of the
+128 MB row and of the 16 MB row (39.3 against 23.1). Step 5 measured the same
+16 ms from the total.
+
+**What this means for the next steps.** Step 7 and step 8 make the module
+smaller again, and a smaller module cannot buy more than the 8 ms that this
+part costs in total. A step that wants the startup time must work on the 23 ms
+of the core startup, and the plan has no step for it.
+
+### Throughput
+
+Step 6 does not target throughput, and the estimate is 1.00x. Session
+`step-6-trim`, median of 5, MIPS:
+
+| Configuration | `alu` | `memcpy` | `mixed` |
+| --- | --- | --- | --- |
+| Rust (the control) | 204.3 | 201.2 | 260.4 |
+| C++ `--isa acdfimsu` | 25.2 | 25.6 | 25.0 |
+| C++ `--isa acdfim` | 135.1 | 125.0 | 144.9 |
+
+Against step 5, with `--isa acdfim`:
+
+| Workload | Step 5 | Step 6 | Measured | Estimated | Result |
+| --- | --- | --- | --- | --- | --- |
+| `alu` | 131.6 | 135.1 | 1.03x | 1.00x | Inside the tolerance |
+| `memcpy` | 122.0 | 125.0 | 1.02x | 1.00x | Inside the tolerance |
+| `mixed` | 140.8 | 144.9 | 1.03x | 1.00x | Inside the tolerance |
+
+The Rust control of this session is 3% below the control of the step 5 session
+(204.3 / 201.2 / 260.4 against 211.4 / 207.3 / 263.9), so the machine was a
+little slower in this session and the small gain is not machine drift. Against
+the live control, the C++ core goes from 62% / 59% / 53% to 66% / 62% / 56%.
+
+The `--isa acdfimsu` row falls from 27.6 / 27.6 / 27.1 to 25.2 / 25.6 / 25.0,
+which is 7% to 9%. That is inside the 15% tolerance, and the application does
+not use that configuration after step 2. The cause was not investigated.
+
+### Functional checks
+
+| Check | Result |
+| --- | --- |
+| 1. Retired counts | PASS. Exact on all three workloads, both ISA strings. |
+| 2. The application | PASS |
+| 3. MMIO | PASS |
+| 4. Interrupts | PASS |
+| 5. The interactive shell (new) | PASS. `peek pc` answers `0x00001000` and `run` reaches the write syscall. |
+
+### Commit
+
+`build(whisper): remove the subsystems that ALE does not use`
+
 ## Where the plan stands
 
 Median of 5, MIPS, with `--isa acdfim`, which is what the application uses
@@ -779,16 +938,18 @@ after step 2. The Rust column is the live control of each session.
 | Step 3, rebuilt from source | 133.3 | 77.8 | 141.8 |
 | Step 4, plus `-DFAST_SLOPPY` | 133.3 | 122.0 | 140.8 |
 | Step 5, a 160 MB linear memory | 131.6 | 122.0 | 140.8 |
-| The Rust control, step 5 session | 211.4 | 207.3 | 263.9 |
-| Share of the control | 62% | 59% | 53% |
+| Step 6, the subsystems that ALE cannot reach | 135.1 | 125.0 | 144.9 |
+| The Rust control, step 6 session | 204.3 | 201.2 | 260.4 |
+| Share of the control | 66% | 62% | 56% |
 
 The secondary metrics, which steps 5, 6 and 7 target:
 
 | Milestone | Reservation | To the first instruction | `whisper.wasm` |
 | --- | --- | --- | --- |
 | Step 4 | 256 MB | 46.2 ms | 4,095,232 bytes |
-| Step 5 | 160 MB | 47.0 ms | 4,095,232 bytes |
-| The Rust core | 1.8 MB | 6.5 ms | 132,561 bytes |
+| Step 5 | 160 MB | 47.1 ms | 4,095,232 bytes |
+| Step 6 | 160 MB | 47.3 ms | 2,393,197 bytes |
+| The Rust core | 1.8 MB | 6.3 ms | 132,561 bytes |
 
 Against the projection of section 10 of the plan:
 
@@ -821,10 +982,14 @@ The total against the state RISC-V ALE shipped is 3.7x on `alu`, 3.9x on
 - **Steps 6 and 7 do not target throughput.** Their metrics are the module
   size, the memory reservation and the time to the first instruction.
   `scripts/perf-core/startup/` reports all three.
-- **The module size is the startup cost that is left.** Step 5 measured it: of
-  the 47 ms to the first instruction, 15 ms is the 128 MB guest memory (which
-  cannot go down) and about 32 ms is the fetch, the compile and the
-  instantiation of a 4 MB module. The Rust core needs 6 ms for a 129 KB module.
+- **The module size is not the startup cost.** Step 6 measured the two parts
+  separately: of the 47 ms to the first instruction, 8 ms is the fetch, the
+  compile and the instantiation of the module, 16 ms is the zeroing of the
+  128 MB guest memory (which cannot go down), and 23 ms is the instruction
+  table, the CSRs, the 128K-entry decode cache and the program load. A module
+  that was 41.6% smaller made the first part about 1 ms shorter. Do not expect
+  step 7 or step 8 to buy startup time with size. The step 6 section holds the
+  measurement, and it corrects the step 5 section.
 - **The 64 MB reservation target of the plan is closed, not reached.** The
   stack pointer of the application (`0x7FFFFFC`) pins the guest memory at
   128 MB, and that stack pointer is in every saved project link. The step 5

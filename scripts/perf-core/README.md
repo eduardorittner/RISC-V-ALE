@@ -42,6 +42,7 @@ carries.
 | `validate_native.cjs` | Runs the native whisper oracle on each workload and checks the retired counts |
 | `checks/` | The functional gate of section 7 of the plan |
 | `startup/` | The startup and footprint metric of steps 5, 6 and 7 of the plan |
+| `startup/wasm_sizes.cjs` | What is big inside a `.wasm` module: the code section, the function count, the largest function and, with a symbol map, the size of each subsystem |
 | `run.cjs` | The driver. Serves the page, drives Chromium and writes the results |
 | `page/index.html` | The page. It gives the driver a `runOne()` function |
 | `page/worker_cpp.js` | The C++ core in a worker |
@@ -90,6 +91,7 @@ protocol as `modules/simulator.js`, so it tests what the application runs.
 | `hello.elf` | The `--newlib` write syscall reaches the terminal |
 | `mmio.elf` | `jsWriteMMIO` and `jsReadMMIO` work. The program writes `0x5A` to `0xffff0010`, reads it back and writes the byte to the terminal. The host also sees the write in the sync message. |
 | `stdin.elf` | The `--newlib` read syscall works with interrupts on. Until the host sends a character, `readFromStdin` reports -1 and `Syscall.cpp` waits in a loop around `emscripten_sleep(10)`. |
+| `hello.elf` with `--interactive` | The interactive shell of whisper works. This is what the "run with debug" button of the application uses. The check sends `peek pc`, `run` and `quit` through the same `interactive` message that `modules/simulator.js` sends. Step 6 needs this check: the plan lists the shell as unused, and that is not correct. |
 
 The driver takes the ISA string from the checkboxes of `index.html`, because
 that is where the application takes it from. `get_checked_ISAs()` in
@@ -113,8 +115,15 @@ not target throughput, so the benchmark harness cannot show their effect.
 | --- | --- |
 | Reservation | The initial size of the linear memory, from the memory section of the `.wasm` file. The worker confirms it at run time. |
 | To the first instruction | The time from the run message in the worker to the first guest write to the MMIO window. `startup/probe.elf` does that on its third instruction. It contains the fetch, the compile, the instantiation, the core startup and the program load. |
+| ... the module | The part of the figure above that ends at the Emscripten `preRun` hook: the fetch, the compile and the instantiation of the module, and nothing else. A smaller module makes this part shorter and no other part. |
+| ... the core startup | The rest: the instruction table, the CSRs, the decode cache, the guest memory and the program load. Step 6 measured that this part is the larger one by a factor of four. |
 | To the exit | The same clock, to the end of the program. |
 | Size | The raw and the gzip size of each module file. |
+
+`startup/wasm_sizes.cjs` reads a `.wasm` file and reports the size of the code
+section, the number of functions and the size of the largest function. With a
+symbol map from `em++ --emit-symbol-map` it also groups the functions by
+subsystem, which is how step 6 chose what to guard.
 
 Both cores get a new worker for each repetition here, which is not what the
 throughput harness does. A startup figure must be a cold start.

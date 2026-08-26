@@ -24,14 +24,21 @@
 #   SWERV_DIR    the SweRV-ISS source          (default crates/riscv-rs/SweRV-ISS-1)
 #   BOOST_DIR    the vendored Boost            (default crates/riscv-rs/vendor)
 #   TOTAL_MEMORY the linear memory, in bytes   (default 167772160, 160 MB)
+#   SLOPPY_FLAGS -DFAST_SLOPPY                 (step 4; set it empty to undo)
+#   TRIM_FLAGS   the -DALE_NO_* guards         (step 6; set it empty to undo)
 #   EXTRA_FLAGS  more compile flags            (default empty)
 #   NO_PATCHES   set it to skip patches/*.patch (default: apply them)
 #   BUILD_TAG    name of the build directory   (default "default")
 #   JOBS         parallel compile jobs         (default: the processor count)
 #
+# The default of every option is the module that this branch ships. A step of
+# the plan is reproducible with the variables above: each one names the step it
+# belongs to.
+#
 # Usage:
 #   scripts/build-whisper/build.sh
-#   EXTRA_FLAGS=-DFAST_SLOPPY BUILD_TAG=fast-sloppy scripts/build-whisper/build.sh
+#   SLOPPY_FLAGS= TRIM_FLAGS= TOTAL_MEMORY=268435456 BUILD_TAG=step-3 \
+#     scripts/build-whisper/build.sh
 
 set -euo pipefail
 
@@ -48,6 +55,31 @@ EXTRA_FLAGS="${EXTRA_FLAGS:-}"
 # leaves 32 MB for the heap, which is 2.7 times the measured need.
 # `local/prog.md`, section "Step 5", records the measurements.
 TOTAL_MEMORY="${TOTAL_MEMORY:-167772160}"
+
+# Step 4. The flag replaces Hart::load with Hart::fastLoad and takes the
+# attribute lookup, the triggers, the load queue, the stack check, the CLINT
+# test and the console-io test out of every load and store. It keeps the memory
+# bound test and the jsReadMMIO and jsWriteMMIO hooks.
+SLOPPY_FLAGS="${SLOPPY_FLAGS--DFAST_SLOPPY}"
+
+# Step 6. Each macro guards one subsystem that RISC-V ALE cannot reach.
+# `patches/0002` and `patches/0003` hold the guards, and the README says why
+# each subsystem is out of reach. Without a reference, the linker drops the
+# code and `librvcore.a` never gives up the object file.
+#
+#   ALE_NO_VECTOR    the V extension. There is no V checkbox in index.html,
+#                    and decodeVec already returns illegal without it.
+#   ALE_NO_BITMANIP  the B extension (zba to zbt). No checkbox either, and
+#                    every handler already starts with an isRvzb* test.
+#   ALE_NO_GDB       the GDB stub. It needs a socket, and nothing passes --gdb.
+#   ALE_NO_SERVER    the socket server. Nothing passes --server.
+#   ALE_NO_SNAPSHOT  save and load a snapshot. Nothing passes --loadfrom or
+#                    --snapshotperiod.
+#
+# The interactive shell is **not** in this list. The application uses it: the
+# "run with debug" button passes --interactive.
+TRIM_FLAGS="${TRIM_FLAGS--DALE_NO_VECTOR -DALE_NO_BITMANIP -DALE_NO_GDB -DALE_NO_SERVER -DALE_NO_SNAPSHOT}"
+
 BUILD_TAG="${BUILD_TAG:-default}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc || echo 4)}"
 
@@ -103,7 +135,7 @@ source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
 
 echo "Emscripten: $(em++ --version | head -1)"
 echo "Source:     $SWERV_DIR ($HEAD_COMMIT)"
-echo "Flags:      -O3 ... $EXTRA_FLAGS"
+echo "Flags:      -O3 ... $SLOPPY_FLAGS $TRIM_FLAGS $EXTRA_FLAGS"
 echo "Memory:     $TOTAL_MEMORY bytes ($((TOTAL_MEMORY / 1048576)) MB)"
 echo "Build tag:  $BUILD_TAG"
 echo ""
@@ -158,7 +190,7 @@ fi
 # Line 79 of the GNUmakefile, and nothing else, plus what a step adds.
 OFLAGS="-O3 -Wno-c++11-narrowing -fno-builtin -D__EMSCRIPTEN__"
 OFLAGS="$OFLAGS -DDISABLE_EXCEPTIONS -s TOTAL_MEMORY=$TOTAL_MEMORY -s ASYNCIFY"
-OFLAGS="$OFLAGS $EXTRA_FLAGS"
+OFLAGS="$OFLAGS $SLOPPY_FLAGS $TRIM_FLAGS $EXTRA_FLAGS"
 
 # The source is from 2021 and the compiler is from 2026. These force-includes
 # are the ones that the differential harness already uses for the native

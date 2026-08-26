@@ -16,6 +16,13 @@
  *     reads it back through `jsReadMMIO` and writes the byte to the terminal.
  *  4. Interrupts. `stdin.elf` waits for input with interrupts on, which is the
  *     `emscripten_sleep` path, and echoes the character it receives.
+ *  5. The debugger. `hello.elf` runs under `--interactive`, which is what the
+ *     "run with debug" button of the application uses
+ *     (`assets/js/interface_elements.js` line 405 and `modules/assistant.js`
+ *     line 233). The check sends `peek pc`, `run` and `quit` through the same
+ *     `interactive` message that `modules/simulator.js` sends. Step 6 of the
+ *     plan needs this check: the plan says that RISC-V ALE never uses the
+ *     interactive shell of whisper, and that is not correct.
  *
  * Check 1 (the retired counts) is part of `run.cjs`.
  *
@@ -103,7 +110,28 @@ async function main() {
     await client.waitForReady();
     await client.waitForGlobal("checksReady");
 
-    for (const p of manifest.programs) {
+    // The programs of the manifest, and then the debugger check, which reuses
+    // `hello.elf` with `--interactive`.
+    const runs = manifest.programs.map((p) => ({
+      name: p.name,
+      file: p.file,
+      describe: p.describe,
+    }));
+    runs.push({
+      name: "interactive",
+      file: "hello.elf",
+      describe: "the whisper shell, which the debug button of the application uses",
+      extraArgs: ["--interactive"],
+      // The shell polls with `emscripten_sleep(100)` and takes the whole
+      // buffered string as one line, so the commands must be spaced.
+      interactive: [
+        { afterMs: 1500, cmd: "peek pc" },
+        { afterMs: 3000, cmd: "run" },
+        { afterMs: 5000, cmd: "quit" },
+      ],
+    });
+
+    for (const p of runs) {
       const isStdin = p.name === "stdin";
       const opts = {
         elfUrl: `/scripts/perf-core/checks/programs/${p.file}`,
@@ -115,6 +143,7 @@ async function main() {
           `sp=${sp}`,
           "--isa",
           isa,
+          ...(p.extraArgs || []),
         ],
         // The interrupt check is the one that must run with interrupts on.
         interrupts: isStdin,
@@ -124,6 +153,7 @@ async function main() {
         opts.stdin = STDIN_CHAR;
         opts.stdinAfterMs = 1500;
       }
+      if (p.interactive) opts.interactive = p.interactive;
 
       const res = await client.evaluate(
         `runCheck(${JSON.stringify(opts)})`,
@@ -165,6 +195,14 @@ async function main() {
     } else if (r.name === "stdin") {
       ok = stdout.includes(STDIN_CHAR);
       why = ok ? "" : `stdout was ${JSON.stringify(stdout)}`;
+    } else if (r.name === "interactive") {
+      // `peek pc` answers with the program counter, and `run` then reaches the
+      // write syscall of the program.
+      const sawPc = /0x0*1000/.test(stdout);
+      ok = sawPc && stdout.includes("Hello, RISC-V ALE!");
+      why = ok
+        ? ""
+        : `saw the pc: ${sawPc}, stdout was ${JSON.stringify(stdout.slice(0, 200))}`;
     }
 
     if (!ok) failures++;

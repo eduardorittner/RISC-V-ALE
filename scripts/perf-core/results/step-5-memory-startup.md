@@ -1,15 +1,15 @@
 # step-5-memory — startup and footprint
 
-Commit: `445b118`  Repetitions: 7
+Commit: `4ed613d`  Repetitions: 9
 
 Median of the repetitions, milliseconds.
 
-| Configuration | To the first instruction | To the exit | Reservation |
-| --- | --- | --- | --- |
-| Rust (the control) | 6.2 | 6.4 | 1.8 MB |
-| C++ --isa acdfim | 48.0 | 154.4 | 160.0 MB |
-| C++ as the application starts it | 47.0 | 150.7 | 160.0 MB |
-| C++ with a 16 MB guest memory (not the application) | 32.0 | 136.6 | 160.0 MB |
+| Configuration | To the first instruction | ... the module | ... the core startup | To the exit | Reservation |
+| --- | --- | --- | --- | --- | --- |
+| Rust (the control) | 6.6 | 1.9 | 2.3 | 6.8 | 1.8 MB |
+| C++ --isa acdfim | 50.1 | 9.1 | 39.8 | 157.7 | 160.0 MB |
+| C++ as the application starts it | 47.1 | 8.7 | 37.3 | 153.5 | 160.0 MB |
+| C++ with a 16 MB guest memory (not the application) | 34.0 | 9.3 | 23.5 | 139.9 | 160.0 MB |
 
 Module size.
 

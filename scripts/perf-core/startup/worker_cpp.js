@@ -12,12 +12,16 @@
  * The timestamps:
  *
  *   t0        the worker has the run message. Nothing is fetched yet.
- *   tImport   the ELF is in the module file system and `importScripts` is
- *             about to fetch, compile and instantiate the module. `main` runs
- *             inside that call.
+ *   tImport   the ELF is fetched and `importScripts` is about to fetch,
+ *             compile and instantiate the module. `main` runs inside that call.
+ *   tReady    the `preRun` hook. Emscripten calls it after the instantiation
+ *             and before `main`, so `tReady - tImport` is the fetch, the
+ *             compile and the instantiation of the module, and nothing else.
  *   tFirstMmio the guest wrote to the MMIO window. `probe.elf` does that on
  *             its third instruction, so this is the time to the first
- *             instruction.
+ *             instruction. `tFirstMmio - tReady` is the startup of the core
+ *             itself: the instruction table, the CSRs, the decode cache, the
+ *             guest memory and the program load.
  *   tExit     the core called `finishExec`, so the program is finished and the
  *             figure is printed.
  */
@@ -27,6 +31,7 @@ var simulator_int_inst_delay = 1000;
 
 var t0 = 0;
 var tImport = 0;
+var tReady = 0;
 var tFirstMmio = 0;
 var tExit = 0;
 
@@ -88,6 +93,8 @@ function sendResult() {
         ? wasmMemory.buffer.byteLength
         : null,
     fetchMs: tImport - t0,
+    moduleMs: tReady - tImport,
+    coreInitMs: tFirstMmio - tReady,
     firstInstMs: tFirstMmio - t0,
     exitMs: tExit - t0,
     runMs: tExit - tFirstMmio,
@@ -105,6 +112,8 @@ var elfBytes = null;
 var elfPath = null;
 
 function initFS() {
+  // `preRun` runs after the instantiation and before `main`.
+  tReady = performance.now();
   FS.init(null, null, null);
   FS.mkdir("/working");
   FS.writeFile(elfPath, elfBytes);

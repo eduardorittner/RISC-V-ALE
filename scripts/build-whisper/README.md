@@ -60,19 +60,50 @@ measured need.
 **Do not go below 140 MB.** The functional gate finds it: a 138 MB module fails
 all three checks with `Aborted(OOM)`.
 
+## The subsystems that RISC-V ALE cannot reach
+
+`TRIM_FLAGS` holds the guards of step 6. Each macro takes one subsystem out of
+the module. The guards are in `patches/0002` and `patches/0003`, and none of
+them changes what a guest program can do.
+
+| Macro | Subsystem | Why RISC-V ALE cannot reach it |
+| --- | --- | --- |
+| `ALE_NO_VECTOR` | The V extension | `index.html` has no V checkbox, so `isRvv()` is always false and `decodeVec` already answers with the illegal entry. |
+| `ALE_NO_BITMANIP` | The B extension, `zba` to `zbt` | No checkbox either, and every handler already starts with an `isRvzb*` test that traps. |
+| `ALE_NO_GDB` | The GDB stub | It needs a socket, which a browser worker does not have, and nothing in the application passes `--gdb`. |
+| `ALE_NO_SERVER` | The socket server | Nothing passes `--server`. |
+| `ALE_NO_SNAPSHOT` | Save and load a snapshot | Nothing passes `--loadfrom` or `--snapshotperiod`. |
+
+**The interactive shell stays.** The plan of step 6 lists it as unused, and
+that is not correct: the "run with debug" button of the application passes
+`--interactive` (`assets/js/interface_elements.js` line 405 and
+`modules/assistant.js` line 233). The disassembler stays with it, because the
+instruction trace of that shell uses it. The functional gate has a check for
+the shell from step 6.
+
+Nothing needed a source list edit. `Hart<URV>::execute` dispatches with a
+computed goto, and its label array holds the address of every handler, so the
+linker could not drop one. When the guard points those array entries at the
+`illegal` label, the reference goes and `wasm-ld --gc-sections` takes the
+handler and everything behind it. `whisper.wasm` falls from 4,095,232 to
+2,393,197 bytes that way.
+
 ## Commands
 
 ```sh
-# Step 3: the same flags the GNUmakefile has, and 256 MB of linear memory.
-TOTAL_MEMORY=268435456 scripts/build-whisper/build.sh
+# The module this branch ships: steps 4, 5 and 6 together.
+scripts/build-whisper/build.sh
 
-# Step 4: one flag more.
-EXTRA_FLAGS=-DFAST_SLOPPY TOTAL_MEMORY=268435456 BUILD_TAG=fast-sloppy \
+# Step 3: no FAST_SLOPPY, no guards, 256 MB of linear memory.
+SLOPPY_FLAGS= TRIM_FLAGS= TOTAL_MEMORY=268435456 BUILD_TAG=step-3 \
   scripts/build-whisper/build.sh
 
-# Step 5: the same flag and the smaller linear memory. This is the module the
-# branch carries.
-EXTRA_FLAGS=-DFAST_SLOPPY BUILD_TAG=step-5 scripts/build-whisper/build.sh
+# Step 4: FAST_SLOPPY, still 256 MB and no guards.
+TRIM_FLAGS= TOTAL_MEMORY=268435456 BUILD_TAG=step-4 \
+  scripts/build-whisper/build.sh
+
+# Step 5: the smaller linear memory, still no guards.
+TRIM_FLAGS= BUILD_TAG=step-5 scripts/build-whisper/build.sh
 ```
 
 The script writes into `scripts/build-whisper/.build/<BUILD_TAG>/` and then

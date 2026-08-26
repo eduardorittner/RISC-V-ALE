@@ -132,6 +132,9 @@ onmessage = function (e) {
               : self.wasm_bindgen;
           var wasmExports = bindgen.initSync(new WebAssembly.Module(wasmBytes));
           self.wasmMemory = wasmExports.memory;
+          // The module is instantiated. This is the same point as the `preRun`
+          // hook of the C++ worker.
+          var tReady = performance.now();
 
           var sim = new bindgen.Simulator();
           sim.load_binary(new Uint8Array(elfBuffer), msg.args);
@@ -153,6 +156,8 @@ onmessage = function (e) {
             type: "result",
             memoryBytes: self.wasmMemory.buffer.byteLength,
             fetchMs: tImport - t0,
+            moduleMs: tReady - tImport,
+            coreInitMs: tFirstMmio - tReady,
             firstInstMs: tFirstMmio - t0,
             exitMs: tExit - t0,
             runMs: tExit - tFirstMmio,

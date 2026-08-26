@@ -4,7 +4,7 @@
     {
       "name": "hello",
       "stdout": "Hello, RISC-V ALE!\n",
-      "stderr": "Target program exited with code 0\nStopped -- interrupted\nUser stop\nRetired 9 instructions in 0.00s  9000 inst/s\n",
+      "stderr": "Target program exited with code 0\nStopped -- interrupted\nUser stop\nRetired 9 instructions in 0.00s  4500 inst/s\n",
       "mmio": {},
       "finished": true
     },
@@ -24,6 +24,13 @@
       "name": "stdin",
       "stdout": "K\n",
       "stderr": "Target program exited with code 0\nStopped -- interrupted\nUser stop\nRetired 17 instructions in 1.46s  11 inst/s\n",
+      "mmio": {},
+      "finished": true
+    },
+    {
+      "name": "interactive",
+      "stdout": "0x00001000\n#1 0 00001000 000015b7 r 0b         00001000  lui      x11, 0x1\n#2 0 00001004 02458593 r 0b         00001024  addi     x11, x11, 0x24\n#3 0 00001008 00100513 r 0a         00000001  addi     x10, x0, 0x1\n#4 0 0000100c 01300613 r 0c         00000013  addi     x12, x0, 0x13\n#5 0 00001010 04000893 r 11         00000040  addi     x17, x0, 0x40\nHello, RISC-V ALE!\n#6 0 00001014 00000073 r 0a         00000013  ecall\n#7 0 00001018 05d00893 r 11         0000005d  addi     x17, x0, 0x5d\n#8 0 0000101c 00000513 r 0a         00000000  addi     x10, x0, 0x0\n#9 0 00001020 00000073 r 0a         00000000  ecall\n",
+      "stderr": "Target program exited with code 0\nUser stop\nRetired 9 instructions in 0.00s  2250 inst/s\n",
       "mmio": {},
       "finished": true
     }

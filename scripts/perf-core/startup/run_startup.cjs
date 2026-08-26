@@ -22,6 +22,11 @@
  *                 the first instruction. It contains the fetch of the ELF, the
  *                 fetch of the module, the compile, the instantiation, the
  *                 whisper startup and the program load.
+ *   module        the part of `firstInst` that is the fetch, the compile and
+ *                 the instantiation of the module. This is the part that a
+ *                 smaller module makes shorter.
+ *   coreInit      the rest: the instruction table, the CSRs, the decode cache,
+ *                 the guest memory and the program load.
  *   exit          the same clock, up to the end of the program.
  *   sizes         the raw and the gzip size of each module file.
  *
@@ -240,7 +245,9 @@ async function main() {
         samples[config.key].push(value);
         console.log(
           `rep ${rep}  ${config.key.padEnd(12)} ` +
-            `first inst ${value.firstInstMs.toFixed(1).padStart(7)} ms  ` +
+            `first inst ${value.firstInstMs.toFixed(1).padStart(7)} ms ` +
+            `(module ${value.moduleMs.toFixed(1).padStart(6)}, ` +
+            `core ${value.coreInitMs.toFixed(1).padStart(6)})  ` +
             `exit ${value.exitMs.toFixed(1).padStart(7)} ms  ` +
             `memory ${(value.memoryBytes / 1048576).toFixed(0).padStart(4)} MB`,
         );
@@ -259,18 +266,19 @@ async function main() {
   for (const c of CONFIGS) {
     const cells = samples[c.key];
     if (!cells.length) continue;
-    const first = cells.map((s) => s.firstInstMs);
-    const exit = cells.map((s) => s.exitMs);
+    const stat = (field) => {
+      const values = cells.map((s) => s[field]);
+      return {
+        median: Number(median(values).toFixed(1)),
+        best: Number(Math.min(...values).toFixed(1)),
+        samples: values.map((v) => Number(v.toFixed(1))),
+      };
+    };
     summary[c.key] = {
-      firstInstMs: {
-        median: Number(median(first).toFixed(1)),
-        best: Number(Math.min(...first).toFixed(1)),
-        samples: first.map((v) => Number(v.toFixed(1))),
-      },
-      exitMs: {
-        median: Number(median(exit).toFixed(1)),
-        best: Number(Math.min(...exit).toFixed(1)),
-      },
+      firstInstMs: stat("firstInstMs"),
+      moduleMs: stat("moduleMs"),
+      coreInitMs: stat("coreInitMs"),
+      exitMs: stat("exitMs"),
       memoryBytes: cells[0].memoryBytes,
     };
   }
@@ -312,13 +320,17 @@ async function main() {
   lines.push(`# ${opts.label} — startup and footprint`, "");
   lines.push(`Commit: \`${record.commit}\`  Repetitions: ${opts.reps}`, "");
   lines.push("Median of the repetitions, milliseconds.", "");
-  lines.push("| Configuration | To the first instruction | To the exit | Reservation |");
-  lines.push("| --- | --- | --- | --- |");
+  lines.push(
+    "| Configuration | To the first instruction | ... the module | " +
+      "... the core startup | To the exit | Reservation |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- |");
   for (const c of CONFIGS) {
     const s = summary[c.key];
     if (!s) continue;
     lines.push(
       `| ${c.label} | ${s.firstInstMs.median.toFixed(1)} | ` +
+        `${s.moduleMs.median.toFixed(1)} | ${s.coreInitMs.median.toFixed(1)} | ` +
         `${s.exitMs.median.toFixed(1)} | ${mb(s.memoryBytes)} MB |`,
     );
   }

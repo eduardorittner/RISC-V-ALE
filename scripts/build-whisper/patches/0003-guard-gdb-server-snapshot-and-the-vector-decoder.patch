@@ -1,0 +1,133 @@
+--- a/gdb.cpp	2026-08-26 08:03:30
++++ b/gdb.cpp	2026-08-26 08:03:30
+@@ -32,7 +32,26 @@
+ #endif
+ #include "Hart.hpp"
+ 
++#ifdef ALE_NO_GDB
+ 
++// RISC-V ALE cannot reach the GDB stub. It needs a socket, which a browser
++// worker does not have, and no part of the application passes --gdb, so
++// Hart::enableGdb_ is always false. The definition stays so that the call
++// sites in Hart.cpp still link, and the 44 KB of packet handling behind it
++// leaves the module.
++
++template <typename URV>
++void
++handleExceptionForGdb(WdRiscv::Hart<URV>&, int)
++{
++}
++
++template void handleExceptionForGdb<uint32_t>(WdRiscv::Hart<uint32_t>&, int);
++template void handleExceptionForGdb<uint64_t>(WdRiscv::Hart<uint64_t>&, int);
++
++#else
++
++
+ static
+ int
+ putDebugChar(char c, int fd)
+@@ -814,3 +833,5 @@
+ 
+ template void handleExceptionForGdb<uint32_t>(WdRiscv::Hart<uint32_t>&, int);
+ template void handleExceptionForGdb<uint64_t>(WdRiscv::Hart<uint64_t>&, int);
++
++#endif  // ALE_NO_GDB
+--- a/Hart.cpp	2026-08-26 08:03:30
++++ b/Hart.cpp	2026-08-26 08:03:30
+@@ -4867,6 +4867,12 @@
+ bool
+ Hart<URV>::openTcpForGdb()
+ {
++#ifdef ALE_NO_GDB
++  // No GDB stub in this build. The caller only reaches this when --gdbtcpport
++  // is on the command line, and RISC-V ALE never puts it there.
++  std::cerr << "This build has no GDB support\n";
++  return false;
++#else
+   struct sockaddr_in address;
+   socklen_t addrlen = sizeof(address);
+ 
+@@ -4914,6 +4920,7 @@
+     }
+ 
+   return true;
++#endif  // ALE_NO_GDB
+ }
+ 
+ 
+--- a/decode.cpp	2026-08-26 08:03:30
++++ b/decode.cpp	2026-08-26 08:03:30
+@@ -179,6 +179,11 @@
+ {
+   if (not isRvv())
+     return instTable_.getEntry(InstId::illegal);  
++
++#ifdef ALE_NO_VECTOR
++  // No vector handler in this build, so the test above is the only path out.
++  return instTable_.getEntry(InstId::illegal);
++#endif
+ 
+   RFormInst rform(inst);
+   unsigned f3 = rform.bits.funct3, f6 = rform.top6();
+@@ -474,6 +479,10 @@
+ const InstEntry&
+ Hart<URV>::decodeVecLoad(uint32_t f3, uint32_t imm12, uint32_t& op3)
+ {
++#ifdef ALE_NO_VECTOR
++  return instTable_.getEntry(InstId::illegal);
++#endif
++
+   unsigned lumop = imm12 & 0x1f;       // Bits 0 to 4 of imm12
+   // unsigned vm = (imm12 >> 5) & 1;      // Bit 5 of imm12
+   unsigned mop = (imm12 >> 6) & 3;     // Bits 6 & 7 of imm12
+@@ -577,6 +586,10 @@
+ const InstEntry&
+ Hart<URV>::decodeVecStore(uint32_t f3, uint32_t imm12, uint32_t& op3)
+ {
++#ifdef ALE_NO_VECTOR
++  return instTable_.getEntry(InstId::illegal);
++#endif
++
+   unsigned lumop = imm12 & 0x1f;       // Bits 0 to 4 of imm12
+   // unsigned vm = (imm12 >> 5) & 1;      // Bit 5 of imm12
+   unsigned mop = (imm12 >> 6) & 3;     // Bits 6 & 7 of imm12
+--- a/whisper.cpp	2026-08-26 08:03:30
++++ b/whisper.cpp	2026-08-26 08:03:30
+@@ -1052,9 +1052,11 @@
+   if (not args.instFreqFile.empty())
+     hart.enableInstructionFrequency(true);
+ 
++#ifndef ALE_NO_SNAPSHOT
+   if (not args.loadFrom.empty())
+     if (not loadSnapshot(hart, args.loadFrom))
+       errors++;
++#endif
+ 
+   if (not args.stdoutFile.empty())
+     if (not hart.redirectOutputDescriptor(STDOUT_FILENO, args.stdoutFile))
+@@ -1469,11 +1471,13 @@
+                 return false;
+               }
+           hart.setSnapshotIndex(index + 1);
++#ifndef ALE_NO_SNAPSHOT
+           if (not hart.saveSnapshot(path.string()))
+             {
+               std::cerr << "Error: Failed to save a snapshot\n";
+               return false;
+             }
++#endif
+         }
+     }
+ 
+@@ -1519,8 +1523,10 @@
+         }
+     }
+ 
++#ifndef ALE_NO_SERVER
+   if (serverMode)
+     return runServer(system, args.serverFile, traceFile, cmdLog);
++#endif
+ 
+   if (args.interactive)
+     {
