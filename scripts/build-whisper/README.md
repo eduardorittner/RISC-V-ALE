@@ -116,10 +116,56 @@ build has no RV64 support" instead of a simulation. The primary template and
 the RV32 instantiation do not change, so no guest program of the application
 sees a difference.
 
+## No Asyncify: the budget-and-return run loop
+
+The default build has no `-s ASYNCIFY`. `ASYNCIFY=1` gives the old module back.
+`patches/0005` holds the change, and it is the largest patch of this branch.
+
+Asyncify instruments every function that can reach `emscripten_sleep`, and the
+core pays that cost on every instruction. The core slept for two reasons:
+
+1. To give the worker its event loop back, so that a message could arrive. The
+   run loop slept one time for each period of its interrupt test.
+2. To wait: for a character on the standard input, or for a command of the
+   interactive shell.
+
+Without Asyncify a wait must be a return to JavaScript. The module therefore
+changes shape:
+
+| Item | With Asyncify | Without it |
+| --- | --- | --- |
+| Where the program runs | Inside `main` | Inside `ale_run_slice`, which the worker calls |
+| What `main` does | Everything, and then the module is finished | Sets the session up and returns |
+| The wait of the run loop | `emscripten_sleep(int_sleep_duration)` | The slice returns after its budget of instructions |
+| The wait for input | A loop around `emscripten_sleep(10)` | The hart backs up to the `ecall` and the slice returns |
+| The wait for a shell command | A loop around `emscripten_sleep(100)` | `interactSlice` takes the commands that are ready and returns |
+
+`ale_run_slice(budget)` runs at most `budget` instructions, where 0 means no
+limit, and it answers 0 (the program is finished), 1 (instructions ran) or 2
+(it waits for the host). The budget goes into the instruction count limit that
+both run loops already test, so **the hot loop has no test that it did not have
+before.**
+
+The worker chooses the budget, and that choice keeps the simulated frequency of
+RISC-V ALE the same:
+
+- Interrupts on: the budget is the period of the interrupt test
+  (`simulator_int_inst_delay` + 1) and the delay between two slices is
+  `simulator_sleep[0]`. These are the two values that the frequency control of
+  the application already set, so the core tests for an interrupt at the same
+  instruction count and waits the same time as before.
+- Interrupts off: the budget is 0, so the program runs in one slice. This is
+  what a benchmark measures.
+
+`modules/simulator_worker.js` and the two `worker_cpp.js` files of
+`scripts/perf-core/` drive the slices. Each one tests for
+`Module._ale_run_slice` and falls back to the old model when the module has
+Asyncify, so one worker drives both modules.
+
 ## Commands
 
 ```sh
-# The module this branch ships: steps 4, 5, 6 and 7 together.
+# The module this branch ships: steps 4, 5, 6, 7 and 8 together.
 scripts/build-whisper/build.sh
 
 # Step 3: no FAST_SLOPPY, no guards, 256 MB of linear memory.
@@ -134,7 +180,10 @@ TRIM_FLAGS= RV32_FLAGS= TOTAL_MEMORY=268435456 BUILD_TAG=step-4 \
 TRIM_FLAGS= RV32_FLAGS= BUILD_TAG=step-5 scripts/build-whisper/build.sh
 
 # Step 6: the subsystem guards, and both widths.
-RV32_FLAGS= BUILD_TAG=step-6 scripts/build-whisper/build.sh
+ASYNCIFY=1 RV32_FLAGS= BUILD_TAG=step-6 scripts/build-whisper/build.sh
+
+# Step 7: RV32 only, and still Asyncify.
+ASYNCIFY=1 BUILD_TAG=step-7 scripts/build-whisper/build.sh
 ```
 
 The script writes into `scripts/build-whisper/.build/<BUILD_TAG>/` and then
@@ -157,6 +206,7 @@ All options come through the environment.
 | `SLOPPY_FLAGS` | `-DFAST_SLOPPY` | Step 4. Set it empty to undo. |
 | `TRIM_FLAGS` | the five `-DALE_NO_*` guards | Step 6. Set it empty to undo. |
 | `RV32_FLAGS` | `-DALE_NO_RV64` | Step 7. Set it empty to undo. |
+| `ASYNCIFY` | not set | Step 8. Set it to 1 to build with `-s ASYNCIFY` and without the slice loop. |
 | `EXTRA_FLAGS` | empty | More compile flags |
 | `LINK_EXTRA` | empty | More link flags. `--emit-symbol-map` writes `whisper.js.symbols`, which `scripts/perf-core/startup/wasm_sizes.cjs` needs. |
 | `NO_INSTALL` | not set | Set it to keep the module out of `modules/`. Use it with `LINK_EXTRA`. |

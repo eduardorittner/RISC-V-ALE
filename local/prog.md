@@ -19,6 +19,9 @@ each finding that a later step must know.
 | 5. Size the linear memory | Complete | 256 MB to 160 MB. The 64 MB target of the plan is not reachable: the stack pointer of the application pins the guest memory at 128 MB. |
 | 6. Trim the source list | Complete | `whisper.wasm` from 4,095,232 to 2,393,197 bytes (−41.6%). No source list edit was necessary. The interactive shell stays: the application uses it. |
 | 7. RV32-only build | Complete | `whisper.wasm` from 2,393,197 to 1,757,149 bytes (−26.6%). The 1 to 1.5 MB target of steps 6 and 7 is not reached: 909 KB of the module does not depend on the register width. |
+| 8. Remove Asyncify | Complete | 1.82x / 1.80x / 1.60x against an estimate of 1.12x to 1.39x. The C++ core reaches 110% / 112% / 90% of the Rust control, and `whisper.wasm` falls below 1 MB. |
+
+**The plan is complete.** The section "Where the plan ends" holds the summary.
 
 A rebuild needed one link option that the GNUmakefile does not have. Without
 it a rebuild is twelve times slower than the module the fork shipped. The
@@ -1102,10 +1105,247 @@ step 6.
 
 `build(whisper): instantiate for RV32 only`
 
-## Where the plan stands
+## Step 8: Replace Asyncify with a budget-and-return run loop
+
+**State: complete.** 1.82x on `alu`, 1.80x on `memcpy` and 1.60x on `mixed`,
+against an estimate of 1.12x to 1.39x. The C++ core is now at 110%, 112% and
+90% of its live Rust control, and `whisper.wasm` is below 1 MB.
+
+### What the step changes
+
+Asyncify instruments every function that can reach `emscripten_sleep`, and the
+core pays that cost on every instruction. The core slept for two reasons: to
+give the worker its event loop back, so that a message could arrive, and to
+wait for something (a character on the standard input, or a command of the
+interactive shell).
+
+Without Asyncify a wait must be a return to JavaScript. The module therefore
+changes shape:
+
+| Item | With Asyncify | Without it |
+| --- | --- | --- |
+| Where the program runs | Inside `main` | Inside `ale_run_slice`, which the worker calls |
+| What `main` does | Everything, and then the module is finished | Sets the session up and returns |
+| The wait of the run loop | `emscripten_sleep(int_sleep_duration)` | The slice returns after its budget of instructions |
+| The wait for input | A loop around `emscripten_sleep(10)` | The hart backs up to the `ecall` and the slice returns |
+| The wait for a shell command | A loop around `emscripten_sleep(100)` | `interactSlice` takes the commands that are ready and returns |
+| After the report | `emscripten_sleep(100)`, then `jsSimStop` | `jsSimStop`, and the worker sends the output first |
+
+`patches/0005` holds the C++ side:
+
+- **`Hart::aleRunSlice(file, budget)`** is what `run` becomes. It keeps the
+  state of a run in the hart (`aleCounter0_`, `aleElapsed_`, `aleRunActive_`),
+  so a call continues where the call before it stopped, and it prints the
+  instructions-per-second line one time only, with the time of all the slices
+  together. The report of the benchmark therefore has the same meaning as
+  before.
+- **The budget goes into `instCountLim_`**, which both run loops already test.
+  **The hot loop has no test that it did not have before.** A slice with no
+  limit runs `simpleRunNoLimit`, which is the loop that a run with Asyncify
+  used, so the fast path is byte-for-byte the same work.
+- **The wait for input.** `Syscall` case 63 calls `readFromStdin` one time.
+  When there is no character it calls `Hart::aleSetBlocked`, which backs `pc_`
+  up to the `ecall`, takes one off `instCounter_` (the `ecall` did not retire)
+  and stops the loop. `execEcall` keeps the value of `a0`, because the slice
+  after this one runs the same `ecall` again and the syscall needs its
+  arguments. `getStdin` in the worker takes no character when it answers -1,
+  so nothing is lost.
+- **The shell.** `Interactive::interactSlice` takes the commands that are
+  ready and returns. The state that `interact` kept on its stack (the hart id,
+  the replay stream, the error count) is now in the object. An `until` command
+  sets a stop address and calls `run`, so it also goes through the slices
+  instead of running to the address inside one call.
+- **`whisper.cpp`** gets the slice driver: `aleStart` (the setup part of
+  `sessionRun`), `aleSlice` (one slice, which knows whether the shell has a run
+  in progress), `aleFinish` (the tail of `session`) and the exported
+  `ale_run_slice`. The `System`, the `Interactive` and the open files live in a
+  static object, and `main` keeps its `Args` and its `HartConfig` in statics,
+  because the slices run after `main` returns.
+
+`ale_run_slice(budget)` answers 0 (the program is finished), 1 (instructions
+ran) or 2 (it waits for the host).
+
+The JavaScript side: `modules/simulator_worker.js` starts the slice chain from
+the Emscripten `postRun` hook and calls the next slice from `setTimeout`. The
+two `worker_cpp.js` files of `scripts/perf-core/` do the same with one
+unlimited slice. Each one tests for `Module._ale_run_slice` first and falls
+back to the old model, so the same worker drives a module with Asyncify and a
+module without it. `finishExec` in the application worker now sends the output
+that is still in the buffer before the host sees the stop, which is the job
+that the 100 ms sleep did.
+
+### The plan would have removed a feature, and the step keeps it
+
+The plan says to "tune the budget so each slice lands between 8 ms and 16 ms",
+which is what the Rust worker does. **That would take the frequency control out
+of RISC-V ALE.**
+
+The sleep of the run loop is not only a yield. It is also the clock of the
+simulated processor:
+
+- `index.html` has an `int_freq_range` slider. `simulator.js` line 151 turns it
+  into `set_int_delay` with the value `(2**(32 - scale)) - 1`, and the default
+  scale of 25 gives 127.
+- The core uses that value as `int_inst_mask` and tests `instCounter_ &
+  int_inst_mask`, so with 127 it stops every 128 instructions and sleeps
+  `simulator_sleep[0]`, which is 1 ms. The application therefore runs at about
+  128 thousand instructions each second, and the slider changes that rate.
+
+The worker of this step keeps both numbers:
+
+| Interrupts | Budget | Delay between two slices |
+| --- | --- | --- |
+| On | `simulator_int_inst_delay` + 1 | `simulator_sleep[0]` |
+| Off | 0, which is no limit | 0 |
+
+The core therefore tests for an interrupt at the same instruction count as
+before and waits the same time, and the slider keeps its meaning. With
+interrupts off there is nothing to test and the program runs in one slice,
+which is what the benchmark measures.
+
+### The defect that the new gate check found
+
+The first version of the patch stopped the run with `noUserStop`, which the
+fast loops test. **`untilAddress` does not test `noUserStop`; it tests
+`userStop`.** The interactive shell uses `untilAddress`, because interactive
+mode turns the triggers and the performance counters on. A read of the standard
+input inside the shell therefore backed the hart up to the `ecall` and ran it
+again, forever, inside one slice. The worker never returned to JavaScript, so
+the character could never arrive.
+
+A new check in the functional gate, `interactive-stdin`, runs `stdin.elf` with
+`--interactive` and a `run` command. With the first version of the patch **that
+check does not finish**, which is the proof that it has teeth. The repair puts
+the test in the condition of `untilAddress`:
+
+```cpp
+while (pc_ != address and instCounter_ < limit and not aleBlocked_)
+```
+
+That loop is the one that does everything, so one test more for each
+instruction does not matter. The fast loops keep their zero extra cost.
+
+### Throughput
+
+Both sessions are back to back on this machine. The step 7 session of the
+morning is not the control here, because the machine moved between the two: the
+Rust control of that session was 206.8 / 210.1 / 265.6 MIPS and of this one it
+is 207.3 / 192.7 / 250.6. The results file of the control session is
+`scripts/perf-core/results/step-8-control-step-7.json`.
+
+Median of 5, MIPS:
+
+| Configuration | `alu` | `memcpy` | `mixed` |
+| --- | --- | --- | --- |
+| Rust, control session | 207.3 | 192.7 | 250.6 |
+| Rust, step 8 session | 214.6 | 193.6 | 251.6 |
+| C++ `--isa acdfim`, step 7 | 129.0 | 120.5 | 141.8 |
+| C++ `--isa acdfim`, step 8 | **235.3** | **217.4** | **227.3** |
+| C++ `--isa acdfimsu`, step 7 | 24.7 | 24.8 | 24.4 |
+| C++ `--isa acdfimsu`, step 8 | 49.5 | 39.8 | 36.2 |
+
+| Workload | Step 7 | Step 8 | Measured | Plan estimate | Share |
+| --- | --- | --- | --- | --- | --- |
+| `alu` | 129.0 | 235.3 | **1.82x** | 1.12x to 1.39x | 131% of the top |
+| `memcpy` | 120.5 | 217.4 | **1.80x** | 1.12x to 1.39x | 130% |
+| `mixed` | 141.8 | 227.3 | **1.60x** | 1.12x to 1.39x | 115% |
+
+The estimate was too low, and the "What the next steps should know" note of
+step 5 said so before the step ran. Asyncify costs much more than the
+native-to-WebAssembly ratio of section 14.4 of the report suggests.
+
+Against the live Rust control:
+
+| Workload | Step 7 | Step 8 |
+| --- | --- | --- |
+| `alu` | 62% | **110%** |
+| `memcpy` | 63% | **112%** |
+| `mixed` | 57% | **90%** |
+
+Against the projection of the plan (section 10, scenario B: 248 / 240 / 220):
+95%, 91% and 103%. Against the Rust figures of the report (222.5 / 188.5 /
+244.5): 106%, 115% and 93%.
+
+The samples of the C++ core now come in steps of about 1%, because the core
+times itself with `gettimeofday` and a run of 20 million instructions takes
+about 88 ms. Two workloads can therefore report the same figure.
+
+### Size and startup
+
+| File | Step 7 | Step 8 | Change |
+| --- | --- | --- | --- |
+| `whisper.wasm`, raw | 1,757,149 | 956,545 | **−45.6%** |
+| `whisper.wasm`, gzip | 475,406 | 310,188 | −34.8% |
+| `whisper.js`, raw | 79,734 | 70,791 | −11.2% |
+
+**The module is below 1 MB**, which is the target of section 10 of the plan for
+the end state. Against the module that RISC-V ALE shipped (4,608,325 bytes) it
+is 79.2% smaller.
+
+Median of 9, milliseconds, both sessions back to back:
+
+| Configuration | To the first instruction | ... the module | ... the core startup | To the exit |
+| --- | --- | --- | --- | --- |
+| Rust, control session | 5.8 | 1.8 | 1.8 | 5.9 |
+| Rust, step 8 session | 4.7 | 1.4 | 1.7 | 4.9 |
+| C++ as the application starts it, step 7 | 44.8 | 6.5 | 37.2 | 150.6 |
+| C++ as the application starts it, step 8 | 34.4 | 4.6 | 28.6 | 35.6 |
+| C++ with a 16 MB guest memory, step 8 | 19.2 | 4.7 | 13.8 | 20.5 |
+
+**The time to the exit falls from 150.6 ms to 35.6 ms.** That is the 100 ms
+sleep that `reportInstsPerSec` had after the report. Every program of the
+application paid it.
+
+The time to the first instruction falls from 44.8 to 34.4 ms. The Rust control
+of the two sessions differs by 19% on the same figure (5.8 against 4.7), so
+that comparison carries noise of about that size. The module part falls from
+6.5 to 4.6 ms, which agrees with the finding of steps 6 and 7: a smaller module
+buys little, because the whole part is small.
+
+### The differential check of the plan is not possible for this step
+
+Section 7, item 5 of the plan recommends the differential harness with a native
+build of the modified whisper as the oracle. **That build cannot be an oracle.**
+Without JavaScript nothing calls `ale_run_slice`, so a native
+`-DALE_NO_ASYNCIFY` whisper would set the session up and exit without running
+one instruction.
+
+The step also does not need it. It changes no instruction semantics: `execute`,
+`decode` and all 482 handlers are untouched, and the guards are only in the
+stop condition of the run loops, the wait of one syscall, the command read of
+the shell and the report. The evidence for the step is:
+
+1. The exact retired counts, on three workloads and both ISA strings, in every
+   benchmark session. Each one is an end-to-end comparison over 20 million
+   instructions against the counts that every earlier step produced.
+2. The five checks of the functional gate, two of which exist for the paths
+   that this step changes.
+
+### Functional checks
+
+| Check | Result |
+| --- | --- |
+| 1. Retired counts | PASS. Exact on all three workloads, both ISA strings. |
+| 2. The application | PASS |
+| 3. MMIO | PASS |
+| 4. Interrupts | PASS. `stdin.elf` receives its character with interrupts on, which is now the new yield model. |
+| 5. The interactive shell | PASS |
+| 6. The shell with a read of the standard input (new) | PASS. This check found the defect above. |
+
+### Commit
+
+`perf(whisper): replace Asyncify with a budget-and-return run loop`
+
+## Where the plan ends
+
+All eight steps are complete. The objective of section 1 of the plan was a
+browser throughput near the Rust core. **The C++ core now reaches 110%, 112%
+and 90% of its live Rust control.**
 
 Median of 5, MIPS, with `--isa acdfim`, which is what the application uses
-after step 2. The Rust column is the live control of each session.
+after step 2. Each figure comes from the session of its own step, so the
+machine drift between sessions is inside these numbers; the Rust control of
+each session is in the results file of that session.
 
 | Milestone | `alu` | `memcpy` | `mixed` |
 | --- | --- | --- | --- |
@@ -1116,18 +1356,31 @@ after step 2. The Rust column is the live control of each session.
 | Step 5, a 160 MB linear memory | 131.6 | 122.0 | 140.8 |
 | Step 6, the subsystems that ALE cannot reach | 135.1 | 125.0 | 144.9 |
 | Step 7, RV32 only | 137.0 | 126.6 | 147.1 |
-| The Rust control, step 7 session | 206.8 | 210.1 | 265.6 |
-| Share of the control | 66% | 60% | 55% |
+| Step 8, no Asyncify | **235.3** | **217.4** | **227.3** |
+| The Rust control, step 8 session | 214.6 | 193.6 | 251.6 |
+| Share of the control | **110%** | **112%** | **90%** |
 
-The secondary metrics, which steps 5, 6 and 7 target:
+The total against the state that RISC-V ALE shipped is **6.6x on `alu`, 6.9x on
+`memcpy` and 6.4x on `mixed`**. Section 1 of `local/rs-cpp.md` measured the
+Rust core as 6.4 to 8.7 times as fast as the C++ core in that state, so the
+step from "6.4 to 8.7 times slower" to "0.9 to 1.1 times as fast" is the whole
+gap that the report found.
 
-| Milestone | Reservation | To the first instruction | `whisper.wasm` |
-| --- | --- | --- | --- |
-| Step 4 | 256 MB | 46.2 ms | 4,095,232 bytes |
-| Step 5 | 160 MB | 47.1 ms | 4,095,232 bytes |
-| Step 6 | 160 MB | 47.3 ms | 2,393,197 bytes |
-| Step 7 | 160 MB | 46.3 ms | 1,757,149 bytes |
-| The Rust core | 1.8 MB | 6.3 ms | 132,561 bytes |
+The secondary metrics:
+
+| Milestone | Reservation | To the first instruction | To the exit | `whisper.wasm` |
+| --- | --- | --- | --- | --- |
+| As shipped | 256 MB | — | — | 4,608,325 bytes |
+| Step 4 | 256 MB | 46.2 ms | — | 4,095,232 bytes |
+| Step 5 | 160 MB | 47.1 ms | 153.5 ms | 4,095,232 bytes |
+| Step 6 | 160 MB | 47.3 ms | 154.7 ms | 2,393,197 bytes |
+| Step 7 | 160 MB | 46.3 ms | 153.3 ms | 1,757,149 bytes |
+| Step 8 | 160 MB | **34.4 ms** | **35.6 ms** | **956,545 bytes** |
+| The Rust core | 1.8 MB | 4.7 ms | 4.9 ms | 132,561 bytes |
+
+The module is 79.2% smaller than the module the fork shipped, and it is below
+the 1 MB that section 10 of the plan gives as the target. The time from the run
+message to the end of a small program falls from 153 ms to 36 ms.
 
 Against the projection of section 10 of the plan:
 
@@ -1137,11 +1390,14 @@ Against the projection of section 10 of the plan:
 | After step 2, measured | 136.1 | 90.1 | 180.2 |
 | After step 4, projected | 134–179 | 173–192 | 195–196 |
 | After step 4, measured | 133.3 | 122.0 | 140.8 |
+| After step 8, projected | ~248 | ~240 | ~220 |
+| After step 8, measured | 235.3 | 217.4 | 227.3 |
+| The Rust target of the report | 222.5 | 188.5 | 244.5 |
 
-Step 2 was better than its projection on all three workloads. Step 4 is at the
-low edge of the `alu` projection and below the `memcpy` and `mixed`
-projections. Two measured facts explain the difference, and both are recorded
-above:
+The end state is 95%, 91% and 103% of the projection, and 106%, 115% and 93%
+of the Rust figures that the report measured. Steps 2 and 8 were the two speed
+steps that carried the plan; step 4 helped `memcpy` only. The two facts that
+kept the middle of the plan below its projection are recorded above:
 
 1. The rebuild of step 3 is slower than the module the fork shipped on
    `memcpy` (−14%) and on `mixed` (−21%). The toolchain that made the shipped
@@ -1150,46 +1406,43 @@ above:
    does not reproduce. The measured native ratio on this machine is 2.27x and
    not 3.35x.
 
-The total against the state RISC-V ALE shipped is 3.7x on `alu`, 3.9x on
-`memcpy` and 4.0x on `mixed`.
+### What a later reader should know
 
-### What the next steps should know
-
-- **The baseline moved at step 3.** Compare a step against the session before
-  it, and not against step 2.
-- **Steps 6 and 7 do not target throughput.** Their metrics are the module
-  size, the memory reservation and the time to the first instruction.
-  `scripts/perf-core/startup/` reports all three.
-- **The module size is not the startup cost.** Step 6 measured the two parts
-  separately: of the 47 ms to the first instruction, 8 ms is the fetch, the
-  compile and the instantiation of the module, 16 ms is the zeroing of the
-  128 MB guest memory (which cannot go down), and 23 ms is the instruction
-  table, the CSRs, the 128K-entry decode cache and the program load. A module
-  that was 41.6% smaller made the first part about 1 ms shorter. Do not expect
-  step 7 or step 8 to buy startup time with size. The step 6 section holds the
-  measurement, and it corrects the step 5 section.
+- **Compare a step against the session before it.** The baseline moved at step
+  3, and the machine drifts between sessions by a few per cent. Every session
+  has the Rust core in it as the live control for this reason. The step 8
+  section shows the method: it re-measured the step 7 module in the same window
+  (`results/step-8-control-step-7.json`) instead of using the figures of the
+  morning.
+- **The module size is not the startup cost.** Steps 6, 7 and 8 measured it
+  three times. The fetch, the compile and the instantiation of the module is
+  about 5 ms of the 34 ms to the first instruction, and a module that is half
+  the size makes that part about 1 ms shorter. What is left is the zeroing of
+  the 128 MB guest memory (about 15 ms, and step 5 shows why it cannot go down)
+  and the instruction table, the CSRs, the 128K-entry decode cache and the
+  program load.
 - **The 64 MB reservation target of the plan is closed, not reached.** The
   stack pointer of the application (`0x7FFFFFC`) pins the guest memory at
   128 MB, and that stack pointer is in every saved project link. The step 5
   section holds the audit.
-- **The size target of steps 6 and 7 is closed, not reached.** The module is
-  1,757,149 bytes against a target of 1 MB to 1.5 MB. The step 7 section holds
-  the attribution: 909 KB of the module is libc and libc++, the Emscripten
-  runtime, the Asyncify instrumentation, the 240 KB `setupInstVec()` function
-  and the 181 KB Boost.program_options parser. None of them depends on the
-  register width, and only the Asyncify part is in the scope of this plan.
 - **Boost.program_options is 181 KB and RISC-V ALE does not need a parser.**
-  The worker sends a fixed argument list. This is the largest single item that
-  no step of this plan removes, and a later plan can take it.
-- **The estimate for step 8 is too low.** The plan projects 1.12x to 1.39x
-  from the ratio change 0.55 to 0.69. A direct measurement during the work on
-  step 3 gives a much larger figure: with the same objects, a module without
-  `-s ASYNCIFY` reached 58.7 MIPS where the module with it reached 11.8 MIPS.
-  That measurement was made before the repair of step 3, so it is not a
-  prediction of the gain from the present state, but it does show that
-  Asyncify costs far more than the plan assumes. Measure it again after
-  step 8.
-- **Do not remove `-sBINARYEN_EXTRA_PASSES=-ocimfs=1`.** Step 8 removes
+  The worker sends a fixed argument list. After step 8 it is one of the largest
+  items in a 956 KB module, and no step of this plan takes it. A later plan
+  can.
+- **Do not remove `-sBINARYEN_EXTRA_PASSES=-ocimfs=1`.** Step 8 removed
   Asyncify, which makes `Hart::execute` smaller, and a later reader could
   believe the option is no longer necessary. The option controls a rule that
-  has nothing to do with Asyncify.
+  has nothing to do with Asyncify: without it, Binaryen puts all 482 handlers
+  inside `execute` and the module is twelve times slower. The step 3 section
+  holds the measurements.
+- **The worker and the module are a pair.** A module without Asyncify needs a
+  worker that calls `_ale_run_slice`. The three workers of this branch test for
+  that export and fall back to the old model, so `ASYNCIFY=1` gives a working
+  application again, but a worker from before step 8 cannot run the module of
+  step 8.
+- **The frequency control of the application is in the worker now.** The budget
+  of a slice and the delay between two slices come from
+  `simulator_int_inst_delay` and `simulator_sleep[0]`, which are what the
+  `int_freq_range` slider sets. A change to the slice policy changes the
+  simulated clock of every program of RISC-V ALE. The step 8 section holds the
+  numbers.

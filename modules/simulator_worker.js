@@ -251,7 +251,52 @@ function initFS() {
 }
 
 function finishExec() {
+  // Send the output that is still in the buffer before the host sees the
+  // stop. With Asyncify the core slept 100 ms here and a "sync" message from
+  // the host did this job. A module without Asyncify cannot sleep.
+  bus_sync.sync();
   postMessage({type:"status", status:{finish:true}});
+}
+
+/*
+ * ─── The slice loop ─────────────────────────────────────────────────────────
+ *
+ * Step 8 of `local/optimize-whisper.md` took Asyncify out of the module, so
+ * the core cannot sleep. `main` sets the session up and returns, and this loop
+ * calls `_ale_run_slice(budget)` until the program is finished. The messages
+ * of the host arrive between two slices, which is what the sleep did before.
+ *
+ * The budget is the period of the interrupt test of the core
+ * (`simulator_int_inst_delay` + 1), which is what the frequency control of the
+ * application sets. The simulated frequency therefore does not change: the
+ * core tests for an interrupt one time for each slice, at the same
+ * instruction count as before, and the delay between two slices is the same
+ * `simulator_sleep[0]` that the core slept.
+ *
+ * With interrupts off there is nothing to test, so the budget is 0 (no limit)
+ * and the program runs in one slice, which is the fastest way.
+ *
+ * A module with Asyncify has no `_ale_run_slice` and runs the program inside
+ * `main`. Then this loop does nothing and the worker behaves as before.
+ */
+var ALE_DONE = 0, ALE_RAN = 1, ALE_WAIT = 2;
+
+function aleSliceBudget(){
+  if(!intController.interruptEnabled) return 0;
+  return simulator_int_inst_delay + 1;
+}
+
+function aleRunLoop(){
+  var status = Module._ale_run_slice(aleSliceBudget());
+  if(status === ALE_DONE) return;
+  // ALE_WAIT: the core waits for the host, either for a character on the
+  // standard input or for a command of the interactive shell.
+  var delay = status === ALE_WAIT ? 10 : simulator_sleep[0];
+  setTimeout(aleRunLoop, delay);
+}
+
+function aleStartRunLoop(){
+  if(typeof Module._ale_run_slice === "function") aleRunLoop();
 }
 
 var xhr = new XMLHttpRequest();
@@ -299,6 +344,7 @@ var Module = {
   // use the slow runUntilAddress loop instead of simpleRun.
   arguments : ["--newlib", "/working/ex2", "--isa", "acdfim", "--setreg", "sp=0x10000"],
   preRun : [initFS],
+  postRun : [aleStartRunLoop],
   print : bus_sync.add_stdout.bind(bus_sync),
   printErr : bus_sync.add_stderr.bind(bus_sync)
 };

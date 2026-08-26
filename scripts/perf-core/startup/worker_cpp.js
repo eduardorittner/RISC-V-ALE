@@ -119,9 +119,24 @@ function initFS() {
   FS.writeFile(elfPath, elfBytes);
 }
 
+/**
+ * The Emscripten `postRun` hook. See `page/worker_cpp.js` for why it exists: a
+ * module without Asyncify runs the program from `_ale_run_slice` and not from
+ * `main`. The call is synchronous and it is inside the `importScripts` call,
+ * so every timestamp of this worker keeps its meaning.
+ */
+function aleRun() {
+  if (typeof Module._ale_run_slice !== "function") return;
+  var status = Module._ale_run_slice(0);
+  while (status === 1) {
+    status = Module._ale_run_slice(0);
+  }
+}
+
 var Module = {
   arguments: [],
   preRun: [initFS],
+  postRun: [aleRun],
   print: function (text) {
     stdoutLines.push(text);
   },

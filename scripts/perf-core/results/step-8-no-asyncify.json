@@ -1,0 +1,143 @@
+{
+  "label": "step-8-no-asyncify",
+  "commit": "4ee1c2c",
+  "reps": 5,
+  "node": "v26.7.0",
+  "platform": "darwin arm64",
+  "modules": {
+    "whisper.wasm": 956545,
+    "whisper.js": 70791,
+    "riscv_rs_bg.wasm": 132561
+  },
+  "workloads": [
+    {
+      "name": "alu",
+      "instructions": 20000005
+    },
+    {
+      "name": "memcpy",
+      "instructions": 20000009
+    },
+    {
+      "name": "mixed",
+      "instructions": 20000003
+    }
+  ],
+  "summary": {
+    "rust": {
+      "alu": {
+        "median": 214.6,
+        "best": 217.4,
+        "samples": [
+          125.3,
+          215.7,
+          217.4,
+          214.6,
+          213.7
+        ],
+        "instructions": 20000005
+      },
+      "memcpy": {
+        "median": 193.6,
+        "best": 195.9,
+        "samples": [
+          193.6,
+          193.4,
+          195.9,
+          194.6,
+          191.9
+        ],
+        "instructions": 20000009
+      },
+      "mixed": {
+        "median": 251.6,
+        "best": 254.1,
+        "samples": [
+          254.1,
+          251.6,
+          252.2,
+          251.3,
+          246.6
+        ],
+        "instructions": 20000003
+      }
+    },
+    "cpp-acdfimsu": {
+      "alu": {
+        "median": 49.5,
+        "best": 51.2,
+        "samples": [
+          51.2,
+          49.5,
+          50,
+          49.5,
+          47.8
+        ],
+        "instructions": 20000005
+      },
+      "memcpy": {
+        "median": 39.8,
+        "best": 40.6,
+        "samples": [
+          39.8,
+          39.5,
+          39.4,
+          40.6,
+          40.1
+        ],
+        "instructions": 20000009
+      },
+      "mixed": {
+        "median": 36.2,
+        "best": 36.6,
+        "samples": [
+          36.6,
+          36.2,
+          36.2,
+          36.5,
+          36.2
+        ],
+        "instructions": 20000003
+      }
+    },
+    "cpp-acdfim": {
+      "alu": {
+        "median": 235.3,
+        "best": 238.1,
+        "samples": [
+          238.1,
+          232.6,
+          229.9,
+          238.1,
+          235.3
+        ],
+        "instructions": 20000005
+      },
+      "memcpy": {
+        "median": 217.4,
+        "best": 219.8,
+        "samples": [
+          219.8,
+          212.8,
+          212.8,
+          217.4,
+          217.4
+        ],
+        "instructions": 20000009
+      },
+      "mixed": {
+        "median": 227.3,
+        "best": 232.6,
+        "samples": [
+          229.9,
+          206.2,
+          232.6,
+          208.3,
+          227.3
+        ],
+        "instructions": 20000003
+      }
+    }
+  },
+  "failures": []
+}

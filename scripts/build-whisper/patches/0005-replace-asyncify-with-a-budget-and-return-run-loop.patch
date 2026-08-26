@@ -1,0 +1,835 @@
+--- a/Hart.cpp
++++ b/Hart.cpp
+@@ -4407,9 +4407,17 @@
+   std::cerr << '\n';
+ 
+ #ifdef __EMSCRIPTEN__
++#ifdef ALE_NO_ASYNCIFY
++  // The sleep was there to let the worker send the last output before the
++  // host saw the stop. Without Asyncify there is nothing to sleep with, and
++  // the sleep is not necessary: the slice returns to JavaScript directly
++  // after this, and `finishExec` in the worker sends the output first.
++  jsSimStop();
++#else
+   emscripten_sleep(100);
+   jsSimStop();
+ #endif
++#endif
+ }
+ 
+ 
+@@ -4566,7 +4574,14 @@
+   if (enableGdb_)
+     handleExceptionForGdb(*this, gdbInputFd_);
+ 
++#ifdef ALE_NO_ASYNCIFY
++  // The fast loops stop on `noUserStop`, which this loop does not test, so the
++  // test of the wait flag goes into the condition. This loop is the one that
++  // does everything, so one test more for each instruction does not matter.
++  while (pc_ != address and instCounter_ < limit and not aleBlocked_)
++#else
+   while (pc_ != address and instCounter_ < limit)
++#endif
+     {
+       if (userStop)
+         break;
+@@ -4609,11 +4624,16 @@
+ 	  hasInterrupt_ = hasException_ = false;
+           lastPriv_ = privMode_;
+ 
+-#ifdef __EMSCRIPTEN__  
++#ifdef __EMSCRIPTEN__
++#ifndef ALE_NO_ASYNCIFY
++    // The sleep gave the worker its event loop back, so that a message could
++    // arrive. Without Asyncify the slice does that: it returns to JavaScript
++    // after its budget of instructions. `aleRunSlice` holds the model.
+     if(simEnableInterrupt && (!(instCounter_ & int_inst_mask))){
+       emscripten_sleep(int_sleep_duration);
+     }
+ #endif
++#endif
+ 
+ 	  ++instCounter_;
+ 
+@@ -4785,10 +4805,16 @@
+       currPc_ = pc_;
+       ++instCounter_;
+ 
+-#ifdef __EMSCRIPTEN__  
++#ifdef __EMSCRIPTEN__
+     if(simEnableInterrupt && (!(instCounter_ & int_inst_mask))){
+       InterruptCause cause;
++#ifndef ALE_NO_ASYNCIFY
++      // The sleep gave the worker its event loop back. Without Asyncify the
++      // slice does that: it returns to JavaScript after its budget of
++      // instructions, and the budget of the worker is this same period. The
++      // test of the interrupt state stays here.
+       emscripten_sleep(int_sleep_duration);
++#endif
+       if (isInterruptPossible(cause))
+       {
+         initiateInterrupt(cause, pc_);
+@@ -4832,10 +4858,16 @@
+       currPc_ = pc_;
+       ++instCounter_;
+ 
+-#ifdef __EMSCRIPTEN__  
++#ifdef __EMSCRIPTEN__
+     if(simEnableInterrupt && (!(instCounter_ & int_inst_mask))){
+       InterruptCause cause;
++#ifndef ALE_NO_ASYNCIFY
++      // The sleep gave the worker its event loop back. Without Asyncify the
++      // slice does that: it returns to JavaScript after its budget of
++      // instructions, and the budget of the worker is this same period. The
++      // test of the interrupt state stays here.
+       emscripten_sleep(int_sleep_duration);
++#endif
+       if (isInterruptPossible(cause))
+       {
+         initiateInterrupt(cause, pc_);
+@@ -4935,6 +4967,12 @@
+   else if (enableGdb_)
+     gdbInputFd_ = STDIN_FILENO;
+ 
++#ifdef ALE_NO_ASYNCIFY
++  // One slice, and then a return to the caller. The caller is the slice
++  // driver of whisper.cpp, which JavaScript calls again for the next slice.
++  return aleRunSlice(file, aleBudget_);
++#else
++
+   // To run fast, this method does not do much besides
+   // straight-forward execution. If any option is turned on, we switch
+   // to runUntilAdress which supports all features.
+@@ -4943,8 +4981,9 @@
+   bool complex = (stopAddrValid_ or instFreq_ or enableTriggers_ or enableGdb_
+                   or enableCounters_ or alarmInterval_ or file or enableWideLdSt_
+                   or hasClint or isRvs());
++
+   if (complex)
+-    return runUntilAddress(stopAddr, file); 
++    return runUntilAddress(stopAddr, file);
+ 
+   uint64_t counter0 = instCounter_;
+ 
+@@ -4965,11 +5004,142 @@
+   uint64_t numInsts = instCounter_ - counter0;
+   reportInstsPerSec(numInsts, elapsed, userStop);
+   return success;
++#endif  // ALE_NO_ASYNCIFY
+ }
+ 
+ 
++#ifdef ALE_NO_ASYNCIFY
++
++/// Run at most `budget` instructions and return. A budget of zero means no
++/// limit. This is what `run` becomes in a build without Asyncify.
++///
++/// The state of a run lives in the hart, so a call continues where the call
++/// before it stopped. The method reports the instructions per second one time
++/// only, when the program is finished, and it adds the time of every slice.
++///
++/// The return value is the return value of the run. `aleYielded()` says
++/// whether the program is still running, and `aleWaiting()` whether it stopped
++/// to wait for input.
+ template <typename URV>
+ bool
++Hart<URV>::aleRunSlice(FILE* file, uint64_t budget)
++{
++  // The same test as `run`: any option that the fast loop cannot do sends the
++  // run to the loop that can do everything.
++  URV stopAddr = stopAddrValid_? stopAddr_ : ~URV(0); // ~URV(0): No-stop PC.
++  bool hasClint = clintStart_ < clintLimit_;
++  bool complex = (stopAddrValid_ or instFreq_ or enableTriggers_ or enableGdb_
++                  or enableCounters_ or alarmInterval_ or file or enableWideLdSt_
++                  or hasClint or isRvs());
++
++  if (not aleRunActive_)
++    {
++      aleRunActive_ = true;
++      aleCounter0_ = instCounter_;
++      aleElapsed_ = 0;
++    }
++
++  aleYielded_ = false;
++  aleWaiting_ = false;
++  aleBlocked_ = false;
++
++  // The slice limit goes into instCountLim_, which both loops already test.
++  // The hot loop therefore has no test that it did not have before.
++  uint64_t globalLimit = instCountLim_;
++  if (budget and (globalLimit - instCounter_) > budget)
++    instCountLim_ = instCounter_ + budget;
++
++  struct timeval t0;
++  gettimeofday(&t0, nullptr);
++
++  // Setup signal handlers. Restore on destruction.
++  SignalHandlers handlers;
++
++  bool success = true;
++#ifndef DISABLE_EXCEPTIONS
++  try
++#endif
++    {
++      if (complex)
++        success = untilAddress(stopAddr, file);
++      else
++        {
++          // For speed: do not record/clear CSR changes. The choice between
++          // the two loops is the choice that simpleRun makes, so a slice with
++          // no limit runs the same loop as a run without Asyncify does.
++          enableCsrTrace_ = false;
++          if (instCountLim_ == ~uint64_t(0))
++            success = simpleRunNoLimit();
++          else
++            success = simpleRunWithLimit();
++          enableCsrTrace_ = true;
++        }
++    }
++#ifndef DISABLE_EXCEPTIONS
++  catch (const CoreException& ce)
++    {
++      enableCsrTrace_ = true;
++      success = logStop(ce, 0, nullptr);
++    }
++#endif
++
++  struct timeval t1;
++  gettimeofday(&t1, nullptr);
++  aleElapsed_ += (double(t1.tv_sec - t0.tv_sec) +
++                  double(t1.tv_usec - t0.tv_usec)*1e-6);
++
++  uint64_t sliceLimit = instCountLim_;
++  instCountLim_ = globalLimit;
++
++  if (aleBlocked_)
++    {
++      // A syscall has no input. The hart is back at the ecall instruction and
++      // it runs it again in a later slice.
++      aleBlocked_ = false;
++      noUserStop = true;
++      aleYielded_ = true;
++      aleWaiting_ = true;
++      return success;
++    }
++
++  if (userStop)
++    std::cerr << "Stopped -- interrupted\n";
++  else if (instCounter_ >= globalLimit)
++    std::cerr << "Stopped -- Reached instruction limit\n";
++  else if (complex and pc_ == stopAddr)
++    std::cerr << "Stopped -- Reached end address\n";
++  else if (instCounter_ >= sliceLimit)
++    {
++      // The budget of the slice ran out and nothing else stopped the run.
++      aleYielded_ = true;
++      return success;
++    }
++
++  aleRunActive_ = false;
++  reportInstsPerSec(instCounter_ - aleCounter0_, aleElapsed_, userStop);
++  return success;
++}
++
++
++/// Called by Syscall when a read from the standard input has no data. Back the
++/// program counter up to the ecall instruction and stop the loop. The slice
++/// then returns to JavaScript, and a later slice runs the ecall again.
++template <typename URV>
++void
++Hart<URV>::aleSetBlocked()
++{
++  aleBlocked_ = true;
++  pc_ = currPc_;
++  if (instCounter_ > 0)
++    --instCounter_;     // The ecall did not retire.
++  noUserStop = false;   // Stop the loop. userStop stays false.
++}
++
++#endif  // ALE_NO_ASYNCIFY
++
++
++template <typename URV>
++bool
+ Hart<URV>::isInterruptPossible(InterruptCause& cause)
+ {
+   if (debugMode_ and not debugStepMode_)
+@@ -5207,10 +5377,15 @@
+       lastPriv_ = privMode_;
+ 
+       ++instCounter_;
+-      
+-#ifdef __EMSCRIPTEN__  
++
++#ifdef __EMSCRIPTEN__
++#ifndef ALE_NO_ASYNCIFY
++  // One step of the interactive shell. The sleep let a message arrive between
++  // two steps. Without Asyncify the slice does that: the shell reads its next
++  // command only after a return to JavaScript.
+   emscripten_sleep(int_sleep_duration);
+ #endif
++#endif
+ 
+       if (processExternalInterrupt(traceFile, instStr))
+ 	return;  // Next instruction in interrupt handler.
+@@ -9165,8 +9340,22 @@
+ 
+   if (newlib_ or linux_)
+     {
++#ifdef ALE_NO_ASYNCIFY
++      // The syscall can report that it must wait for input. The a0 register
++      // then keeps its value, because the slice after this one runs the same
++      // ecall again and the syscall needs its arguments.
++      URV a0Before = intRegs_.read(RegA0);
++      URV result = syscall_.emulate();
++      if (aleBlocked_)
++        {
++          intRegs_.write(RegA0, a0Before);
++          return;
++        }
++      intRegs_.write(RegA0, result);
++#else
+       URV a0 = syscall_.emulate();
+       intRegs_.write(RegA0, a0);
++#endif
+ #ifdef DISABLE_EXCEPTIONS
+       URV num = intRegs_.read(RegA7);
+       if(num == 93 || num == 94){
+--- a/Hart.hpp
++++ b/Hart.hpp
+@@ -342,6 +342,36 @@
+     /// that address. If given file is non-null, then print to that
+     /// file a record for each executed instruction.
+     bool run(FILE* file = nullptr);
++
++#ifdef ALE_NO_ASYNCIFY
++    /// Run at most the given number of instructions and then return. A
++    /// budget of zero means no limit.
++    ///
++    /// Without Asyncify, nothing in C++ can wait: a wait must be a return to
++    /// JavaScript. This method is what `run` becomes in that build. It keeps
++    /// the state of the run in the hart, so the next call continues where this
++    /// one stopped. It prints the instructions-per-second report one time
++    /// only, when the program is finished.
++    bool aleRunSlice(FILE* file, uint64_t budget);
++
++    /// Set the instruction budget of the next slice. Zero means no limit.
++    void aleSetBudget(uint64_t budget)
++    { aleBudget_ = budget; }
++
++    /// True when the last slice stopped because its budget ran out or
++    /// because a syscall must wait, and not because the program finished.
++    bool aleYielded() const
++    { return aleYielded_; }
++
++    /// True when the last slice stopped because a syscall must wait for
++    /// input from the host.
++    bool aleWaiting() const
++    { return aleWaiting_; }
++
++    /// Called by Syscall when a read from the standard input has no data.
++    /// The hart backs up to the ecall instruction and the slice returns.
++    void aleSetBlocked();
++#endif
+ 
+     /// Run one instruction at the current program counter. Update
+     /// program counter. If file is non-null then print thereon
+@@ -2917,6 +2947,18 @@
+     URV      fcsrValue_ = 0;     // Proxy for FCSR.
+     uint64_t instCounter_ = 0;   // Absolute retired instruction count.
+     uint64_t instCountLim_ = ~uint64_t(0);
++
++#ifdef ALE_NO_ASYNCIFY
++    // The state of a run that crosses more than one slice. See aleRunSlice.
++    uint64_t aleBudget_ = 0;      // Instructions of the next slice. 0: no limit.
++    uint64_t aleCounter0_ = 0;    // instCounter_ when this run started.
++    double   aleElapsed_ = 0;     // Seconds of run time, all slices together.
++    bool     aleRunActive_ = false;  // A run is in progress across slices.
++    bool     aleYielded_ = false; // The last slice did not finish the program.
++    bool     aleWaiting_ = false; // The last slice stopped to wait for input.
++    bool     aleBlocked_ = false; // A syscall has no input. Set by Syscall.
++#endif
++
+     uint64_t exceptionCount_ = 0;
+     uint64_t interruptCount_ = 0;   // Including non-maskable interrupts.
+     uint64_t nmiCount_ = 0;
+--- a/Interactive.cpp
++++ b/Interactive.cpp
+@@ -143,10 +143,37 @@
+   if (addr >= hart.memorySize())
+     std::cerr << "Warning: Address outside memory range.\n";
+ 
++#ifdef ALE_NO_ASYNCIFY
++  // `untilAddress` runs to the address and never returns to JavaScript, so a
++  // wrong address would stop the worker. A stop address plus `run` does the
++  // same job with the slices of this build. `aleRunFinished` takes the stop
++  // address away when the run is complete.
++  aleUntil_ = true;
++  hart.setStopAddress(URV(addr));
++  return hart.run(traceFile);
++#else
+   return hart.untilAddress(addr, traceFile);
++#endif
++}
++
++
++#ifdef ALE_NO_ASYNCIFY
++
++/// Called by the slice driver when a run of the shell is complete.
++template <typename URV>
++void
++Interactive<URV>::aleRunFinished(Hart<URV>& hart)
++{
++  if (aleUntil_)
++    {
++      hart.clearStopAddress();
++      aleUntil_ = false;
++    }
+ }
+ 
++#endif
+ 
++
+ template <typename URV>
+ bool
+ Interactive<URV>::stepCommand(Hart<URV>& hart, const std::string& /*line*/,
+@@ -1654,6 +1681,12 @@
+       #ifdef __EMSCRIPTEN__
+       std::string line;
+       char pstr[500];
++      #ifdef ALE_NO_ASYNCIFY
++      // This build cannot wait for a command. `interactSlice` is the entry
++      // point of the shell, and the slice driver of whisper.cpp calls it.
++      std::cerr << "This build has no blocking interactive shell\n";
++      return false;
++      #else
+       while (1){
+         emscripten_sleep(100);
+         int res = readInteractiveCommand(pstr);
+@@ -1662,7 +1695,8 @@
+           break;
+         }
+       }
+-      
++      #endif
++
+       #else
+       std::string line = linenoise::Readline(prompt);
+       #endif
+@@ -1685,6 +1719,51 @@
+ }
+ 
+ 
++#ifdef ALE_NO_ASYNCIFY
++
++/// Execute the commands that the host has sent, and then return.
++///
++/// `interact` above waits for a command in a loop around `emscripten_sleep`.
++/// Without Asyncify there is nothing to wait with, so this method takes the
++/// commands that are ready and returns. The slice driver of whisper.cpp calls
++/// it one time for each slice, and the messages of the host arrive between two
++/// slices.
++///
++/// A `run` or an `until` command does not finish inside this call. The hart
++/// stops when the budget of the slice runs out, and `Hart::aleYielded()` is
++/// then true. The driver continues that run in the slices that follow, and it
++/// asks for a new command only after the run is complete.
++template <typename URV>
++bool
++Interactive<URV>::interactSlice(FILE* traceFile, FILE* commandLog, bool& done)
++{
++  if (not aleStarted_)
++    {
++      linenoise::SetHistoryMaxLen(1024);
++      aleStarted_ = true;
++    }
++
++  char pstr[500];
++  errno = 0;
++  if (not readInteractiveCommand(pstr))
++    return true;            // No command is ready. Nothing to do this slice.
++
++  std::string line = pstr;
++  if (line.empty())
++    return true;
++
++  linenoise::AddHistory(line.c_str());
++
++  if (not executeLine(aleHartId_, line, traceFile, commandLog,
++                      aleReplayStream_, done))
++    aleErrors_++;
++
++  return aleErrors_ == 0;
++}
++
++#endif  // ALE_NO_ASYNCIFY
++
++
+ template class WdRiscv::Interactive<uint32_t>;
+ #ifndef ALE_NO_RV64
+ template class WdRiscv::Interactive<uint64_t>;
+--- a/Interactive.hpp
++++ b/Interactive.hpp
+@@ -44,6 +44,17 @@
+     /// Return false otherwise.
+     bool interact(FILE* traceFile, FILE* commandLog);
+ 
++#ifdef ALE_NO_ASYNCIFY
++    /// Execute the commands that the host has sent, and then return. This is
++    /// what `interact` becomes in a build without Asyncify: the shell cannot
++    /// wait for a command, so it returns and the slice driver calls it again.
++    /// `done` becomes true when the quit command is seen.
++    bool interactSlice(FILE* traceFile, FILE* commandLog, bool& done);
++
++    /// Called by the slice driver when a run of the shell is complete.
++    void aleRunFinished(Hart<URV>& hart);
++#endif
++
+     /// Helper to interact: "until" command. Run until address.
+     bool untilCommand(Hart<URV>&, const std::string& line,
+ 		     const std::vector<std::string>& tokens,
+@@ -119,6 +130,16 @@
+ 
+     // Initial resets do not reset memory mapped registers.
+     bool resetMemoryMappedRegs_ = false;
++
++#ifdef ALE_NO_ASYNCIFY
++    // The state that `interact` had on its stack. A slice returns to
++    // JavaScript between two commands, so the state must be in the object.
++    bool aleStarted_ = false;
++    bool aleUntil_ = false;      // An until command set the stop address.
++    unsigned aleHartId_ = 0;
++    std::ifstream aleReplayStream_;
++    uint64_t aleErrors_ = 0;
++#endif
+   };
+ 
+ }
+--- a/Syscall.cpp
++++ b/Syscall.cpp
+@@ -924,6 +924,21 @@
+ 	  return SRV(-1);
+ 	size_t count = a2;
+   #ifdef __EMSCRIPTEN__
++  #ifdef ALE_NO_ASYNCIFY
++  // A read from the standard input with no data cannot wait: there is no
++  // Asyncify. The hart backs up to the ecall and the slice returns to
++  // JavaScript, which is where the next character can arrive. A later slice
++  // runs the same ecall again. `getStdin` in the worker takes no character
++  // when it answers -1, so nothing is lost.
++  if(SRV(a0) == 0){
++    int ret = readFromStdin((void*) buffAddr, count);
++    if (ret == -1){
++      hart_.aleSetBlocked();
++      return SRV(-1);
++    }
++    return ret;
++  }
++  #else
+   int ret = -1;
+   if(SRV(a0) == 0){
+     while (ret == -1){
+@@ -933,6 +948,7 @@
+     return ret;
+   }
+   #endif
++  #endif
+ 	errno = 0;
+ 	ssize_t rc = read(fd, (void*) buffAddr, count);
+ 	return rc < 0 ? SRV(-errno) : rc;
+--- a/whisper.cpp
++++ b/whisper.cpp
+@@ -51,7 +51,12 @@
+ #include "Server.hpp"
+ #include "Interactive.hpp"
+ 
++#ifdef ALE_NO_ASYNCIFY
++#include <memory>
++#include <emscripten.h>
++#endif
+ 
++
+ using namespace WdRiscv;
+ 
+ 
+@@ -1684,13 +1689,212 @@
+ 
+   if (not config.getPageSize(pageSize))
+     pageSize = args.pageSize;
++
++  return true;
++}
++
++
++#ifdef ALE_NO_ASYNCIFY
++
++// ─── The slice driver ───────────────────────────────────────────────────────
++//
++// Asyncify is gone, so nothing in C++ can wait: a wait must be a return to
++// JavaScript. `main` therefore builds the session and returns, and the worker
++// calls `ale_run_slice` from a setTimeout chain. Each call runs at most the
++// number of instructions that the worker asks for.
++//
++// The state that `session` and `sessionRun` kept on their stacks lives here,
++// because it must survive a return to JavaScript.
++
++/// What a slice reports to the worker.
++enum AleStatus
++  {
++    ALE_DONE = 0,   // The program is finished. Do not call again.
++    ALE_RAN  = 1,   // Instructions ran. Call again as soon as possible.
++    ALE_WAIT = 2    // Waiting for the host: for input, or for a shell command.
++  };
++
++template <typename URV>
++struct AleSession
++{
++  std::unique_ptr<System<URV>> system;
++  std::unique_ptr<Interactive<URV>> shell;   // Null unless --interactive
++  const Args* args = nullptr;
++  FILE* traceFile = nullptr;
++  FILE* commandLog = nullptr;
++  FILE* consoleOut = stdout;
++  bool running = false;   // A shell run command is in progress.
++  bool done = false;
++  bool ok = true;
++};
++
++template <typename URV>
++static
++AleSession<URV>&
++aleSession()
++{
++  static AleSession<URV> session;
++  return session;
++}
++
++/// The slice function of the register width that main chose.
++static int (*aleSliceFn)(uint64_t) = nullptr;
++
++
++/// The tail of session: report the instruction frequency and close the files.
++template <typename URV>
++static
++void
++aleFinish()
++{
++  auto& s = aleSession<URV>();
++  if (s.done)
++    return;
++  s.done = true;
++
++  auto& hart0 = *s.system->ithHart(0);
++  if (s.args and not s.args->instFreqFile.empty())
++    s.ok = reportInstructionFrequency(hart0, s.args->instFreqFile) and s.ok;
++
++  closeUserFiles(s.traceFile, s.commandLog, s.consoleOut);
++}
++
++
++/// The setup part of sessionRun. It applies the command line to each hart and
++/// it chooses between the batch run and the interactive shell. It does not run
++/// any instruction: `ale_run_slice` does that.
++template <typename URV>
++static
++bool
++aleStart(System<URV>& system, const Args& args, FILE* traceFile, FILE* cmdLog)
++{
++  auto& s = aleSession<URV>();
++
++  for (unsigned i = 0; i < system.hartCount(); ++i)
++    if (not applyCmdLineArgs(args, *system.ithHart(i), system))
++      if (not args.interactive)
++	return false;
++
++  if (not args.serverFile.empty())
++    {
++      std::cerr << "This build has no server mode\n";
++      return false;
++    }
++
++  if (args.snapshotPeriod and *args.snapshotPeriod)
++    {
++      std::cerr << "This build has no snapshot mode\n";
++      return false;
++    }
++
++  if (args.interactive)
++    {
++      // In interactive mode: enable triggers and performance counters.
++      for (unsigned i = 0; i < system.hartCount(); ++i)
++        {
++          auto& hart = *system.ithHart(i);
++          hart.enableTriggers(true);
++          hart.enablePerformanceCounters(true);
++        }
++      s.shell.reset(new Interactive<URV>(system));
++    }
++  else
++    {
++      // Load error rollback is an annoyance if not in interactive mode.
++      for (unsigned i = 0; i < system.hartCount(); ++i)
++        {
++          auto& hart = *system.ithHart(i);
++          hart.enableLoadErrorRollback(false);
++          hart.enableBenchLoadExceptions(false);
++        }
++    }
+ 
++  s.args = &args;
++  s.traceFile = traceFile;
++  s.commandLog = cmdLog;
++  s.done = false;
++  s.ok = true;
+   return true;
+ }
+ 
+ 
++/// One slice. Run at most `budget` instructions, where zero means no limit,
++/// and return an AleStatus.
+ template <typename URV>
+ static
++int
++aleSlice(uint64_t budget)
++{
++  auto& s = aleSession<URV>();
++  if (s.done or not s.system)
++    return ALE_DONE;
++
++  Hart<URV>& hart = *s.system->ithHart(0);
++  hart.aleSetBudget(budget);
++
++  if (not s.shell)
++    {
++      // The batch run, which is what the run button of the application uses.
++      s.ok = hart.run(s.traceFile) and s.ok;
++      if (hart.aleWaiting())
++        return ALE_WAIT;
++      if (hart.aleYielded())
++        return ALE_RAN;
++      aleFinish<URV>();
++      return ALE_DONE;
++    }
++
++  // The interactive shell. `aleYielded` is false here unless this slice ran
++  // instructions, because a run that yields sets `running` and takes the
++  // branch above it.
++  if (s.running)
++    {
++      s.ok = hart.run(s.traceFile) and s.ok;
++      if (hart.aleWaiting())
++        return ALE_WAIT;
++      if (hart.aleYielded())
++        return ALE_RAN;
++      s.running = false;
++      s.shell->aleRunFinished(hart);
++      return ALE_WAIT;             // Back to the prompt.
++    }
++
++  bool done = false;
++  if (not s.shell->interactSlice(s.traceFile, s.commandLog, done))
++    s.ok = false;
++
++  if (hart.aleYielded())
++    {
++      s.running = true;            // A run or an until command is in progress.
++      return hart.aleWaiting()? ALE_WAIT : ALE_RAN;
++    }
++
++  if (done)
++    {
++      aleFinish<URV>();
++      return ALE_DONE;
++    }
++
++  return ALE_WAIT;                 // The shell has no command to run.
++}
++
++
++/// The entry point of the worker. `budget` is the number of instructions this
++/// slice may run; zero means no limit, which is what a benchmark uses.
++extern "C" EMSCRIPTEN_KEEPALIVE
++int
++ale_run_slice(int budget)
++{
++  if (not aleSliceFn)
++    return ALE_DONE;
++  return aleSliceFn(budget > 0? uint64_t(budget) : 0);
++}
++
++#endif  // ALE_NO_ASYNCIFY
++
++
++template <typename URV>
++static
+ bool
+ session(const Args& args, const HartConfig& config)
+ {
+@@ -1708,7 +1912,15 @@
+   checkAndRepairMemoryParams(memorySize, pageSize, regionSize);
+ 
+   // Create cores & harts.
++#ifdef ALE_NO_ASYNCIFY
++  // The system must outlive this function: the slices run after main returns.
++  auto& aleState = aleSession<URV>();
++  aleState.system.reset(new System<URV>(coreCount, hartsPerCore, memorySize,
++                                        pageSize));
++  System<URV>& system = *aleState.system;
++#else
+   System<URV> system(coreCount, hartsPerCore, memorySize, pageSize);
++#endif
+   assert(system.hartCount() == coreCount*hartsPerCore);
+   assert(system.hartCount() > 0);
+ 
+@@ -1741,6 +1953,18 @@
+       hart.reset();
+     }
+ 
++#ifdef ALE_NO_ASYNCIFY
++  // Set the session up and return. The worker runs it, one slice at a time.
++  aleState.consoleOut = consoleOut;
++  if (not aleStart(system, args, traceFile, commandLog))
++    {
++      closeUserFiles(traceFile, commandLog, consoleOut);
++      return false;
++    }
++  aleSliceFn = &aleSlice<URV>;
++  return true;
++#else
++
+   bool result = sessionRun(system, args, traceFile, commandLog);
+ 
+   auto& hart0 = *system.ithHart(0);
+@@ -1750,6 +1974,7 @@
+   closeUserFiles(traceFile, commandLog, consoleOut);
+ 
+   return result;
++#endif
+ }
+ 
+ 
+@@ -1808,7 +2033,14 @@
+ int
+ main(int argc, char* argv[])
+ {
++#ifdef ALE_NO_ASYNCIFY
++  // The session outlives main: the worker calls ale_run_slice after main
++  // returns, and the slices read the arguments and the configuration.
++  static Args args;
++  static HartConfig config;
++#else
+   Args args;
++#endif
+   if (not parseCmdLineArgs(argc, argv, args))
+     return 1;
+ 
+@@ -1819,7 +2051,9 @@
+   args.expandTargets();
+ 
+   // Load configuration file.
++#ifndef ALE_NO_ASYNCIFY
+   HartConfig config;
++#endif
+   if (not args.configFile.empty())
+     if (not config.loadConfigFile(args.configFile))
+       return 1;

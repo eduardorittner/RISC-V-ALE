@@ -130,6 +130,21 @@ async function main() {
         { afterMs: 5000, cmd: "quit" },
       ],
     });
+    // A read of the standard input inside the shell. The shell run uses the
+    // loop of the core that does everything (`untilAddress`), and the batch
+    // run uses the fast loop, so the two runs stop for input in two different
+    // places. Step 8 of the plan needs both: without Asyncify a read that has
+    // no data must stop the loop and return to JavaScript.
+    runs.push({
+      name: "interactive-stdin",
+      file: "stdin.elf",
+      describe: "a read of the standard input inside the shell",
+      extraArgs: ["--interactive"],
+      interrupts: true,
+      interactive: [{ afterMs: 1500, cmd: "run" }],
+      stdin: STDIN_CHAR,
+      stdinAfterMs: 3000,
+    });
 
     for (const p of runs) {
       const isStdin = p.name === "stdin";
@@ -145,13 +160,14 @@ async function main() {
           isa,
           ...(p.extraArgs || []),
         ],
-        // The interrupt check is the one that must run with interrupts on.
-        interrupts: isStdin,
+        // The checks that read the standard input are the ones that must run
+        // with interrupts on.
+        interrupts: p.interrupts === undefined ? isStdin : p.interrupts,
         timeoutMs: 60000,
       };
-      if (isStdin) {
-        opts.stdin = STDIN_CHAR;
-        opts.stdinAfterMs = 1500;
+      if (isStdin || p.stdin) {
+        opts.stdin = p.stdin || STDIN_CHAR;
+        opts.stdinAfterMs = p.stdinAfterMs || 1500;
       }
       if (p.interactive) opts.interactive = p.interactive;
 
@@ -195,6 +211,9 @@ async function main() {
     } else if (r.name === "stdin") {
       ok = stdout.includes(STDIN_CHAR);
       why = ok ? "" : `stdout was ${JSON.stringify(stdout)}`;
+    } else if (r.name === "interactive-stdin") {
+      ok = stdout.includes(STDIN_CHAR);
+      why = ok ? "" : `stdout was ${JSON.stringify(stdout)}`;
     } else if (r.name === "interactive") {
       // `peek pc` answers with the program counter, and `run` then reaches the
       // write syscall of the program.
@@ -207,7 +226,7 @@ async function main() {
 
     if (!ok) failures++;
     console.log(
-      `${ok ? "PASS" : "FAIL"}  ${r.name.padEnd(7)} ${r.describe}` +
+      `${ok ? "PASS" : "FAIL"}  ${r.name.padEnd(18)} ${r.describe}` +
         (ok ? "" : `\n        ${why}`),
     );
     if (!ok && out.stderr) {

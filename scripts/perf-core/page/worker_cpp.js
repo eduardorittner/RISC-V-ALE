@@ -110,9 +110,39 @@ function initFS() {
   FS.writeFile(elfPath, elfBytes);
 }
 
+/**
+ * The Emscripten `postRun` hook, which runs directly after `main`.
+ *
+ * A module without Asyncify (step 8 of `local/optimize-whisper.md`) does not
+ * run the program inside `main`. `main` sets the session up and returns, and
+ * the host then calls `_ale_run_slice(budget)`. A budget of 0 means no limit.
+ *
+ * Interrupts are off in the benchmark, so the core has no reason to stop: the
+ * whole program runs inside one call. The figure that the core prints
+ * therefore covers the same work as it did with Asyncify, and the two
+ * measurements are comparable. A module with Asyncify has no
+ * `_ale_run_slice`, and then this function does nothing.
+ */
+function aleRun() {
+  if (typeof Module._ale_run_slice !== "function") return;
+  var ALE_RAN = 1,
+    ALE_WAIT = 2;
+  var status = Module._ale_run_slice(0);
+  while (status === ALE_RAN) {
+    status = Module._ale_run_slice(0);
+  }
+  if (status === ALE_WAIT) {
+    postMessage({
+      type: "error",
+      error: "the core waits for input, which a benchmark workload never does",
+    });
+  }
+}
+
 var Module = {
   arguments: [],
   preRun: [initFS],
+  postRun: [aleRun],
   print: function (text) {
     stdoutLines.push(text);
   },

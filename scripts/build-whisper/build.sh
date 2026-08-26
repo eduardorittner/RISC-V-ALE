@@ -27,6 +27,7 @@
 #   SLOPPY_FLAGS -DFAST_SLOPPY                 (step 4; set it empty to undo)
 #   TRIM_FLAGS   the -DALE_NO_* guards         (step 6; set it empty to undo)
 #   RV32_FLAGS   -DALE_NO_RV64                 (step 7; set it empty to undo)
+#   ASYNCIFY     1 to get Asyncify back        (step 8; default: no Asyncify)
 #   EXTRA_FLAGS  more compile flags            (default empty)
 #   LINK_EXTRA   more link flags               (default empty)
 #   NO_INSTALL   set it to keep the module out of modules/ (default: install)
@@ -92,6 +93,23 @@ TRIM_FLAGS="${TRIM_FLAGS--DALE_NO_VECTOR -DALE_NO_BITMANIP -DALE_NO_GDB -DALE_NO
 # support".
 RV32_FLAGS="${RV32_FLAGS--DALE_NO_RV64}"
 
+# Step 8. Asyncify instruments every function that can reach a sleep, and the
+# core pays that cost on every instruction. `patches/0005` replaces the sleeps
+# with a budget-and-return run loop: main sets the session up and returns, and
+# the worker calls `ale_run_slice` from a setTimeout chain. Set ASYNCIFY=1 to
+# get the module of step 7 back.
+#
+# The two builds need different workers. `modules/simulator_worker.js` and the
+# two `worker_cpp.js` files of `scripts/perf-core/` drive the slices, and they
+# fall back to the old model when the module has no `_ale_run_slice`.
+if [ -n "${ASYNCIFY:-}" ]; then
+  ASYNCIFY_FLAGS="-s ASYNCIFY"
+  SLICE_FLAGS=""
+else
+  ASYNCIFY_FLAGS=""
+  SLICE_FLAGS="-DALE_NO_ASYNCIFY"
+fi
+
 BUILD_TAG="${BUILD_TAG:-default}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc || echo 4)}"
 
@@ -147,7 +165,8 @@ source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
 
 echo "Emscripten: $(em++ --version | head -1)"
 echo "Source:     $SWERV_DIR ($HEAD_COMMIT)"
-echo "Flags:      -O3 ... $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $EXTRA_FLAGS"
+echo "Flags:      -O3 ... $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $SLICE_FLAGS $EXTRA_FLAGS"
+echo "Asyncify:   ${ASYNCIFY_FLAGS:-none}"
 echo "Memory:     $TOTAL_MEMORY bytes ($((TOTAL_MEMORY / 1048576)) MB)"
 echo "Build tag:  $BUILD_TAG"
 echo ""
@@ -201,8 +220,8 @@ fi
 
 # Line 79 of the GNUmakefile, and nothing else, plus what a step adds.
 OFLAGS="-O3 -Wno-c++11-narrowing -fno-builtin -D__EMSCRIPTEN__"
-OFLAGS="$OFLAGS -DDISABLE_EXCEPTIONS -s TOTAL_MEMORY=$TOTAL_MEMORY -s ASYNCIFY"
-OFLAGS="$OFLAGS $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $EXTRA_FLAGS"
+OFLAGS="$OFLAGS -DDISABLE_EXCEPTIONS -s TOTAL_MEMORY=$TOTAL_MEMORY $ASYNCIFY_FLAGS"
+OFLAGS="$OFLAGS $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $SLICE_FLAGS $EXTRA_FLAGS"
 
 # The source is from 2021 and the compiler is from 2026. These force-includes
 # are the ones that the differential harness already uses for the native
@@ -260,7 +279,7 @@ LINK_LIBS="$LINK_LIBS ${LINK_EXTRA:-}"
 # the command line wins, so nothing in LINK_LIBS can change the memory size.
 # `patches/0001-parameterize-the-link-flags.patch` puts those three settings
 # into EM_LINK_FLAGS, which this line then sets.
-EM_LINK_FLAGS="-s TOTAL_MEMORY=$TOTAL_MEMORY -lworkerfs.js -s ASYNCIFY"
+EM_LINK_FLAGS="-s TOTAL_MEMORY=$TOTAL_MEMORY -lworkerfs.js $ASYNCIFY_FLAGS"
 
 BUILD_DIR="build-wasm"
 

@@ -92,6 +92,7 @@ protocol as `modules/simulator.js`, so it tests what the application runs.
 | `mmio.elf` | `jsWriteMMIO` and `jsReadMMIO` work. The program writes `0x5A` to `0xffff0010`, reads it back and writes the byte to the terminal. The host also sees the write in the sync message. |
 | `stdin.elf` | The `--newlib` read syscall works with interrupts on. Until the host sends a character, `readFromStdin` reports -1 and `Syscall.cpp` waits in a loop around `emscripten_sleep(10)`. |
 | `hello.elf` with `--interactive` | The interactive shell of whisper works. This is what the "run with debug" button of the application uses. The check sends `peek pc`, `run` and `quit` through the same `interactive` message that `modules/simulator.js` sends. Step 6 needs this check: the plan lists the shell as unused, and that is not correct. |
+| `stdin.elf` with `--interactive` | A read of the standard input inside the shell. The shell uses the loop of the core that does everything (`untilAddress`) and a batch run uses the fast loop, so the two stop for input in two different places. Step 8 needs this check, and it found a defect: the first version of the patch stopped only the fast loop, so this check did not finish. |
 
 The driver takes the ISA string from the checkboxes of `index.html`, because
 that is where the application takes it from. `get_checked_ISAs()` in
