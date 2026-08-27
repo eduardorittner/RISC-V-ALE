@@ -211,6 +211,16 @@ async function main() {
     } else if (r.name === "stdin") {
       ok = stdout.includes(STDIN_CHAR);
       why = ok ? "" : `stdout was ${JSON.stringify(stdout)}`;
+    } else if (r.name === "bss") {
+      // `Z` when every probed word of the .bss gap is zero, `D` when one is
+      // not. The program itself decides, so a `D` is a real failure of the
+      // guest memory and not a difference in the output path.
+      ok = stdout.includes("Z");
+      why = ok
+        ? ""
+        : `stdout was ${JSON.stringify(stdout)}. A "D" means the guest ` +
+          `memory is not zero where the ELF file has nothing, so the guest ` +
+          `.bss holds what the allocator left there.`;
     } else if (r.name === "interactive-stdin") {
       ok = stdout.includes(STDIN_CHAR);
       why = ok ? "" : `stdout was ${JSON.stringify(stdout)}`;

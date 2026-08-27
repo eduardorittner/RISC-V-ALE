@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>RISC-V ALE C++ core startup phases</title>
+  </head>
+  <body>
+    <h1>RISC-V ALE C++ core startup phases</h1>
+    <p>
+      The driver in <code>scripts/perf-core/startup/run_phases.cjs</code> calls
+      <code>runPhases()</code> from this page. Each call is one cold start of
+      the C++ core with a module that <code>-DALE_TIME_STARTUP</code> built, and
+      it answers the list of marks that the worker and the module took.
+    </p>
+    <pre id="log"></pre>
+    <script>
+      "use strict";
+
+      const RUN_TIMEOUT_MS = 120000;
+
+      function log(text) {
+        document.getElementById("log").textContent += text + "\n";
+      }
+
+      /**
+       * One cold start of the C++ core.
+       *
+       * @param {string[]} args the argument list the core starts with
+       * @returns {Promise<object>} the marks the worker and the module took
+       */
+      window.runPhases = function (args) {
+        const stamp = Date.now() + "-" + Math.random().toString(36).slice(2);
+        const msg = {
+          type: "run",
+          elfName: "probe.elf",
+          elfUrl: "probe.elf?r=" + stamp,
+          moduleUrl: "whisper.js?r=" + stamp,
+          args,
+        };
+
+        return new Promise((resolve) => {
+          const worker = new Worker("worker_cpp_phases.js?r=" + stamp);
+          let done = false;
+          const finish = (value) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            worker.terminate();
+            resolve(value);
+          };
+          const timer = setTimeout(
+            () => finish({ type: "error", error: "timeout" }),
+            RUN_TIMEOUT_MS,
+          );
+          worker.onmessage = (e) => finish(e.data);
+          worker.onerror = (e) =>
+            finish({ type: "error", error: e.message || "worker error" });
+          worker.postMessage(msg);
+        });
+      };
+
+      window.harnessReady = true;
+      log("phase harness ready");
+    </script>
+  </body>
+</html>

@@ -25,6 +25,13 @@
       "bytes": 156,
       "expectStdout": null,
       "describe": "the --newlib read syscall and the emscripten_sleep wait"
+    },
+    {
+      "name": "bss",
+      "file": "bss.elf",
+      "bytes": 216,
+      "expectStdout": "Z",
+      "describe": "the guest memory reads as zero where the ELF file has nothing"
     }
   ]
 }

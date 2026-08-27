@@ -1,0 +1,459 @@
+--- /dev/null
++++ b/AleTiming.hpp
+@@ -0,0 +1,113 @@
++// Startup timing marks for RISC-V ALE.
++//
++// The report `local/36ms.md` needs to know where the milliseconds between the
++// run message and the end of a small program go. The startup harness
++// (`scripts/perf-core/startup/`) can only see the parts that JavaScript can
++// see: the fetch, the module instantiation and the two hooks. Everything
++// between the `preRun` hook and the first guest instruction is one number, and
++// that number is the largest part. These marks divide it.
++//
++// The whole file is inert unless `ALE_TIME_STARTUP` is defined, so a build
++// without that macro gives the module that the branch ships, byte for byte.
++//
++// Usage:
++//   ALE_MARK("name");   record the name and the time
++//   ALE_TIME_DUMP();    write one `ALE_TIME <name> <ms>` line for each mark
++//
++// The clock is `emscripten_get_now()`, which Emscripten implements as
++// `performance.now()`. The module and the worker therefore share one clock and
++// one time origin, so a mark and a timestamp of the worker are directly
++// comparable.
++
++#ifndef ALE_TIMING_HPP
++#define ALE_TIMING_HPP
++
++#ifdef ALE_TIME_STARTUP
++
++#include <cstdio>
++
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#endif
++
++namespace AleTime
++{
++  struct Mark
++  {
++    const char* name;
++    double ms;
++  };
++
++  /// The marks. A function-local static needs no C++17 inline variable and no
++  /// definition in a `.cpp` file, so the whole instrumentation is one header.
++  inline Mark* marks()
++  {
++    static Mark storage[256];
++    return storage;
++  }
++
++  inline unsigned& count()
++  {
++    static unsigned n = 0;
++    return n;
++  }
++
++  inline double now()
++  {
++#ifdef __EMSCRIPTEN__
++    return emscripten_get_now();
++#else
++    return 0.0;
++#endif
++  }
++
++  /// Record one mark. `name` must be a string literal: nothing copies it.
++  inline void mark(const char* name)
++  {
++    unsigned& n = count();
++    if (n >= 256)
++      return;
++    marks()[n].name = name;
++    marks()[n].ms = now();
++    n++;
++  }
++
++  /// Write the marks. The lines go to the standard error, which the worker
++  /// collects with `Module.printErr`. The dump runs after the program, so its
++  /// own cost is not inside any measured part.
++  inline void dump()
++  {
++    unsigned n = count();
++    for (unsigned i = 0; i < n; ++i)
++      fprintf(stderr, "ALE_TIME %s %.4f\n", marks()[i].name, marks()[i].ms);
++    fflush(stderr);
++  }
++}
++
++#define ALE_MARK(n) ::AleTime::mark(n)
++
++/// A mark in a place that runs many times. Only the first call records. The
++/// application runs thousands of slices, and 256 marks would not hold them.
++#define ALE_MARK_ONCE(n)                        \
++  do                                            \
++    {                                           \
++      static bool aleFirst = true;              \
++      if (aleFirst)                             \
++        {                                       \
++          aleFirst = false;                     \
++          ALE_MARK(n);                          \
++        }                                       \
++    }                                           \
++  while (false)
++
++#define ALE_TIME_DUMP() ::AleTime::dump()
++
++#else
++
++#define ALE_MARK(n) ((void) 0)
++#define ALE_MARK_ONCE(n) ((void) 0)
++#define ALE_TIME_DUMP() ((void) 0)
++
++#endif  // ALE_TIME_STARTUP
++
++#endif  // ALE_TIMING_HPP
+--- a/CsRegs.cpp
++++ b/CsRegs.cpp
+@@ -20,6 +20,7 @@
+ #include "CsRegs.hpp"
+ #include "FpRegs.hpp"
+ #include "VecRegs.hpp"
++#include "AleTiming.hpp"
+ 
+ using namespace WdRiscv;
+ 
+@@ -29,12 +30,14 @@
+   : regs_(size_t(CsrNumber::MAX_CSR_) + 1)
+ {
+   // Define CSR entries.
++  ALE_MARK("csRegs.ctorBody");
+   defineMachineRegs();
+   defineSupervisorRegs();
+   defineUserRegs();
+   defineDebugRegs();
+   defineVectorRegs();
+   defineNonStandardRegs();
++  ALE_MARK("csRegs.defined");
+ }
+ 
+ 
+--- a/Hart.cpp
++++ b/Hart.cpp
+@@ -61,6 +61,7 @@
+ #include "DecodedInst.hpp"
+ #include "Hart.hpp"
+ #include "System.hpp"
++#include "AleTiming.hpp"
+ 
+ #ifndef SO_REUSEPORT
+ #define SO_REUSEPORT SO_REUSEADDR
+@@ -103,6 +104,8 @@
+     pmpManager_(memory.size(), memory.pageSize()),
+     virtMem_(hartIx, memory, memory.pageSize(), pmpManager_, 16 /* FIX: TLB size*/)
+ {
++  ALE_MARK("hart.ctorBody");   // The member list is done: csRegs_, instTable_,
++                               // syscall_, pmpManager_ and virtMem_.
+   regionHasLocalMem_.resize(16);
+   regionHasLocalDataMem_.resize(16);
+   regionHasDccm_.resize(16);
+@@ -112,6 +115,7 @@
+   decodeCacheSize_ = 128*1024;  // Must be a power of 2.
+   decodeCacheMask_ = decodeCacheSize_ - 1;
+   decodeCache_.resize(decodeCacheSize_);
++  ALE_MARK("hart.decodeCache");
+ 
+   interruptStat_.resize(size_t(InterruptCause::MAX_CAUSE) + 1);
+   exceptionStat_.resize(size_t(ExceptionCause::MAX_CAUSE) + 1);
+@@ -178,6 +182,7 @@
+   URV hartId = base + hartIx;
+   csRegs_.configCsr(CsrNumber::MHARTID, implemented, hartId, mask, pokeMask,
+                     debug, shared);
++  ALE_MARK("hart.ctorEnd");
+ }
+ 
+ 
+@@ -5024,6 +5029,8 @@
+ bool
+ Hart<URV>::aleRunSlice(FILE* file, uint64_t budget)
+ {
++  ALE_MARK_ONCE("run.enter");
++
+   // The same test as `run`: any option that the fast loop cannot do sends the
+   // run to the loop that can do everything.
+   URV stopAddr = stopAddrValid_? stopAddr_ : ~URV(0); // ~URV(0): No-stop PC.
+@@ -5087,6 +5094,7 @@
+   gettimeofday(&t1, nullptr);
+   aleElapsed_ += (double(t1.tv_sec - t0.tv_sec) +
+                   double(t1.tv_usec - t0.tv_usec)*1e-6);
++  ALE_MARK_ONCE("run.loopEnd");
+ 
+   uint64_t sliceLimit = instCountLim_;
+   instCountLim_ = globalLimit;
+--- a/InstEntry.cpp
++++ b/InstEntry.cpp
+@@ -14,6 +14,7 @@
+ 
+ #include <cassert>
+ #include "InstEntry.hpp"
++#include "AleTiming.hpp"
+ 
+ using namespace WdRiscv;
+ 
+@@ -43,7 +44,9 @@
+ 
+ InstTable::InstTable()
+ {
++  ALE_MARK("instTable.enter");
+   setupInstVec();
++  ALE_MARK("instTable.setupInstVec");
+ 
+   // Sanity check.
+   for (unsigned i = 0; InstId(i) <= InstId::maxId; ++i)
+@@ -54,6 +57,7 @@
+ 
+   for (const auto& instInfo : instVec_)
+     instMap_[instInfo.name()] = instInfo.instId();
++  ALE_MARK("instTable.instMap");
+ 
+   // Mark instructions with unsigned source opreands.
+   instVec_.at(size_t(InstId::bltu))     .setIsUnsigned(true);
+@@ -120,6 +124,7 @@
+   instVec_.at(size_t(InstId::jalr))   .setBranchToRegister(true);
+   instVec_.at(size_t(InstId::c_jr))   .setBranchToRegister(true);
+   instVec_.at(size_t(InstId::c_jalr)) .setBranchToRegister(true);
++  ALE_MARK("instTable.end");
+ }
+ 
+ 
+--- a/Memory.cpp
++++ b/Memory.cpp
+@@ -27,6 +27,7 @@
+ #include <zlib.h>
+ #endif
+ #include "Memory.hpp"
++#include "AleTiming.hpp"
+ 
+ using namespace WdRiscv;
+ 
+@@ -35,6 +36,7 @@
+   : size_(size), data_(nullptr), pageSize_(pageSize), reservations_(1),
+     lastWriteData_(1), pmaMgr_(size, pageSize)
+ { 
++  ALE_MARK("memory.ctorBody");   // The member list, which holds pmaMgr_, is done.
+   assert(size >= pageSize);
+   assert(regionSize >= pageSize);
+   assert(pageSize >= 64);
+@@ -80,6 +82,7 @@
+ #endif
+     }
+ 
++  ALE_MARK("memory.mmap");
+   data_ = reinterpret_cast<uint8_t*>(mem);
+ 
+   // Mark all regions as non-configured.
+--- a/System.cpp
++++ b/System.cpp
+@@ -15,6 +15,7 @@
+ #include "Hart.hpp"
+ #include "Core.hpp"
+ #include "System.hpp"
++#include "AleTiming.hpp"
+ 
+ using namespace WdRiscv;
+ 
+@@ -26,7 +27,9 @@
+ {
+   cores_.resize(coreCount);
+ 
++  ALE_MARK("system.newMemory.begin");
+   memory_ = std::make_shared<Memory>(memSize, pageSize);
++  ALE_MARK("system.newMemory.end");
+ 
+   Memory& mem = *(memory_.get());
+   mem.setHartCount(hartCount_);
+@@ -44,6 +47,7 @@
+           sysHarts_.push_back(hart);
+         }
+     }
++  ALE_MARK("system.newCores.end");
+ }
+ 
+ 
+--- a/whisper.cpp
++++ b/whisper.cpp
+@@ -50,6 +50,7 @@
+ #include "System.hpp"
+ #include "Server.hpp"
+ #include "Interactive.hpp"
++#include "AleTiming.hpp"
+ 
+ #ifdef ALE_NO_ASYNCIFY
+ #include <memory>
+@@ -997,12 +998,14 @@
+ bool
+ applyCmdLineArgs(const Args& args, Hart<URV>& hart, System<URV>& system)
+ {
++  ALE_MARK("apply.enter");
+   unsigned errors = 0;
+ 
+   std::string isa = args.isa;
+ 
+   // Handle linux/newlib adjusting stack if needed.
+   bool clib = enableNewlibOrLinuxFromElf(args, hart);
++  ALE_MARK("apply.newlibFromElf");
+ 
+   // TBD: Do this once.  Do not do it for each hart.
+   if (isa.empty() and args.elfisa)
+@@ -1023,6 +1026,8 @@
+   if (not applyZisaStrings(args.zisa, hart))
+     errors++;
+ 
++  ALE_MARK("apply.isaString");
++
+   if (clib)  // Linux or newlib enabled.
+     sanitizeStackPointer(hart, args.verbose);
+ 
+@@ -1045,6 +1050,8 @@
+ 	errors++;
+     }
+ 
++  ALE_MARK("apply.loadElf");
++
+   // Load HEX files.
+   for (const auto& hexFile : args.hexFiles)
+     {
+@@ -1137,6 +1144,8 @@
+   if (not applyCmdLineRegInit(args, hart))
+     errors++;
+ 
++  ALE_MARK("apply.hartOptions");
++
+   if (args.expandedTargets.empty())
+     return errors == 0;
+ 
+@@ -1164,6 +1173,7 @@
+ 		<< "         the use of --newlib/--linux. Options ignored.\n";
+     }
+ 
++  ALE_MARK("apply.programArgs");
+   return errors == 0;
+ }
+ 
+@@ -1757,6 +1767,8 @@
+     s.ok = reportInstructionFrequency(hart0, s.args->instFreqFile) and s.ok;
+ 
+   closeUserFiles(s.traceFile, s.commandLog, s.consoleOut);
++  ALE_MARK("aleFinish.end");
++  ALE_TIME_DUMP();
+ }
+ 
+ 
+@@ -1770,10 +1782,12 @@
+ {
+   auto& s = aleSession<URV>();
+ 
++  ALE_MARK("aleStart.enter");
+   for (unsigned i = 0; i < system.hartCount(); ++i)
+     if (not applyCmdLineArgs(args, *system.ithHart(i), system))
+       if (not args.interactive)
+ 	return false;
++  ALE_MARK("aleStart.applyCmdLineArgs");
+ 
+   if (not args.serverFile.empty())
+     {
+@@ -1814,6 +1828,7 @@
+   s.commandLog = cmdLog;
+   s.done = false;
+   s.ok = true;
++  ALE_MARK("aleStart.end");
+   return true;
+ }
+ 
+@@ -1887,6 +1902,7 @@
+ {
+   if (not aleSliceFn)
+     return ALE_DONE;
++  ALE_MARK_ONCE("slice.enter");
+   return aleSliceFn(budget > 0? uint64_t(budget) : 0);
+ }
+ 
+@@ -1905,11 +1921,13 @@
+   size_t regionSize = 256*1024*1024;
+   size_t memorySize = size_t(1) << 27;  // 4 gigs
+ 
++  ALE_MARK("session.enter");
+   if (not getPrimaryConfigParameters(args, config, hartsPerCore, coreCount,
+                                      pageSize, memorySize))
+     return false;
+ 
+   checkAndRepairMemoryParams(memorySize, pageSize, regionSize);
++  ALE_MARK("session.primaryConfig");
+ 
+   // Create cores & harts.
+ #ifdef ALE_NO_ASYNCIFY
+@@ -1923,15 +1941,18 @@
+ #endif
+   assert(system.hartCount() == coreCount*hartsPerCore);
+   assert(system.hartCount() > 0);
++  ALE_MARK("session.newSystem");
+ 
+   // Configure harts. Define callbacks for non-standard CSRs.
+   if (not config.configHarts(system, args.isa, args.verbose))
+     if (not args.interactive)
+       return false;
++  ALE_MARK("session.configHarts");
+ 
+   // Configure memory.
+   if (not config.configMemory(system, args.iccmRw, args.unmappedElfOk, args.verbose))
+     return false;
++  ALE_MARK("session.configMemory");
+ 
+   if (args.hexFiles.empty() and args.expandedTargets.empty()
+       and not args.interactive)
+@@ -1945,6 +1966,7 @@
+   FILE* consoleOut = stdout;
+   if (not openUserFiles(args, traceFile, commandLog, consoleOut))
+     return false;
++  ALE_MARK("session.openUserFiles");
+ 
+   for (unsigned i = 0; i < system.hartCount(); ++i)
+     {
+@@ -1952,6 +1974,7 @@
+       hart.setConsoleOutput(consoleOut);
+       hart.reset();
+     }
++  ALE_MARK("session.hartReset");
+ 
+ #ifdef ALE_NO_ASYNCIFY
+   // Set the session up and return. The worker runs it, one slice at a time.
+@@ -2041,14 +2064,17 @@
+ #else
+   Args args;
+ #endif
++  ALE_MARK("main.enter");
+   if (not parseCmdLineArgs(argc, argv, args))
+     return 1;
++  ALE_MARK("main.parseCmdLineArgs");
+ 
+   if (args.help)
+     return 0;
+ 
+   // Expand each target program string into program name and args.
+   args.expandTargets();
++  ALE_MARK("main.expandTargets");
+ 
+   // Load configuration file.
+ #ifndef ALE_NO_ASYNCIFY
+@@ -2058,7 +2084,10 @@
+     if (not config.loadConfigFile(args.configFile))
+       return 1;
+ 
++  ALE_MARK("main.loadConfigFile");
++
+   unsigned regWidth = determineRegisterWidth(args, config);
++  ALE_MARK("main.registerWidth");
+ 
+   bool ok = true;
+ 

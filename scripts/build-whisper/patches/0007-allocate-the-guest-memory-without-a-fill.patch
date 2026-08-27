@@ -1,0 +1,131 @@
+--- a/Memory.cpp
++++ b/Memory.cpp
+@@ -28,6 +28,10 @@
+ #endif
+ #include "Memory.hpp"
+ #include "AleTiming.hpp"
++#if defined(ALE_NO_GUEST_MMAP) || defined(ALE_CHECK_GUEST_ZERO)
++#include <cstring>
++#include <cstdio>
++#endif
+ 
+ using namespace WdRiscv;
+ 
+@@ -62,6 +66,60 @@
+   if (regionCount_ * regionSize_ < size_)
+     regionCount_++;
+ 
++#ifdef ALE_NO_GUEST_MMAP
++
++  // A plain allocation instead of an anonymous mmap.
++  //
++  // Emscripten has no operating system to give it a page. Its anonymous mmap
++  // is `emscripten_builtin_memalign` and then `memset(ptr, 0, len)`
++  // (`system/lib/libc/emscripten_mmap.c`). For a 128 MB guest memory that
++  // memset is 16 ms, which is half of the time from the run message to the end
++  // of a small program. `local/36ms.md` measures it.
++  //
++  // The memset is not necessary. The module links with
++  // `-sALLOW_MEMORY_GROWTH=0`, so the browser makes the whole linear memory at
++  // the instantiation of the module, and WebAssembly gives a new memory as
++  // zero. This allocation is the first large one, so it comes from linear
++  // memory that nothing has written.
++  //
++  // **The guest memory must read as zero.** `loadElfSegment` copies only what
++  // the ELF file holds, so the .bss of a guest program is whatever is here,
++  // and the overwrite count of that function tests `data_[addr] != 0`.
++  //
++  // The argument above holds for the **first** guest memory of a module
++  // instance and for that one only. A second one could get memory that
++  // something wrote and freed. `firstGuestMemory` therefore fills every
++  // allocation after the first. RISC-V ALE makes one Memory in the life of a
++  // worker, so the fill never runs, and a later change that makes two is still
++  // correct.
++  //
++  // A run-time proof that the buffer is zero is not affordable. A read pass
++  // over the buffer is a scalar loop that the compiler cannot turn into one
++  // `memory.fill`, and it measures 1.6 times the cost of the memset that it
++  // replaces: 24.9 ms against 15.8 ms for 128 MB (`local/36ms.md`, section
++  // 6.6). ALE_CHECK_GUEST_ZERO below is that pass. It is a test tool, not a
++  // configuration to ship.
++  static bool firstGuestMemory = true;
++  const bool needsFill = not firstGuestMemory;
++  firstGuestMemory = false;
++
++  void* mem = aligned_alloc(pageSize_, size_);
++  if (mem == nullptr)
++    {
++      std::cerr << "Failed to alloc " << size_ << " bytes.\n";
++#ifndef DISABLE_EXCEPTIONS
++      throw std::runtime_error("Out of memory");
++#else
++      std::cerr << "Out of memory\n";
++      exit(1);
++#endif
++    }
++
++  if (needsFill)
++    memset(mem, 0, size_);
++
++#else
++
+ #if !defined(_WIN32) && !defined(__MINGW32__) && !defined(__MINGW64__)
+   void* mem = mmap(nullptr, size_, PROT_READ | PROT_WRITE,
+ 		   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+@@ -82,7 +140,42 @@
+ #endif
+     }
+ 
++#endif  // ALE_NO_GUEST_MMAP
++
+   ALE_MARK("memory.mmap");
++
++#ifdef ALE_CHECK_GUEST_ZERO
++  // Read the whole buffer, report whether it is zero, and fill it when it is
++  // not. This is the test that proves the argument above. **Do not ship it:**
++  // the read pass costs 1.6 times the memset it replaces.
++  {
++    size_t firstDirty = size_;
++    const uint64_t* words = reinterpret_cast<const uint64_t*>(mem);
++    size_t wordCount = size_ / sizeof(uint64_t);
++    for (size_t i = 0; i < wordCount; ++i)
++      if (words[i] != 0)
++        {
++          firstDirty = i*sizeof(uint64_t);
++          break;
++        }
++    if (firstDirty == size_)
++      {
++        const uint8_t* bytes = reinterpret_cast<const uint8_t*>(mem);
++        for (size_t i = wordCount*sizeof(uint64_t); i < size_; ++i)
++          if (bytes[i] != 0)
++            {
++              firstDirty = i;
++              break;
++            }
++      }
++    if (firstDirty != size_)
++      memset(mem, 0, size_);
++    fprintf(stderr, "ALE_GUEST_ZERO %s size=%zu first_dirty=%zu\n",
++            firstDirty == size_? "clean" : "dirty", size_, firstDirty);
++  }
++#endif
++
++  ALE_MARK("memory.zeroCheck");
+   data_ = reinterpret_cast<uint8_t*>(mem);
+ 
+   // Mark all regions as non-configured.
+@@ -98,10 +191,10 @@
+ {
+   if (data_)
+     {
+-#if !defined(_WIN32) && !defined(__MINGW32__) && !defined(__MINGW64__)
+-      munmap(data_, size_);
+-#else
++#if defined(ALE_NO_GUEST_MMAP) || defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
+       free(data_);
++#else
++      munmap(data_, size_);
+ #endif
+       data_ = nullptr;
+     }

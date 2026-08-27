@@ -203,6 +203,7 @@ All options come through the environment.
 | `SWERV_DIR` | `crates/riscv-rs/SweRV-ISS-1` | The C++ source |
 | `BOOST_DIR` | `crates/riscv-rs/vendor` | The vendored Boost |
 | `TOTAL_MEMORY` | `167772160` | The linear memory, in bytes. See the section above. |
+| `ALLOC_FLAGS` | `-DALE_NO_GUEST_MMAP` | The guest memory allocator. Set it empty to get the `mmap` of the source back. Add `-DALE_CHECK_GUEST_ZERO` for the read pass that proves the buffer is zero, which is a test build and 1.6 times slower than the `mmap`. |
 | `SLOPPY_FLAGS` | `-DFAST_SLOPPY` | Step 4. Set it empty to undo. |
 | `TRIM_FLAGS` | the five `-DALE_NO_*` guards | Step 6. Set it empty to undo. |
 | `RV32_FLAGS` | `-DALE_NO_RV64` | Step 7. Set it empty to undo. |
@@ -320,6 +321,26 @@ clean and the differential harness keeps its oracle.
 Step 8 of the plan (remove Asyncify) will need more of them, and this is where
 they go.
 
+`0006-time-the-startup.patch` is the only patch that a normal build does not
+use. It puts a mark at each phase of the whisper startup, and the whole patch
+is inert unless `ALE_TIME_STARTUP` is defined. A build with the macro is what
+`scripts/perf-core/startup/run_phases.cjs` needs:
+
+```sh
+EXTRA_FLAGS=-DALE_TIME_STARTUP BUILD_TAG=instr NO_INSTALL=1 \
+  scripts/build-whisper/build.sh
+```
+
+A build without the macro gives a `whisper.wasm` of the same size as the module
+the branch ships, and 174 bytes of the 956,545 differ. Each one is an
+`i32.const` that an `assert` gives to `__assert_fail`, because the patch moves
+the line numbers of six files, plus the build clock that the module holds as a
+string. No instruction of the module changes. `local/36ms.md` holds the
+comparison.
+
 | Patch | What it does |
 | --- | --- |
 | `0001-parameterize-the-link-flags.patch` | The link rule of the GNUmakefile had `-s TOTAL_MEMORY=268435456 -lworkerfs.js -s ASYNCIFY` written into it, after `LINK_LIBS`. An Emscripten setting that comes later on the command line wins, so nothing that `build.sh` passes could change the memory size. The patch moves those three settings into an `EM_LINK_FLAGS` variable with `?=`, so a build that does not set the variable gives the same module as before the patch. |
+| `0002` to `0005` | The guards of steps 6, 7 and 8. The sections above describe them. |
+| `0007-allocate-the-guest-memory-without-a-fill.patch` | The guest memory. It replaces the anonymous `mmap` of `Memory::Memory` with `aligned_alloc`, which does not fill. Emscripten implements an anonymous `mmap` as `memalign` and then `memset(ptr, 0, len)`, and for the 128 MB guest memory of the application that fill was 16 ms of the 32 ms from the run message to the end of a small program. `ALLOC_FLAGS` holds the macros and `local/36ms.md` holds the measurements. |
+| `0006-time-the-startup.patch` | The startup marks. It adds `AleTiming.hpp` and one `ALE_MARK` call at each phase of the startup, in `whisper.cpp`, `System.cpp`, `Memory.cpp`, `Hart.cpp`, `InstEntry.cpp` and `CsRegs.cpp`. Without `-DALE_TIME_STARTUP` every macro is `((void) 0)`. |

@@ -43,6 +43,7 @@ carries.
 | `checks/` | The functional gate of section 7 of the plan |
 | `startup/` | The startup and footprint metric of steps 5, 6 and 7 of the plan |
 | `startup/wasm_sizes.cjs` | What is big inside a `.wasm` module: the code section, the function count, the largest function and, with a symbol map, the size of each subsystem |
+| `startup/run_phases.cjs` | The phase metric of `local/36ms.md`: it divides the core startup into the phases of the whisper startup. It needs a module that `-DALE_TIME_STARTUP` built. |
 | `run.cjs` | The driver. Serves the page, drives Chromium and writes the results |
 | `page/index.html` | The page. It gives the driver a `runOne()` function |
 | `page/worker_cpp.js` | The C++ core in a worker |
@@ -77,6 +78,11 @@ node scripts/perf-core/checks/run_checks.cjs
 # The startup and footprint metric (steps 5, 6 and 7 of the plan).
 node scripts/perf-core/startup/gen_probe.cjs           # only after a change
 node scripts/perf-core/startup/run_startup.cjs --label step-5-memory --reps 7
+
+# The phase metric (local/36ms.md). It needs the instrumented module first.
+EXTRA_FLAGS=-DALE_TIME_STARTUP BUILD_TAG=instr NO_INSTALL=1 \
+  scripts/build-whisper/build.sh
+node scripts/perf-core/startup/run_phases.cjs --label 36ms-phases --reps 15
 ```
 
 ## The functional gate
@@ -90,6 +96,7 @@ protocol as `modules/simulator.js`, so it tests what the application runs.
 | --- | --- |
 | `hello.elf` | The `--newlib` write syscall reaches the terminal |
 | `mmio.elf` | `jsWriteMMIO` and `jsReadMMIO` work. The program writes `0x5A` to `0xffff0010`, reads it back and writes the byte to the terminal. The host also sees the write in the sync message. |
+| `bss.elf` | The guest memory reads as zero where the ELF file has nothing. The one `PT_LOAD` segment has a `p_memsz` that is 512 KB larger than its `p_filesz`, and `Memory::loadElfSegment` copies `p_filesz` bytes only, so the 512 KB is a real `.bss`. The program reads four words spread through the gap and writes `Z` when every one is zero and `D` when one is not. `patches/0007` needs this check: it takes the `memset` out of the guest memory allocation, so nothing after the allocation writes those bytes. A copy of the program whose probes point at the loaded code writes `D`, which is the proof that the check has teeth. |
 | `stdin.elf` | The `--newlib` read syscall works with interrupts on. Until the host sends a character, `readFromStdin` reports -1 and `Syscall.cpp` waits in a loop around `emscripten_sleep(10)`. |
 | `hello.elf` with `--interactive` | The interactive shell of whisper works. This is what the "run with debug" button of the application uses. The check sends `peek pc`, `run` and `quit` through the same `interactive` message that `modules/simulator.js` sends. Step 6 needs this check: the plan lists the shell as unused, and that is not correct. |
 | `stdin.elf` with `--interactive` | A read of the standard input inside the shell. The shell uses the loop of the core that does everything (`untilAddress`) and a batch run uses the fast loop, so the two stop for input in two different places. Step 8 needs this check, and it found a defect: the first version of the patch stopped only the fast loop, so this check did not finish. |
@@ -132,6 +139,44 @@ throughput harness does. A startup figure must be a cold start.
 The harness is a separate directory, and not an option of `run.cjs`, because
 rule 3 of the plan says that no step may change how the benchmark harness
 measures.
+
+## The phase metric
+
+`startup/run_phases.cjs` answers the question of `local/36ms.md`: where do the
+milliseconds between the run message and the end of a small program go?
+`run_startup.cjs` divides that time into the module part and the core startup
+part, and the core startup is four fifths of it in one number. This driver
+divides that number into the phases of the whisper startup.
+
+It needs a module that `-DALE_TIME_STARTUP` built:
+
+```sh
+EXTRA_FLAGS=-DALE_TIME_STARTUP BUILD_TAG=instr NO_INSTALL=1 \
+  scripts/build-whisper/build.sh
+node scripts/perf-core/startup/run_phases.cjs --label 36ms-phases --reps 15
+```
+
+`scripts/build-whisper/patches/0006-time-the-startup.patch` puts a mark at each
+phase of the whisper startup. Without the macro the patch is inert, so a normal
+build gives the module that the branch ships. The module writes one
+`ALE_TIME <name> <ms>` line for each mark after the program ends, and
+`startup/worker_cpp_phases.js` adds the timestamps that only JavaScript can
+take. The clock of the marks is `emscripten_get_now()`, which Emscripten
+implements as `performance.now()`, so the marks of the module and the
+timestamps of the worker are on one clock.
+
+The driver runs five guest memory sizes: the 128 MB of the application and
+64 MB, 16 MB, 4 MB and 1 MiB with `--memorysize`. The four smaller ones are not
+configurations that the application can use. They are there to separate the
+cost of the guest memory from the rest, and `local/36ms.md` uses them for two
+results: the largest phase of the startup is a fill of that memory with zeros,
+and the part of the startup that the size does not touch is about 16.5 ms in all
+five configurations.
+
+**The resolution of the clock is 0.1 ms.** Chromium coarsens
+`performance.now()` in a worker to 100 microseconds, so a phase that reads
+0.00 ms is not free: it is below the resolution. `local/36ms.md` gives the sum
+of all such phases.
 
 The native oracle is `crates/riscv-rs/SweRV-ISS-1/opt/whisper`. Build it with:
 

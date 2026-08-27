@@ -28,7 +28,11 @@
 #   TRIM_FLAGS   the -DALE_NO_* guards         (step 6; set it empty to undo)
 #   RV32_FLAGS   -DALE_NO_RV64                 (step 7; set it empty to undo)
 #   ASYNCIFY     1 to get Asyncify back        (step 8; default: no Asyncify)
+#   ALLOC_FLAGS  the guest memory allocator     (default: the plain allocation)
 #   EXTRA_FLAGS  more compile flags            (default empty)
+#                -DALE_TIME_STARTUP turns the startup marks of patches/0006
+#                on, which scripts/perf-core/startup/run_phases.cjs needs. Use
+#                it with NO_INSTALL=1: that module is for a measurement only.
 #   LINK_EXTRA   more link flags               (default empty)
 #   NO_INSTALL   set it to keep the module out of modules/ (default: install)
 #   NO_PATCHES   set it to skip patches/*.patch (default: apply them)
@@ -110,6 +114,35 @@ else
   SLICE_FLAGS="-DALE_NO_ASYNCIFY"
 fi
 
+# The guest memory allocator. `patches/0007` replaces the anonymous mmap of
+# `Memory::Memory` with `aligned_alloc`.
+#
+# Emscripten implements an anonymous mmap as `memalign` and then
+# `memset(ptr, 0, len)`. For the 128 MB guest memory of the application that
+# memset is 16 ms, which is half of the time from the run message to the end of
+# a small program (`local/36ms.md`). It is also useless work: the module links
+# with `-sALLOW_MEMORY_GROWTH=0`, so the browser makes the whole linear memory
+# at the instantiation and WebAssembly gives a new memory as zero.
+#
+# **The guest memory must read as zero.** `Memory::loadElfSegment` copies only
+# what the ELF file holds, so the .bss of a guest program is whatever is in the
+# buffer, and its overwrite count tests `data_[addr] != 0`. The patch keeps that
+# guarantee with a `firstGuestMemory` static: only the first guest memory of a
+# module instance skips the fill, and every one after it gets the memset.
+# RISC-V ALE makes one Memory in the life of a worker.
+#
+# `-DALE_CHECK_GUEST_ZERO` adds a read pass that proves the buffer is zero and
+# writes one `ALE_GUEST_ZERO` line to the standard error. **It is a test tool
+# and not a configuration to ship:** the read pass is a scalar loop that the
+# compiler cannot turn into one `memory.fill`, and it measures 1.6 times the
+# cost of the memset it replaces: 24.9 ms against 15.8 ms for the 128 MB guest
+# memory (`local/36ms.md`, section 6.6).
+#
+#   -DALE_NO_GUEST_MMAP                          the default: no fill
+#   -DALE_NO_GUEST_MMAP -DALE_CHECK_GUEST_ZERO   the proof build, and slow
+#   (empty)                                      the mmap of the source
+ALLOC_FLAGS="${ALLOC_FLAGS--DALE_NO_GUEST_MMAP}"
+
 BUILD_TAG="${BUILD_TAG:-default}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc || echo 4)}"
 
@@ -165,7 +198,9 @@ source "$EMSDK_DIR/emsdk_env.sh" >/dev/null 2>&1
 
 echo "Emscripten: $(em++ --version | head -1)"
 echo "Source:     $SWERV_DIR ($HEAD_COMMIT)"
-echo "Flags:      -O3 ... $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $SLICE_FLAGS $EXTRA_FLAGS"
+echo "Flags:      -O3 ... $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $SLICE_FLAGS"
+echo "Allocator:  ${ALLOC_FLAGS:-the mmap of the source}"
+echo "Extra:      ${EXTRA_FLAGS:-none}"
 echo "Asyncify:   ${ASYNCIFY_FLAGS:-none}"
 echo "Memory:     $TOTAL_MEMORY bytes ($((TOTAL_MEMORY / 1048576)) MB)"
 echo "Build tag:  $BUILD_TAG"
@@ -221,7 +256,8 @@ fi
 # Line 79 of the GNUmakefile, and nothing else, plus what a step adds.
 OFLAGS="-O3 -Wno-c++11-narrowing -fno-builtin -D__EMSCRIPTEN__"
 OFLAGS="$OFLAGS -DDISABLE_EXCEPTIONS -s TOTAL_MEMORY=$TOTAL_MEMORY $ASYNCIFY_FLAGS"
-OFLAGS="$OFLAGS $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $SLICE_FLAGS $EXTRA_FLAGS"
+OFLAGS="$OFLAGS $SLOPPY_FLAGS $TRIM_FLAGS $RV32_FLAGS $SLICE_FLAGS"
+OFLAGS="$OFLAGS $ALLOC_FLAGS $EXTRA_FLAGS"
 
 # The source is from 2021 and the compiler is from 2026. These force-includes
 # are the ones that the differential harness already uses for the native
