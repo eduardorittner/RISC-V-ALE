@@ -94,7 +94,7 @@ var assistant = new Assistant(document.getElementById('assistant_container'), do
 
 class InterfaceNavegation{
   constructor(){
-    this.tabs = ["home_tab", "hardware_tab", "os_tab", "settings_tab"];
+    this.tabs = ["home_tab", "debug_tab", "hardware_tab", "os_tab", "settings_tab"];
   }
 
   addTab(name, icon, id, content){
@@ -408,7 +408,14 @@ async function run_simulator(debug) {
 }
 
 run_button.onclick = function(){run_simulator(false);};
-run_with_debug_button.onclick = function(){run_simulator(true);};
+run_with_debug_button.onclick = function(){
+  // The Debugger page replaces the interactive CLI session. Starting the
+  // program here would open the terminal with the CLI prompt, which is the
+  // experience the page replaces, so the button only opens the page. The
+  // `--interactive` path of `run_simulator` stays for the page to drive.
+  location.hash = "#debug";
+  navegation.locationHashChanged();
+};
 
 // terminal
 
