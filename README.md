@@ -12,6 +12,36 @@ To use RISC-V ALE, see:
 
 WIP
 
+### Add a sample program
+
+The home page shows a card for each sample program. A card loads the program
+into the simulator, so the user does not have to import a file first.
+
+1. Put the assembly source in `data/examples/`. The file name must end with
+   `.s` and must contain only letters, digits, `_`, `-` and the extension.
+2. Add a card to the `examples` list in `data/home.json`. The two links of the
+   card point at the same file:
+
+   ```json
+   {
+     "title": "Hello, World",
+     "subtitle": "hello.s",
+     "text": "Writes a line to the terminal.",
+     "link1": "#run_example=hello.s",
+     "option1": "Run",
+     "link2": "#load_example=hello.s",
+     "option2": "Load"
+   }
+   ```
+
+3. Add the new path to `urlsToCache` in `service_worker.js` and increase the
+   cache number, so the program is available offline. `update_cache.py`
+   rebuilds the full list from the working tree.
+
+The card links are the only place a sample program is named. The page builds
+its list of permitted programs from them, and refuses a `#run_example=` or a
+`#load_example=` that names something else.
+
 ## License
 
 [Apache License 2.0](./LICENSE)

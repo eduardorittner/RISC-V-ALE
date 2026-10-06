@@ -19,6 +19,35 @@
       "option2": ""
     }
   ],
+  "examples": [
+    {
+      "title": "Hello, World",
+      "subtitle": "hello.s",
+      "text": "Writes a line to the terminal. It shows the write and the exit syscall, which all of these programs use.",
+      "link1": "#run_example=hello.s",
+      "option1": "Run",
+      "link2": "#load_example=hello.s",
+      "option2": "Load"
+    },
+    {
+      "title": "Sum of 1 to 10",
+      "subtitle": "sum.s",
+      "text": "Adds the numbers 1 to 10 in a loop and gives the total as the exit code. All of the work stays in the registers.",
+      "link1": "#run_example=sum.s",
+      "option1": "Run",
+      "link2": "#load_example=sum.s",
+      "option2": "Load"
+    },
+    {
+      "title": "Reverse a String",
+      "subtitle": "string_reverse.s",
+      "text": "Turns a string around in memory, one byte at a time, and then writes it out.",
+      "link1": "#run_example=string_reverse.s",
+      "option1": "Run",
+      "link2": "#load_example=string_reverse.s",
+      "option2": "Load"
+    }
+  ],
   "resources": [
     {
       "title": "Reference Card",

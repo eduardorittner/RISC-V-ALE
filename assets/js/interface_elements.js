@@ -130,6 +130,10 @@ class InterfaceNavegation{
         config.load_content(location.hash.split("=")[1]);
       }else if(location.hash.slice(0, 19) == "#select_url_content"){
         config.load_content_string(location.hash.slice(20));
+      }else if(location.hash.slice(0, 14) == "#load_example="){
+        load_example_program(location.hash.slice(14), false);
+      }else if(location.hash.slice(0, 13) == "#run_example="){
+        load_example_program(location.hash.slice(13), true);
       }
       location.hash = "";
     }
@@ -451,12 +455,83 @@ function load_content_from_json(list, item_list) {
   }
 }
 
-fetch('./data/home.json').then(function (request) {
-  request.json().then(function (home_contents) {
+/**
+ * The sample programs the home page offers, as the file names they have under
+ * `data/examples/`. The hash router reads a program only when its name is in
+ * here, so a crafted `#run_example=` cannot name a path of its own.
+ *
+ * @type {Set<string>}
+ */
+const example_programs = new Set();
+
+/** A sample program link, and the file name it carries. */
+const example_link_pattern = /^#(?:load|run)_example=([A-Za-z0-9_-]+\.s)$/;
+
+const home_contents_ready = fetch('./data/home.json').then(function (request) {
+  return request.json().then(function (home_contents) {
+    const examples = home_contents.examples || [];
     load_content_from_json(home_tab_tutorials_list, home_contents.tutorials);
+    load_content_from_json(home_tab_examples_list, examples);
     load_content_from_json(home_tab_resources_list, home_contents.resources);
+    // The cards are the one place a sample program is named, so the allowlist
+    // comes from their links and cannot drift away from what the page offers.
+    for (const example of examples) {
+      for (const link of [example.link1, example.link2]) {
+        const match = example_link_pattern.exec(link || "");
+        if (match) example_programs.add(match[1]);
+      }
+    }
   });
 });
+
+/**
+ * Put a sample program in the simulator, exactly as picking the file with the
+ * Load File button does, and run it when `run` is set. It saves the user the
+ * import step, which is the only thing that stands between the home page and a
+ * first run.
+ *
+ * @param {string} name the file name of the program, as `data/home.json` has it
+ * @param {boolean} run
+ */
+async function load_example_program(name, run){
+  await home_contents_ready;
+  if(!example_programs.has(name)){
+    PNotify.error({
+      title: 'Unknown sample program',
+      text: `There is no sample program named "${name}".`,
+      sticker: false,
+      stack: window.stackBottomRight
+    });
+    return;
+  }
+  let source;
+  try{
+    const response = await fetch('./data/examples/' + name);
+    if(!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    source = await response.text();
+  }catch(error){
+    PNotify.error({
+      title: 'Sample program not loaded',
+      text: `${name} could not be read: ${error.message}`,
+      sticker: false,
+      stack: window.stackBottomRight
+    });
+    return;
+  }
+  simulator_controller.load_files([new File([source], name, {type: "text/plain"})]);
+  compiler.set_file_array(simulator_controller.last_loaded_files);
+  run_button.setAttribute("class", "btn btn-outline-success");
+  if(run){
+    await run_simulator(false);
+    return;
+  }
+  PNotify.info({
+    title: 'Sample program loaded',
+    text: `${name} is ready. Press Run to execute it.`,
+    sticker: false,
+    stack: window.stackBottomRight
+  });
+}
 
 // hardware tab
 
