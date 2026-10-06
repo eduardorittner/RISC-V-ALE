@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="assets/css/PNotify.css">
     <link rel="stylesheet" href="assets/css/PNotifyConfirm.css">
     <link rel="stylesheet" href="assets/css/styles.css">
+    <link rel="stylesheet" href="assets/css/debugger.css">
     <link rel="stylesheet" href="assets/css/Top--Right--Left-Navigation-by-Jigar-Mistry.css">
     <link rel="stylesheet" href="assets/css/Vertical-Left-SideBar-by-Jigar-Mistry.css">
 <link rel="manifest" href="manifest.json">
@@ -134,11 +135,16 @@
                     <div class="row">
                         <div class="col-lg-7" style="padding-bottom: 10px;">
                             <div class="card" style="height: 82vh;">
-                                <div class="card-header">
+                                <div class="card-header d-flex align-items-center justify-content-between">
                                     <h5 class="mb-0">Source</h5>
+                                    <!-- The picker names the file on screen. It
+                                         holds every assembly file of the loaded
+                                         set, and it is hidden while that set is
+                                         empty. -->
+                                    <select class="custom-select custom-select-sm w-auto" id="debug_source_file" hidden="true"></select>
                                 </div>
-                                <div class="card-body text-muted" id="debug_source_view" style="overflow: auto;">
-                                    <p class="mb-0">The assembly file appears here, with a breakpoint beside each line.</p>
+                                <div class="card-body text-muted dbg-source" id="debug_source_view" style="overflow: auto;">
+                                    <p class="dbg-src-message mb-0">No program is loaded. Use the Load File button, or open a sample program from the Home page.</p>
                                 </div>
                             </div>
                         </div>

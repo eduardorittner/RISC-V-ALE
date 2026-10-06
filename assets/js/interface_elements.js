@@ -83,6 +83,7 @@ import {Assistant} from "../../modules/assistant.js";
 import {simulator_controller} from "../../modules/simulator.js";
 import {compiler} from "../../modules/compiler.js";
 import {conn} from "../../modules/connection.js";
+import {debugger_page} from "../../modules/debugger.js";
 
 var mmio_manager = new MMIO_Manager();
 var web_terminal = new WebTerminal(document.getElementById('xterm-container'), document.getElementById("terminal_badge"));
@@ -123,6 +124,9 @@ class InterfaceNavegation{
     let newHash = location.hash.slice(1) + "_tab";
     if(this.tabs.includes(newHash)){
       document.getElementById(newHash).hidden = false;
+      // The page holds the state of a program that the user can change from
+      // the toolbar of any other page, so it reads that state again here.
+      if(newHash == "debug_tab") debugger_page.open();
     }else{
       home_tab.hidden = false;
       console.log(location.hash);
