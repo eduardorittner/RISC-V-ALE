@@ -2,6 +2,10 @@ class Compiler{
   constructor(){
     this.timeout = 150000;
     this.loaded_files = [];
+    // A quiet build does not open the terminal of the page by itself. The
+    // debugger builds a second copy of the program and the user is looking at
+    // the source, not at the output of the assembler.
+    this.quiet = false;
     this.stdio_ch = new BroadcastChannel("stdio_channel" + window.uniq_id);
     this.sim_status_ch = new BroadcastChannel('simulator_status' + window.uniq_id);
   }
@@ -92,7 +96,7 @@ class Compiler{
   }
 
   async cc(args, load_result=true) {
-    this.sim_status_ch.postMessage({type: "clang_status", status:{starting: true, tool: "cc", args}});
+    this.sim_status_ch.postMessage({type: "clang_status", status:{starting: true, tool: "cc", args, quiet: this.quiet}});
     let out_name = this.get_output_name(args, "out.o");
     var bytes = await this.invoke_clang("clang_c", args, out_name);
     this.sim_status_ch.postMessage({type: "clang_status", status:{finish: true}});
@@ -104,7 +108,7 @@ class Compiler{
   }
 
   async as(args, load_result=true){
-    this.sim_status_ch.postMessage({type: "clang_status", status:{starting: true, tool: "as", args}});
+    this.sim_status_ch.postMessage({type: "clang_status", status:{starting: true, tool: "as", args, quiet: this.quiet}});
     let out_name = this.get_output_name(args, "out.o");
     var bytes = await this.invoke_clang("clang_s", args, out_name);
     this.sim_status_ch.postMessage({type: "clang_status", status:{finish: true}});
@@ -116,7 +120,7 @@ class Compiler{
   }
 
   async ld(args, load_result=true){
-    this.sim_status_ch.postMessage({type: "clang_status", status:{starting: true, tool: "ld", args}});
+    this.sim_status_ch.postMessage({type: "clang_status", status:{starting: true, tool: "ld", args, quiet: this.quiet}});
     let out_name = this.get_output_name(args, "out.x");
     var bytes = await this.invoke_clang("ld", args, out_name);
     this.sim_status_ch.postMessage({type: "clang_status", status:{finish: true}});

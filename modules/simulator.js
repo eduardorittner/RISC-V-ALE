@@ -64,11 +64,17 @@ class SimulatorController{
           this.sim_status_ch.postMessage(e.data);
           break;
         case "status":
-          if(e.data.status.finish){
+          if(e.data.status.finish && !e.data.status.debug){
             this.restart_simulator();
           }else{
+            // A debug session keeps its worker after the program ends: the
+            // page still shows the last state, and the user decides when to
+            // start again. `modules/simulator_worker.js` sets the flag.
             this.sim_status_ch.postMessage(e.data);
           }
+          break;
+        case "dbg_state":
+          this.sim_status_ch.postMessage(e.data);
           break;
         case 'sync':
           this.bus_sync(e.data);
@@ -102,14 +108,37 @@ class SimulatorController{
     }, 0);
   }
 
-  start_execution(args){
+  start_execution(args, debug){
     this.simulator.postMessage({type: "add_files", files: this.last_loaded_files});
-    this.sim_status_ch.postMessage({type: "status", status:{starting_exec: true, args}});
-    this.simulator.postMessage({type: "start", args});
+    this.sim_status_ch.postMessage({type: "status", status:{starting_exec: true, args, debug}});
+    this.simulator.postMessage({type: "start", args, debug});
     setTimeout( _ => {
       this.simulator.postMessage({type:"sync", buffer:this.mmio_write_buffer});
       this.mmio_write_buffer = [];
     }, 0)
+  }
+
+  /**
+   * Run one instruction of a debug session. The worker answers with a
+   * `dbg_state` message on the status channel.
+   */
+  debug_step(){
+    this.simulator.postMessage({type: "dbg_step"});
+  }
+
+  /**
+   * Run a debug session until it reaches one of `breakpoints`, until the
+   * program ends, or until `debug_stop`.
+   *
+   * @param {number[]} breakpoints addresses
+   */
+  debug_run(breakpoints){
+    this.simulator.postMessage({type: "dbg_run", breakpoints});
+  }
+
+  /** Stop a run that `debug_run` started. */
+  debug_stop(){
+    this.simulator.postMessage({type: "dbg_stop"});
   }
 
   load_syscall(number, code, desc){

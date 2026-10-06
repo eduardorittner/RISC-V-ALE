@@ -135,13 +135,21 @@
                     <div class="row">
                         <div class="col-lg-7" style="padding-bottom: 10px;">
                             <div class="card" style="height: 82vh;">
-                                <div class="card-header d-flex align-items-center justify-content-between">
-                                    <h5 class="mb-0">Source</h5>
-                                    <!-- The picker names the file on screen. It
-                                         holds every assembly file of the loaded
-                                         set, and it is hidden while that set is
-                                         empty. -->
-                                    <select class="custom-select custom-select-sm w-auto" id="debug_source_file" hidden="true"></select>
+                                <div class="card-header">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <h5 class="mb-0">Source</h5>
+                                        <!-- The picker names the file on screen.
+                                             It holds every assembly file of the
+                                             loaded set, and it is hidden while
+                                             that set is empty. -->
+                                        <select class="custom-select custom-select-sm w-auto" id="debug_source_file" hidden="true"></select>
+                                    </div>
+                                    <div class="d-flex align-items-center flex-wrap mt-2">
+                                        <button class="btn btn-sm btn-outline-primary mr-2" id="debug_step_button" type="button" title="Run one instruction">Step</button>
+                                        <button class="btn btn-sm btn-outline-success mr-2" id="debug_run_button" type="button" title="Run to the next breakpoint, or to the end of the program">Run</button>
+                                        <button class="btn btn-sm btn-outline-danger mr-3" id="debug_stop_button" type="button" title="Stop a run">Stop</button>
+                                        <small class="text-muted dbg-status" id="debug_status">No session.</small>
+                                    </div>
                                 </div>
                                 <div class="card-body text-muted dbg-source" id="debug_source_view" style="overflow: auto;">
                                     <p class="dbg-src-message mb-0">No program is loaded. Use the Load File button, or open a sample program from the Home page.</p>

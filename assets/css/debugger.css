@@ -52,3 +52,52 @@
 .dbg-src-line:hover .dbg-src-gutter {
   background: #e6eaf1;
 }
+
+/* ─── The breakpoint and the program counter ─────────────────────────────── */
+
+/* The gutter of a line that has an address is the breakpoint control. A line
+   with no instruction keeps the arrow of the page. */
+.dbg-src-runnable .dbg-src-gutter {
+  cursor: pointer;
+}
+
+/* A marker is absolute, and not a floating element: a float in the gutter
+   makes the number wrap, which doubles the height of one row and breaks the
+   alignment of the lines. */
+.dbg-src-runnable .dbg-src-gutter:hover::before,
+.dbg-src-break .dbg-src-gutter::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d9534f;
+}
+
+/* The hover only offers the breakpoint, so it is pale. */
+.dbg-src-runnable .dbg-src-gutter:hover::before {
+  background: #d9534f66;
+}
+
+.dbg-src-break .dbg-src-gutter::before {
+  background: #d9534f;
+}
+
+/* The line that the next step runs. */
+.dbg-src-current {
+  background: #fff6da;
+  box-shadow: inset 3px 0 0 #d29c4e;
+}
+
+.dbg-src-current .dbg-src-gutter {
+  background: #ffeec2;
+  color: #8a6d3b;
+  font-weight: 600;
+}
+
+.dbg-status {
+  line-height: 1.4;
+}

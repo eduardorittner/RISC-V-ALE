@@ -7,6 +7,15 @@ var syscall_delay = 30;
 var simulator_sleep = [1, 1, 1]; // int, read, write
 var simulator_int_inst_delay = 1000;
 
+// ─── The state of a debug session ───────────────────────────────────────────
+// `debug_session` is set by the start message. The other three hold what the
+// page asked for and what the core answered. See "The debugger" below.
+var debug_session = false;
+var debug_ready = false;
+var debug_running = false;
+var debug_ended = false;
+var debug_breakpoints = new Set();
+
 onmessage = function(e) {
   switch(e.data.type){
     case "code_load":
@@ -38,12 +47,27 @@ onmessage = function(e) {
     case "start":
       console.log(e.data.args);
       Module.arguments = e.data.args;
+      // A debug session runs no instruction by itself. `aleStartRunLoop` sees
+      // this flag and waits for a command of the page instead.
+      debug_session = !!e.data.debug;
       if(e.data.args.includes("--interactive")){
         postMessage({type:"status", status:{running:true, debugging:true}});
       }else{
-        postMessage({type:"status", status:{running:true}});
+        postMessage({type:"status", status:{running:true, debug: debug_session}});
       } 
       importScripts("whisper.js");
+      break;
+
+    case "dbg_step":
+      dbgStep();
+      break;
+
+    case "dbg_run":
+      dbgRun(e.data.breakpoints);
+      break;
+
+    case "dbg_stop":
+      dbgStop();
       break;
 
     case 'sync':
@@ -255,7 +279,10 @@ function finishExec() {
   // stop. With Asyncify the core slept 100 ms here and a "sync" message from
   // the host did this job. A module without Asyncify cannot sleep.
   bus_sync.sync();
-  postMessage({type:"status", status:{finish:true}});
+  // A debug session keeps its worker after the program ends, so that the page
+  // can still show the last state. The host reads this flag and does not
+  // restart. `modules/simulator.js` holds the other half.
+  postMessage({type:"status", status:{finish:true, debug: debug_session}});
 }
 
 /*
@@ -296,7 +323,148 @@ function aleRunLoop(){
 }
 
 function aleStartRunLoop(){
-  if(typeof Module._ale_run_slice === "function") aleRunLoop();
+  if(typeof Module._ale_run_slice !== "function"){
+    if(debug_session){
+      postMessage({type: "sim_log", subtype: "error",
+                   msg: "This build of the simulator has no debugger support."});
+    }
+    return;
+  }
+  if(debug_session){
+    // The program is loaded and no instruction has run. The hart is at its
+    // entry point, which is where a debug session starts.
+    debug_ready = true;
+    postDebugState("ready");
+    return;
+  }
+  aleRunLoop();
+}
+
+
+/*
+ * ─── The debugger ───────────────────────────────────────────────────────────
+ *
+ * A debug session does not run by itself. The page sends `dbg_step` and
+ * `dbg_run`, and each answer carries the state of the hart.
+ *
+ * The module exports the state (`patches/0008-expose-a-debug-api.patch`), so
+ * no command of the interactive shell is on this path. A step is one call of
+ * `_ale_run_slice(1)` and the values come from `_ale_pc` and its neighbours.
+ *
+ * `_ale_pc` after a slice is the address of the instruction that the *next*
+ * slice runs. A run therefore tests the breakpoints after each instruction
+ * and stops **before** it runs the instruction of a breakpoint.
+ *
+ * A run gives the worker its event loop back between two tasks, so that a
+ * `dbg_stop` message can arrive.
+ *
+ * The size of a task:
+ *
+ * With a breakpoint the run takes the program counter after each instruction,
+ * so each instruction is a slice of its own. 20,000 of them take some
+ * milliseconds, which is the delay of the stop button.
+ *
+ * Without a breakpoint nothing has to happen between two instructions, so the
+ * task is one large slice. A smaller one would make the run slower than the
+ * run button: a task has the delay of a timer, which is longer than the slice
+ * itself.
+ */
+var DEBUG_BREAK_CHUNK = 20000;
+var DEBUG_FREE_CHUNK = 2000000;
+
+function postDebugState(status, extra){
+  var state = {
+    type: "dbg_state",
+    status: status,
+    pc: 0,
+    count: 0,
+    inst: "",
+    running: debug_running,
+    ended: debug_ended
+  };
+  if(debug_ready){
+    state.pc = Module._ale_pc() >>> 0;
+    state.count = Module._ale_inst_count();
+    var len = Module._ale_disasm(state.pc);
+    if(len > 0){
+      var at = Module._ale_text_buffer();
+      state.inst = new TextDecoder().decode(HEAPU8.subarray(at, at + len));
+    }
+  }
+  if(extra) Object.assign(state, extra);
+  // The output of the program goes with the state, so the terminal never
+  // shows a line after the page says that the step is over.
+  bus_sync.sync();
+  postMessage(state);
+}
+
+/** True when the session cannot run an instruction now. */
+function dbgBusy(){
+  if(!debug_ready || debug_ended){
+    postDebugState(debug_ended? "ended" : "no session");
+    return true;
+  }
+  return false;
+}
+
+function dbgStep(){
+  if(debug_running) return;      // A run owns the core until it stops.
+  if(dbgBusy()) return;
+  var status = Module._ale_run_slice(1);
+  if(status === ALE_DONE){
+    debug_ended = true;
+    postDebugState("ended");
+  }else if(status === ALE_WAIT){
+    // The instruction is a read with no input. It did not retire, and it runs
+    // again when a character arrives.
+    postDebugState("waiting");
+  }else{
+    postDebugState("stopped");
+  }
+}
+
+function dbgRun(breakpoints){
+  if(debug_running) return;
+  debug_breakpoints = new Set(breakpoints || []);
+  if(dbgBusy()) return;
+  debug_running = true;
+  dbgRunChunk();
+}
+
+function dbgStop(){
+  if(!debug_running) return;
+  debug_running = false;
+  postDebugState("stopped");
+}
+
+function dbgRunChunk(){
+  if(!debug_running) return;
+  var hunting = debug_breakpoints.size > 0;
+  var slices = hunting? DEBUG_BREAK_CHUNK : 1;
+  var budget = hunting? 1 : DEBUG_FREE_CHUNK;
+  for(var i = 0; i < slices; i++){
+    var status = Module._ale_run_slice(budget);
+    if(status === ALE_DONE){
+      debug_running = false;
+      debug_ended = true;
+      postDebugState("ended");
+      return;
+    }
+    if(status === ALE_WAIT){
+      // The program waits for input. The run goes on, and the next task comes
+      // after the host had the time to send a character.
+      postDebugState("waiting");
+      setTimeout(dbgRunChunk, 10);
+      return;
+    }
+    if(hunting && debug_breakpoints.has(Module._ale_pc() >>> 0)){
+      debug_running = false;
+      postDebugState("breakpoint");
+      return;
+    }
+  }
+  postDebugState("running");
+  setTimeout(dbgRunChunk, 0);
 }
 
 var xhr = new XMLHttpRequest();

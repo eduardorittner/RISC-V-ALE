@@ -162,6 +162,40 @@ RISC-V ALE the same:
 `Module._ale_run_slice` and falls back to the old model when the module has
 Asyncify, so one worker drives both modules.
 
+## The debug API
+
+`patches/0008` exports ten read-only functions of the hart. The Debugger page
+drives the core with `ale_run_slice(1)` and reads the state with them.
+
+| Function | Answers |
+| --- | --- |
+| `ale_pc()` | The program counter: the address of the instruction that the next slice runs. |
+| `ale_reg(ix)` | The integer register `ix`, from x0 to x31. |
+| `ale_freg_half(ix, half)` | Half of the bit pattern of a floating point register. |
+| `ale_inst_count()` | The number of instructions that the program retired, as a `double`. |
+| `ale_mem_size()` | The size of the memory of the guest, in bytes. |
+| `ale_read_mem(addr, len)` | Copies memory of the guest into a buffer and answers the number of bytes. The copy stops at the first address that the hart cannot read, so a smaller count names the end of the memory. |
+| `ale_mem_buffer()` | The address of that buffer in the linear memory of the module. |
+| `ale_disasm(addr)` | Puts the disassembly of the instruction at `addr` in a text buffer and answers its length. |
+| `ale_text_buffer()` | The address of the text buffer. |
+
+**The interactive shell can give the same values, and it is not usable for a
+page.** Each command of the shell crosses the worker boundary as a string and
+comes back as text to parse, the shell takes one command at a time, and a
+`run` command of the shell ends the session (`local/ui-debug.md`, section 2).
+A function here is one call into the module and it answers a number.
+
+No function takes or answers a 64 bit integer, because such a value needs
+either BigInt or the legalizer of Emscripten at the boundary. A count comes as
+a `double`, which is exact to 2^53, and a floating point register comes as two
+halves.
+
+The functions are `extern "C"` wrappers around a table of pointers that
+`session` fills, because the hart is a template and `main` chooses the register
+width. Nothing of the patch is in a run loop, so the module keeps its speed: a
+measurement of a run with a breakpoint gives 2.9 MIPS, where each instruction
+is a slice of its own, and a run without one gives the speed of the RUN button.
+
 ## Commands
 
 ```sh
@@ -265,10 +299,29 @@ git submodule update --init --recursive
 
 ### Boost
 
-The SweRV-ISS link line needs `Boost.program_options`. The vendored sources at
-`crates/riscv-rs/vendor` build for WebAssembly with `em++` and `emar`, and the
-script does this one time into
-`scripts/build-whisper/.build/boost-wasm/lib/`.
+The SweRV-ISS link line needs `Boost.program_options`. The sources build for
+WebAssembly with `em++` and `emar`, and the script does this one time into
+`scripts/build-whisper/.build/boost-wasm/lib/`. `BOOST_DIR` must hold:
+
+```
+<BOOST_DIR>/boost                      the headers
+<BOOST_DIR>/boost_program_options/src  the sources of the library
+```
+
+**The headers and the library must come from the same Boost.** The variable
+`arg` moved into the namespace `detail` in a later version, so headers of 1.92
+with a library of 1.7x stop the link with `undefined symbol:
+boost::program_options::detail::arg`. Delete
+`scripts/build-whisper/.build/boost-wasm/` after a change of version, because
+the script keeps the library that it built before.
+
+The vendored Boost at `crates/riscv-rs/vendor` is the default. It is not in
+this branch, so the build of `patches/0008` used Boost 1.92: the headers of
+`/opt/homebrew/include/boost` and the sources of
+<https://github.com/boostorg/program_options> at the tag `boost-1.92.0`. The
+same build without `patches/0008` gives a module of 956,456 bytes, against the
+956,198 bytes of the module that the branch had before. The 258 bytes are the
+other version of `Boost.program_options`.
 
 ## Why the flags are here and not in the GNUmakefile
 
@@ -343,4 +396,5 @@ comparison.
 | `0001-parameterize-the-link-flags.patch` | The link rule of the GNUmakefile had `-s TOTAL_MEMORY=268435456 -lworkerfs.js -s ASYNCIFY` written into it, after `LINK_LIBS`. An Emscripten setting that comes later on the command line wins, so nothing that `build.sh` passes could change the memory size. The patch moves those three settings into an `EM_LINK_FLAGS` variable with `?=`, so a build that does not set the variable gives the same module as before the patch. |
 | `0002` to `0005` | The guards of steps 6, 7 and 8. The sections above describe them. |
 | `0007-allocate-the-guest-memory-without-a-fill.patch` | The guest memory. It replaces the anonymous `mmap` of `Memory::Memory` with `aligned_alloc`, which does not fill. Emscripten implements an anonymous `mmap` as `memalign` and then `memset(ptr, 0, len)`, and for the 128 MB guest memory of the application that fill was 16 ms of the 32 ms from the run message to the end of a small program. `ALLOC_FLAGS` holds the macros and `local/36ms.md` holds the measurements. |
+| `0008-expose-a-debug-api.patch` | The debug API. It adds ten `extern "C"` functions to `whisper.cpp` that answer the state of the hart, and one call in `session` that fills their table of pointers. Nothing of it is in a run loop. The section "The debug API" above lists the functions. |
 | `0006-time-the-startup.patch` | The startup marks. It adds `AleTiming.hpp` and one `ALE_MARK` call at each phase of the startup, in `whisper.cpp`, `System.cpp`, `Memory.cpp`, `Hart.cpp`, `InstEntry.cpp` and `CsRegs.cpp`. Without `-DALE_TIME_STARTUP` every macro is `((void) 0)`. |

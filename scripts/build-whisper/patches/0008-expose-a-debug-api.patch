@@ -1,0 +1,285 @@
+--- a/whisper.cpp
++++ b/whisper.cpp
+@@ -1904,8 +1904,274 @@
+     return ALE_DONE;
+   ALE_MARK_ONCE("slice.enter");
+   return aleSliceFn(budget > 0? uint64_t(budget) : 0);
++}
++
++
++// ─── The debug API ──────────────────────────────────────────────────────────
++//
++// The debugger page of RISC-V ALE drives the core with `ale_run_slice` and
++// reads the state of the hart with the functions below.
++//
++// The interactive shell gives the same values. It is not usable for a page:
++// each command crosses the worker boundary as a string, comes back as text to
++// parse, and the shell takes one command at a time. A function here is one
++// call into the module and it answers a number.
++//
++// Every function is read-only. Only a slice changes the state of the hart.
++//
++// No function takes or answers a 64 bit integer, because such a value needs
++// either BigInt or the legalizer of Emscripten at the boundary. A value that
++// does not fit in 32 bits comes as a `double` (exact to 2^53) or as a pair of
++// halves.
++//
++// The `extern "C"` entry points go through a table of pointers, because the
++// hart is a template and `main` chooses the register width.
++
++/// The hart that the debug API reads. RISC-V ALE has one hart.
++template <typename URV>
++static
++Hart<URV>*
++aleDebugHart()
++{
++  auto& s = aleSession<URV>();
++  if (not s.system or s.system->hartCount() == 0)
++    return nullptr;
++  return s.system->ithHart(0).get();
++}
++
++
++/// The buffer that `ale_read_mem` fills. JavaScript reads it out of the linear
++/// memory of the module, at the address that `ale_mem_buffer` answers.
++static uint8_t aleMemBuf[4096];
++
++/// The buffer that `ale_disasm` fills, as a C string.
++static char aleTextBuf[128];
++
++
++struct AleDebugApi
++{
++  uint32_t (*pc)() = nullptr;
++  uint32_t (*reg)(int) = nullptr;
++  uint32_t (*fregHalf)(int, int) = nullptr;
++  double   (*instCount)() = nullptr;
++  double   (*memSize)() = nullptr;
++  int      (*readMem)(uint32_t, uint32_t) = nullptr;
++  int      (*disasm)(uint32_t) = nullptr;
++};
++
++static AleDebugApi aleDebug;
++
++
++template <typename URV>
++static
++uint32_t
++aleDbgPc()
++{
++  auto* hart = aleDebugHart<URV>();
++  return hart? uint32_t(hart->peekPc()) : 0;
+ }
+ 
++
++template <typename URV>
++static
++uint32_t
++aleDbgReg(int ix)
++{
++  auto* hart = aleDebugHart<URV>();
++  URV val = 0;
++  if (hart and ix >= 0)
++    hart->peekIntReg(unsigned(ix), val);
++  return uint32_t(val);
++}
++
++
++/// Half 0 is the low 32 bits of the floating point register and half 1 is the
++/// high 32 bits. A register of an F program has its value in half 0.
++template <typename URV>
++static
++uint32_t
++aleDbgFregHalf(int ix, int half)
++{
++  auto* hart = aleDebugHart<URV>();
++  uint64_t val = 0;
++  if (hart and ix >= 0)
++    hart->peekFpReg(unsigned(ix), val);
++  return half? uint32_t(val >> 32) : uint32_t(val);
++}
++
++
++template <typename URV>
++static
++double
++aleDbgInstCount()
++{
++  auto* hart = aleDebugHart<URV>();
++  return hart? double(hart->getInstructionCount()) : 0;
++}
++
++
++template <typename URV>
++static
++double
++aleDbgMemSize()
++{
++  auto* hart = aleDebugHart<URV>();
++  return hart? double(hart->memorySize()) : 0;
++}
++
++
++/// Copy `len` bytes from the address `addr` of the guest into the buffer, and
++/// answer the number of bytes that the buffer holds. The copy stops at the
++/// first address that the hart cannot read, so a count that is smaller than
++/// `len` names the end of the memory of the guest.
++template <typename URV>
++static
++int
++aleDbgReadMem(uint32_t addr, uint32_t len)
++{
++  auto* hart = aleDebugHart<URV>();
++  if (not hart)
++    return 0;
++  if (len > sizeof(aleMemBuf))
++    len = sizeof(aleMemBuf);
++  uint32_t n = 0;
++  for ( ; n < len; ++n)
++    {
++      uint8_t byte = 0;
++      bool usePma = false;   // The physical memory attributes are not for a read.
++      if (not hart->peekMemory(size_t(addr) + n, byte, usePma))
++	break;
++      aleMemBuf[n] = byte;
++    }
++  return int(n);
++}
++
++
++/// Put the disassembly of the instruction at `addr` in the text buffer and
++/// answer its length. The length is zero when the hart cannot read `addr`.
++template <typename URV>
++static
++int
++aleDbgDisasm(uint32_t addr)
++{
++  aleTextBuf[0] = 0;
++  auto* hart = aleDebugHart<URV>();
++  if (not hart)
++    return 0;
++  uint32_t inst = 0;
++  bool usePma = false;
++  if (not hart->peekMemory(size_t(addr), inst, usePma))
++    return 0;
++  std::string text;
++  hart->disassembleInst(inst, text);
++  size_t n = text.size();
++  if (n >= sizeof(aleTextBuf))
++    n = sizeof(aleTextBuf) - 1;
++  for (size_t i = 0; i < n; ++i)
++    aleTextBuf[i] = text[i];
++  aleTextBuf[n] = 0;
++  return int(n);
++}
++
++
++/// Called by session, with the register width that main chose.
++template <typename URV>
++static
++void
++aleSetDebugApi()
++{
++  aleDebug.pc = &aleDbgPc<URV>;
++  aleDebug.reg = &aleDbgReg<URV>;
++  aleDebug.fregHalf = &aleDbgFregHalf<URV>;
++  aleDebug.instCount = &aleDbgInstCount<URV>;
++  aleDebug.memSize = &aleDbgMemSize<URV>;
++  aleDebug.readMem = &aleDbgReadMem<URV>;
++  aleDebug.disasm = &aleDbgDisasm<URV>;
++}
++
++
++/// The program counter of the hart: the address of the instruction that the
++/// next slice runs.
++extern "C" EMSCRIPTEN_KEEPALIVE
++uint32_t
++ale_pc()
++{
++  return aleDebug.pc? aleDebug.pc() : 0;
++}
++
++
++/// The integer register `ix`, from x0 to x31.
++extern "C" EMSCRIPTEN_KEEPALIVE
++uint32_t
++ale_reg(int ix)
++{
++  return aleDebug.reg? aleDebug.reg(ix) : 0;
++}
++
++
++/// Half `half` of the bit pattern of the floating point register `ix`.
++extern "C" EMSCRIPTEN_KEEPALIVE
++uint32_t
++ale_freg_half(int ix, int half)
++{
++  return aleDebug.fregHalf? aleDebug.fregHalf(ix, half) : 0;
++}
++
++
++/// The number of instructions that the program retired.
++extern "C" EMSCRIPTEN_KEEPALIVE
++double
++ale_inst_count()
++{
++  return aleDebug.instCount? aleDebug.instCount() : 0;
++}
++
++
++/// The size of the memory of the guest, in bytes.
++extern "C" EMSCRIPTEN_KEEPALIVE
++double
++ale_mem_size()
++{
++  return aleDebug.memSize? aleDebug.memSize() : 0;
++}
++
++
++/// The address, in the linear memory of the module, of the buffer that
++/// `ale_read_mem` and `ale_disasm` fill.
++extern "C" EMSCRIPTEN_KEEPALIVE
++uint32_t
++ale_mem_buffer()
++{
++  return uint32_t(reinterpret_cast<uintptr_t>(aleMemBuf));
++}
++
++
++/// The address of the text buffer of `ale_disasm`.
++extern "C" EMSCRIPTEN_KEEPALIVE
++uint32_t
++ale_text_buffer()
++{
++  return uint32_t(reinterpret_cast<uintptr_t>(aleTextBuf));
++}
++
++
++/// Read at most `len` bytes of the memory of the guest into the buffer.
++extern "C" EMSCRIPTEN_KEEPALIVE
++int
++ale_read_mem(uint32_t addr, uint32_t len)
++{
++  return aleDebug.readMem? aleDebug.readMem(addr, len) : 0;
++}
++
++
++/// Disassemble the instruction at `addr` into the text buffer.
++extern "C" EMSCRIPTEN_KEEPALIVE
++int
++ale_disasm(uint32_t addr)
++{
++  return aleDebug.disasm? aleDebug.disasm(addr) : 0;
++}
++
+ #endif  // ALE_NO_ASYNCIFY
+ 
+ 
+@@ -1985,6 +2251,7 @@
+       return false;
+     }
+   aleSliceFn = &aleSlice<URV>;
++  aleSetDebugApi<URV>();
+   return true;
+ #else
+ 

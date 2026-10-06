@@ -293,7 +293,9 @@ sim_status_ch.onmessage = function (ev) {
         run_button.onclick = function(){
           simulator_controller.restart_simulator();
         };
-        if(!($("#modal_terminal").data('bs.modal') || {})._isShown){
+        // A debug session stays on the Debugger page. The terminal button
+        // opens the output when the user wants it.
+        if(!ev.data.status.debug && !($("#modal_terminal").data('bs.modal') || {})._isShown){
           $('#modal_terminal').modal({backdrop: false,show: true});
           $('#modal_terminal').draggable({handle: ".modal-header"});
           web_terminal.openTerminal();
@@ -318,7 +320,9 @@ sim_status_ch.onmessage = function (ev) {
 
     case "clang_status":
       if(ev.data.status.starting){
-        if(!($("#modal_terminal").data('bs.modal') || {})._isShown){
+        // A build of the debugger is quiet: the user looks at the source, and
+        // the page reports an error of that build on its own.
+        if(!ev.data.status.quiet && !($("#modal_terminal").data('bs.modal') || {})._isShown){
           $('#modal_terminal').modal({backdrop: false,show: true});
           $('#modal_terminal').draggable({handle: ".modal-header"});
           web_terminal.openTerminal();
@@ -382,6 +386,28 @@ async function auto_compile() {
   return await compiler.auto_compile(document.getElementById("c_ext").value, document.getElementById("asm_ext").value, document.getElementById("obj_ext").value, document.getElementById("elf_ext").value);
 }
 
+/**
+ * The command line that the simulator runs, for the program `filename`. The
+ * RUN button and the debugger both use it, so that a program under the
+ * debugger runs with the options of the settings page.
+ *
+ * @param {string} filename the name of the ELF file in the file system of the
+ *   simulator
+ * @returns {string[]}
+ */
+function build_program_args(filename) {
+  var args = [];
+  args.push('/' + filename.replace(" ", "_"));
+  if(enable_so_checkbox.checked) {
+    args.push("--newlib");
+    args.push("--setreg", `sp=${so_stack_pointer_value.value}`);
+  }
+  args.push("--isa", get_checked_ISAs());
+  return args;
+}
+
+debugger_page.build_args = build_program_args;
+
 async function run_simulator(debug) {
   if(simulator_controller.last_loaded_files.length == 0){
     PNotify.notice({
@@ -404,14 +430,8 @@ async function run_simulator(debug) {
     }
   }
   if(!filename) filename = simulator_controller.last_loaded_files[0].name;
-  var args = [];
-  args.push('/' + filename.replace(" ", "_"));
-  if(enable_so_checkbox.checked) {
-    args.push("--newlib");
-    args.push("--setreg", `sp=${so_stack_pointer_value.value}`);
-  }
+  var args = build_program_args(filename);
   if(debug) args.push("--interactive");
-  args.push("--isa", get_checked_ISAs());
   simulator_controller.start_execution(args);
 }
 
