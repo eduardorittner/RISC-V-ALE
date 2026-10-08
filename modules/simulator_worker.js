@@ -324,13 +324,17 @@ function aleRunLoop(){
 
 function aleStartRunLoop(){
   if(typeof Module._ale_run_slice !== "function"){
-    if(debug_session){
-      postMessage({type: "sim_log", subtype: "error",
-                   msg: "This build of the simulator has no debugger support."});
-    }
+    if(debug_session) postDebugFailure(["_ale_run_slice"]);
     return;
   }
   if(debug_session){
+    // A module without the debug API cannot answer a step. The page must hear
+    // that now: a session that says nothing looks like a session that is slow.
+    var missing = aleDebugApiMissing();
+    if(missing.length){
+      postDebugFailure(missing);
+      return;
+    }
     // The program is loaded and no instruction has run. The hart is at its
     // entry point, which is where a debug session starts.
     debug_ready = true;
@@ -372,6 +376,33 @@ function aleStartRunLoop(){
 var DEBUG_BREAK_CHUNK = 20000;
 var DEBUG_FREE_CHUNK = 2000000;
 
+/* The functions of the debug API that a session uses.
+ * `patches/0008-expose-a-debug-api.patch` adds them to the module. */
+var DEBUG_API = ["_ale_pc", "_ale_inst_count", "_ale_disasm", "_ale_text_buffer"];
+
+/** The functions of DEBUG_API that this module does not have. */
+function aleDebugApiMissing(){
+  return DEBUG_API.filter(function(name){
+    return typeof Module[name] !== "function";
+  });
+}
+
+/**
+ * Tell the page that this module cannot hold a debug session. A module without
+ * the debug API is nearly always an older copy that the cache of the service
+ * worker still answers with.
+ */
+function postDebugFailure(missing){
+  postMessage({
+    type: "dbg_state",
+    status: "no session",
+    pc: 0, count: 0, inst: "", running: false, ended: false,
+    error: "The simulator module has no debug API (" + missing.join(", ") +
+           "). The browser is answering with an older copy of " +
+           "modules/whisper.js. Reload the page and take the update."
+  });
+}
+
 function postDebugState(status, extra){
   var state = {
     type: "dbg_state",
@@ -382,14 +413,24 @@ function postDebugState(status, extra){
     running: debug_running,
     ended: debug_ended
   };
-  if(debug_ready){
-    state.pc = Module._ale_pc() >>> 0;
-    state.count = Module._ale_inst_count();
-    var len = Module._ale_disasm(state.pc);
-    if(len > 0){
-      var at = Module._ale_text_buffer();
-      state.inst = new TextDecoder().decode(HEAPU8.subarray(at, at + len));
+  try{
+    if(debug_ready){
+      state.pc = Module._ale_pc() >>> 0;
+      state.count = Module._ale_inst_count();
+      var len = Module._ale_disasm(state.pc);
+      if(len > 0){
+        var at = Module._ale_text_buffer();
+        state.inst = new TextDecoder().decode(HEAPU8.subarray(at, at + len));
+      }
     }
+  }catch(error){
+    // The page waits for this message. A session that cannot read its state
+    // must say so, and not leave the page with a promise that never ends.
+    debug_ready = false;
+    debug_running = false;
+    state.status = "no session";
+    state.running = false;
+    state.error = "The simulator module did not answer: " + error;
   }
   if(extra) Object.assign(state, extra);
   // The output of the program goes with the state, so the terminal never

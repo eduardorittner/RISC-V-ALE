@@ -33,6 +33,49 @@ const DEBUG_PROGRAM = "debug.elf";
 const NO_SESSION = "no session";
 
 /**
+ * How long the page waits for the first state of a new session, in
+ * milliseconds. The session says "ready" as soon as the module is up, so a
+ * longer wait means that something is wrong with the module and not that the
+ * program is large.
+ */
+const START_TIMEOUT = 20000;
+
+/**
+ * How long the page waits for one step of the build.
+ *
+ * The first build of a page downloads the assembler (29 MB) and the linker
+ * (16 MB), so a first build on a slow connection is much slower than the
+ * builds after it. The limit is therefore high: the status line shows the step
+ * that is in progress, which is what tells the user that the build is alive.
+ */
+const BUILD_TIMEOUT = 180000;
+
+/** The answer of `with_timeout` when the promise did not answer. */
+const TIMED_OUT = Symbol("timed out");
+
+/**
+ * Wait for `promise`, and give up after `ms`.
+ *
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} ms
+ * @param {string} what the name of the step, for the message
+ * @returns {Promise<T>}
+ */
+async function with_timeout(promise, ms, what){
+  let timer = 0;
+  const limit = new Promise(resolve => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+  const answer = await Promise.race([promise, limit]);
+  clearTimeout(timer);
+  if (answer === TIMED_OUT) {
+    throw new Error(`${what} did not answer in ${Math.round(ms / 1000)} seconds`);
+  }
+  return answer;
+}
+
+/**
  * The assembly file of the program, with one line for each line of the file.
  *
  * The view holds a `div` for each line, and not one block of text, because
@@ -365,6 +408,10 @@ class DebuggerPage {
     this.state = NO_SESSION;
     /** True while a build or a start is in progress. */
     this.busy = false;
+    /** What the status line says while `busy` is true. */
+    this.busy_message = "";
+    /** True until a build of this page is complete. */
+    this.first_build = true;
     /** The line table of the program that the session runs. */
     this.line_table = null;
     /** The program counter of the last stop. */
@@ -446,6 +493,9 @@ class DebuggerPage {
    */
   on_debug_state(state) {
     this.starting = false;
+    if (state.error) {
+      notify("error", "The debug session did not start", state.error);
+    }
     if (this.resolve_ready) {
       this.resolve_ready(state.status !== NO_SESSION);
       this.resolve_ready = null;
@@ -480,7 +530,7 @@ class DebuggerPage {
   }
 
   status_text() {
-    if (this.busy) return "building the program...";
+    if (this.busy) return this.busy_message;
     if (this.state === NO_SESSION) {
       return "No session. Step starts the program and stops at its first instruction.";
     }
@@ -575,12 +625,16 @@ class DebuggerPage {
       return false;
     }
     this.busy = true;
+    this.busy_message = "building the program...";
     this.state = NO_SESSION;
     this.source.set_current(null);
     this.draw_controls();
     try {
       const program = await this.build(sources);
       if (!program) return false;
+      this.first_build = false;
+      this.busy_message = "starting the session...";
+      this.draw_controls();
       this.line_table = program.line_table;
       this.source.set_runnable(runnable_lines(program.line_table));
       // The worker of a session holds one program. A new program needs a new
@@ -590,8 +644,9 @@ class DebuggerPage {
       simulator_controller.restart_simulator();
       simulator_controller.load_new_file(program.file);
       simulator_controller.start_execution(this.build_args(DEBUG_PROGRAM), true);
-      return await ready;
+      return await this.wait_for_ready(ready);
     } catch (error) {
+      console.log("[debugger] the session did not start:", error);
       notify("error", "The debug session did not start", String(error));
       return false;
     } finally {
@@ -599,6 +654,43 @@ class DebuggerPage {
       this.busy = false;
       this.draw_controls();
     }
+  }
+
+  /**
+   * Say what the build is doing now. A build that downloads the compiler takes
+   * a long time, and a status line that does not move looks like a stop.
+   *
+   * @param {string} text
+   */
+  step_message(text) {
+    this.busy_message = this.first_build
+      ? `${text} (the first build downloads the compiler, 45 MB)`
+      : text;
+    this.draw_controls();
+  }
+
+  /**
+   * Wait for the first state of a new session, and give up after
+   * `START_TIMEOUT`. A session that says nothing is a session that the page
+   * cannot drive, and a page that waits for it says "starting" for ever.
+   *
+   * @param {Promise<boolean>} ready
+   * @returns {Promise<boolean>}
+   */
+  async wait_for_ready(ready) {
+    let timer = 0;
+    const limit = new Promise(resolve => {
+      timer = setTimeout(() => resolve("timeout"), START_TIMEOUT);
+    });
+    const answer = await Promise.race([ready, limit]);
+    clearTimeout(timer);
+    if (answer !== "timeout") return answer;
+    this.resolve_ready = null;
+    console.log("[debugger] the simulator reported no state in", START_TIMEOUT, "ms");
+    notify("error", "The debug session did not start",
+      "The simulator did not report its state. Reload the page with the cache " +
+      "off: the browser may still answer with an older copy of the simulator.");
+    return false;
   }
 
   /**
@@ -610,6 +702,15 @@ class DebuggerPage {
   async build(sources) {
     const saved = compiler.loaded_files;
     compiler.quiet = true;
+    // The terminal does not open for a build of the debugger, so the page
+    // keeps what the tools wrote and puts it in the message of a failure.
+    const errors = [];
+    const stdio = new BroadcastChannel("stdio_channel" + window.uniq_id);
+    stdio.onmessage = function (event) {
+      if (event.data.origin === "clang" && event.data.fh === 2) {
+        errors.push(String(event.data.data).trim());
+      }
+    };
     try {
       const inputs = [];
       for (const source of sources) {
@@ -630,18 +731,22 @@ class DebuggerPage {
       const objects = [];
       for (const input of inputs) {
         const object = input.name.replace(DEBUG_SOURCE_SUFFIX, DEBUG_OBJECT_SUFFIX);
-        const result = await compiler.as([input.name, "-o", object]);
+        this.step_message(`assembling ${input.name}...`);
+        const result = await with_timeout(
+          compiler.as([input.name, "-o", object]), BUILD_TIMEOUT,
+          `the assembler, for ${input.name}`);
         if (!result) {
-          notify("error", "The program did not assemble",
-            "The terminal holds the message of the assembler.");
+          notify("error", "The program did not assemble", await reason(errors));
           return null;
         }
         objects.push(object);
       }
-      const elf = await compiler.ld([objects, "-o", DEBUG_PROGRAM].flat(), false);
+      this.step_message("linking...");
+      const elf = await with_timeout(
+        compiler.ld([objects, "-o", DEBUG_PROGRAM].flat(), false), BUILD_TIMEOUT,
+        "the linker");
       if (!elf) {
-        notify("error", "The program did not link",
-          "The terminal holds the message of the linker.");
+        notify("error", "The program did not link", await reason(errors));
         return null;
       }
       const bytes = new Uint8Array(await elf.arrayBuffer());
@@ -652,6 +757,7 @@ class DebuggerPage {
       }
       return {file: elf, line_table};
     } finally {
+      stdio.close();
       compiler.set_file_array(saved);
       compiler.quiet = false;
     }
@@ -666,6 +772,22 @@ function runnable_lines(line_table) {
     runnable.set(file, new Set(lines.keys()));
   }
   return runnable;
+}
+
+
+/**
+ * Why a build step failed, from what the tool wrote.
+ *
+ * A message of a tool crosses a BroadcastChannel, which delivers it in a later
+ * task than the one that saw the failure. The wait is for those messages.
+ *
+ * @param {string[]} lines the lines that the build collected
+ * @returns {Promise<string>}
+ */
+async function reason(lines) {
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const text = lines.filter(line => line !== "").slice(-3).join("\n");
+  return text || "The terminal holds the message of the tool.";
 }
 
 
@@ -684,6 +806,5 @@ function notify(kind, title, text) {
   }
   PNotify[kind]({title, text, sticker: false, stack: window.stackBottomRight});
 }
-
 
 export const debugger_page = new DebuggerPage();

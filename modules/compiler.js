@@ -59,7 +59,7 @@ class Compiler{
     return new Promise(resolve =>{
       var cto = setTimeout(function () {
         worker.terminate();
-        this.stdio_ch.postMessage({fh:2, data: "Compiler timed out"});
+        this.stdio_ch.postMessage({fh:2, data: "Compiler timed out", origin:"clang"});
         resolve(-1);
       }.bind(this), this.timeout);
       var file_callback = function (file) {
@@ -67,6 +67,25 @@ class Compiler{
         worker.terminate();
         resolve(file);
       };
+      // A worker that dies sends no message. Without this handler the caller
+      // waits for the timeout above, which is 150 seconds of silence, and the
+      // reason for the death is in no place that a user can see.
+      worker.onerror = function (event) {
+        clearTimeout(cto);
+        worker.terminate();
+        // A worker that cannot load its script answers with an event that
+        // carries no message, so the text says what that means.
+        var text = event.message
+          ? "The compiler stopped: " + event.message
+          : "The compiler worker did not start. modules/clang_worker.js, " +
+            "modules/clang.js or modules/clang.wasm did not load. A copy of " +
+            "one of them in the cache of the browser can be damaged: clear " +
+            "the site data of this page and load it again.";
+        if(event.filename) text += " (" + event.filename + ":" + event.lineno + ")";
+        console.error("[compiler]", text, event);
+        this.stdio_ch.postMessage({fh:2, data: text, origin:"clang"});
+        resolve(-1);
+      }.bind(this);
       this.setup_worker(worker, file_callback);
       worker.postMessage({type: op, args, file: in_file, out_filename});
     });
