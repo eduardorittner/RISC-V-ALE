@@ -3,6 +3,7 @@
 import {simulator_controller} from "./simulator.js";
 import {compiler} from "./compiler.js";
 import {instrument_source, read_line_table} from "./dwarf_line.js";
+import {new_asm_state, highlight_asm_line} from "./asm_highlight.js";
 
 /**
  * The file name extension of the programs the source view can show, when the
@@ -178,6 +179,10 @@ class SourceView {
    */
   render(text) {
     const lines = text.split("\n");
+    // The highlighter reads one line at a time, and this object carries the
+    // one state that a line gives to the line after it: a block comment that
+    // is open at the end of the line.
+    const highlight = new_asm_state();
     // A file that ends with a line break gives one empty element more, which
     // is the position after the last line and not a line of the file.
     if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
@@ -192,8 +197,9 @@ class SourceView {
       gutter.textContent = String(number);
       const code = document.createElement("span");
       code.className = "dbg-src-text";
-      // The file is user input. Only `textContent` keeps it text.
-      code.textContent = lines[index];
+      // The file is user input. The highlighter makes DOM nodes and sets
+      // `textContent` on each one, so the line stays text.
+      highlight_asm_line(code, lines[index], highlight);
       row.appendChild(gutter);
       row.appendChild(code);
       rows.appendChild(row);

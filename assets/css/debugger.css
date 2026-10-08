@@ -101,3 +101,75 @@
 .dbg-status {
   line-height: 1.4;
 }
+
+/* ─── The tokens of the source view ──────────────────────────────────────── */
+
+/* The colours keep a contrast of 4.6 or more against the white background of
+   the card and against the yellow background of the line of the program
+   counter, which is the lower of the two. A symbol takes no class and keeps
+   the colour of plain text, because a wrong colour on a symbol teaches the
+   wrong thing. */
+
+.dbg-tok-comment {
+  color: #646c76;
+  font-style: italic;
+}
+
+.dbg-tok-text {
+  color: #15803d;
+}
+
+.dbg-tok-number {
+  color: #9a5500;
+}
+
+.dbg-tok-label {
+  color: #a3176f;
+  font-weight: 600;
+}
+
+/* An instruction that the processor has. */
+.dbg-tok-instruction {
+  color: #0b5394;
+  font-weight: 600;
+}
+
+/* An instruction that the processor does not have. The dotted line says that
+   the assembler puts other instructions in its place, and it also keeps the
+   two kinds apart for a reader who does not see the difference of the two
+   colours. */
+.dbg-tok-pseudo {
+  color: #7332b8;
+  font-weight: 600;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* The two names of one register take one colour, because they are the same
+   thing. The slanted form is the numbered name, which is the form that the
+   register pane shows. */
+.dbg-tok-register,
+.dbg-tok-register-number {
+  color: #0f766e;
+}
+
+.dbg-tok-register-number {
+  font-style: italic;
+}
+
+.dbg-tok-directive,
+.dbg-tok-modifier {
+  color: #44546a;
+  font-weight: 600;
+}
+
+/* A word that starts with a point and that is in no list. It is probably a
+   spelling error, so the view marks it. */
+.dbg-tok-directive-unknown {
+  color: #b02a37;
+  font-weight: 600;
+  text-decoration: underline wavy;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
