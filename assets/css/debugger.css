@@ -173,3 +173,80 @@
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
+
+/* ─── The register view ──────────────────────────────────────────────────── */
+
+#debug_register_view {
+  padding: 0.75rem;
+}
+
+/* The number of columns follows the width of the panel. A column is as wide
+   as the widest cell: the name `zero`, the number `x31` and a value of eight
+   hexadecimal digits. */
+.dbg-regs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+  gap: 0.1rem 0.5rem;
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.8rem;
+}
+
+/* The name column is wider than the four characters of `zero`, because the
+   name is bold and `ch` is the width of a character of the weight of the
+   row. A name that wraps makes a row of two lines, which breaks the grid. */
+.dbg-reg {
+  display: grid;
+  grid-template-columns: 4.6ch 3.6ch 1fr;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* The program counter takes a row of its own, above the register file. It is
+   not a register of the file, and it is the value that a reader looks at
+   first. */
+.dbg-reg-pc {
+  grid-column: 1 / -1;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #e0e4ea;
+}
+
+/* The name takes the colour that the source view gives to a register, so that
+   the two panels name the same thing in the same way. */
+.dbg-reg-name {
+  color: #0f766e;
+  font-weight: 600;
+}
+
+/* The `x` form of the name. It is the form that whisper writes in its own
+   output, and the slanted face is the one that the source view gives it. */
+.dbg-reg-number {
+  color: #8a94a6;
+  font-style: italic;
+  font-size: 0.7rem;
+}
+
+.dbg-reg-value {
+  color: #212529;
+}
+
+/* The value that the last step or run changed. A step writes two or three
+   registers of thirty-two, so the mark says where to look. */
+.dbg-reg-changed {
+  background: #fff6da;
+}
+
+.dbg-reg-changed .dbg-reg-value {
+  color: #9a5500;
+  font-weight: 700;
+}
+
+/* No session holds these registers, so no value on screen is true. */
+.dbg-regs-idle .dbg-reg-name,
+.dbg-regs-idle .dbg-reg-value {
+  color: #8a94a6;
+  font-weight: 400;
+}

@@ -21,31 +21,52 @@ window.stackBarTop = new PNotify.Stack({
 
 
 // register service worker
+
+/**
+ * Offer the update that `newWorker` holds.
+ *
+ * The worker that is ready stays in the "waiting" state until something calls
+ * `skipWaiting`. A reload does not do it: the page that reloads is still a
+ * client of the worker that controls it, so the old one keeps the control and
+ * goes on answering with the files of the version before.
+ */
+function offer_update(newWorker){
+  const update_notice = PNotify.info({
+    title: 'Update received',
+    text: 'A new version of RISC-V ALE is available. Click to update.',
+    sticker: false,
+    delay: Infinity,
+    stack: window.stackBottomRight
+  });
+  update_notice.refs.elem.style.cursor = 'pointer';
+  update_notice.on('click', e => {
+    if ([...update_notice.refs.elem.querySelectorAll('.pnotify-closer *, .pnotify-sticker *')].indexOf(e.target) !== -1) {
+      return;
+    }
+    newWorker.postMessage({ action: 'skipWaiting' });
+    update_notice.update({
+      text: 'Please Wait',
+      icon: 'fas fa-spinner fa-pulse',
+    });
+  });
+}
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./service_worker.js').then(function(reg) {
       console.log('Successfully registered service worker', reg);
+      // A worker that installed in a visit before this one is already in the
+      // "waiting" state, and no "updatefound" comes for it. Without this test
+      // the page offers the update one time only. Each reload after that one
+      // shows nothing and changes nothing, which reads as an update that does
+      // not arrive.
+      if(reg.waiting && navigator.serviceWorker.controller){
+        offer_update(reg.waiting);
+      }
       reg.addEventListener("updatefound", function () {
         let newWorker = reg.installing;
         newWorker.addEventListener("statechange", function () {
           if(newWorker.state == "installed" && navigator.serviceWorker.controller){
-            const update_notice = PNotify.info({
-              title: 'Update received',
-              text: 'A new version of RISC-V ALE is available. Click to update.',
-              sticker: false,
-              delay: Infinity,
-              stack: window.stackBottomRight
-            });
-            update_notice.refs.elem.style.cursor = 'pointer';
-            update_notice.on('click', e => {
-              if ([...update_notice.refs.elem.querySelectorAll('.pnotify-closer *, .pnotify-sticker *')].indexOf(e.target) !== -1) {
-                return;
-              }
-              newWorker.postMessage({ action: 'skipWaiting' });
-              update_notice.update({
-                text: 'Please Wait',
-                icon: 'fas fa-spinner fa-pulse',
-              });
-            });
+            offer_update(newWorker);
           }
         })
       })

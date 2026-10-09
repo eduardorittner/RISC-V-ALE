@@ -378,7 +378,11 @@ var DEBUG_FREE_CHUNK = 2000000;
 
 /* The functions of the debug API that a session uses.
  * `patches/0008-expose-a-debug-api.patch` adds them to the module. */
-var DEBUG_API = ["_ale_pc", "_ale_inst_count", "_ale_disasm", "_ale_text_buffer"];
+var DEBUG_API = ["_ale_pc", "_ale_reg", "_ale_inst_count", "_ale_disasm",
+                 "_ale_text_buffer"];
+
+/** The number of integer registers of the hart. */
+var DEBUG_REG_COUNT = 32;
 
 /** The functions of DEBUG_API that this module does not have. */
 function aleDebugApiMissing(){
@@ -396,11 +400,22 @@ function postDebugFailure(missing){
   postMessage({
     type: "dbg_state",
     status: "no session",
-    pc: 0, count: 0, inst: "", running: false, ended: false,
+    pc: 0, count: 0, inst: "", regs: null, running: false, ended: false,
     error: "The simulator module has no debug API (" + missing.join(", ") +
            "). The browser is answering with an older copy of " +
            "modules/whisper.js. Reload the page and take the update."
   });
+}
+
+/**
+ * The integer registers of the hart, from x0 to x31.
+ *
+ * @returns {number[]} each value as an unsigned 32 bit number
+ */
+function dbgReadRegs(){
+  var regs = new Array(DEBUG_REG_COUNT);
+  for(var i = 0; i < DEBUG_REG_COUNT; i++) regs[i] = Module._ale_reg(i) >>> 0;
+  return regs;
 }
 
 function postDebugState(status, extra){
@@ -410,6 +425,7 @@ function postDebugState(status, extra){
     pc: 0,
     count: 0,
     inst: "",
+    regs: null,
     running: debug_running,
     ended: debug_ended
   };
@@ -422,6 +438,10 @@ function postDebugState(status, extra){
         var at = Module._ale_text_buffer();
         state.inst = new TextDecoder().decode(HEAPU8.subarray(at, at + len));
       }
+      // A "running" state is the report between two chunks of a run. The page
+      // keeps the registers of the last stop on screen, so the 32 calls into
+      // the module would have no reader.
+      if(status !== "running") state.regs = dbgReadRegs();
     }
   }catch(error){
     // The page waits for this message. A session that cannot read its state

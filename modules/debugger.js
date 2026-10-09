@@ -386,6 +386,158 @@ class SourceView {
 
 
 /**
+ * The name that the calling convention gives to each integer register, from
+ * x0 to x31.
+ *
+ * This is the name that the source of the program writes, so it is the name
+ * that the view puts first. The number of the register goes beside it: whisper
+ * writes `x8` and not `s0` in its own output, and a reader must find the same
+ * register in the two places.
+ *
+ * x8 has a second name, `fp`, which a program with a frame pointer uses. The
+ * view gives it the one name `s0`, because `s0` is the name of the register in
+ * the table of the calling convention.
+ *
+ * @type {string[]}
+ */
+const REGISTER_NAMES = [
+  "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
+  "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
+  "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
+  "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
+];
+
+/** What a cell shows while no session gives a value. */
+const NO_VALUE = "\u2014";
+
+
+/**
+ * The value of each register of the hart, in hexadecimal.
+ *
+ * The view holds a cell for each register and writes into it. It does not
+ * build the cells again at each stop, because a step changes two or three
+ * values of thirty-three, and because a new set of cells would lose the
+ * scroll position of the panel.
+ */
+class RegisterView {
+  /**
+   * @param {HTMLElement} container the body of the register panel
+   */
+  constructor(container) {
+    this.container = container;
+    /**
+     * The element that holds the value of each register. Index 0 is the
+     * program counter and the indexes 1 to 32 are x0 to x31.
+     * @type {HTMLElement[]}
+     */
+    this.cells = [];
+    /**
+     * The cell of each register, which takes the mark of a value that
+     * changed.
+     * @type {HTMLElement[]}
+     */
+    this.rows = [];
+    /** The name of each register, in the order of the cells. */
+    this.names = [];
+    /**
+     * The values of the stop before this one, which say which cell changed.
+     * It is null for the first stop of a session, where nothing changed yet.
+     * @type {?number[]}
+     */
+    this.previous = null;
+    this.render();
+  }
+
+  /**
+   * Build one cell for each register. The cells carry no value until a session
+   * reports one.
+   */
+  render() {
+    const grid = document.createElement("div");
+    grid.className = "dbg-regs dbg-regs-idle";
+    this.grid = grid;
+    this.add_cell(grid, "pc", "");
+    for (let index = 0; index < REGISTER_NAMES.length; index++) {
+      this.add_cell(grid, REGISTER_NAMES[index], "x" + index);
+    }
+    this.container.textContent = "";
+    this.container.classList.remove("text-muted");
+    this.container.appendChild(grid);
+  }
+
+  /**
+   * One cell of the grid: the name of the register, its number, and its value.
+   *
+   * @param {HTMLElement} grid
+   * @param {string} name the name of the calling convention
+   * @param {string} number the `x` name, which the program counter does not have
+   */
+  add_cell(grid, name, number) {
+    const row = document.createElement("div");
+    row.className = number === "" ? "dbg-reg dbg-reg-pc" : "dbg-reg";
+    const label = document.createElement("span");
+    label.className = "dbg-reg-name";
+    label.textContent = name;
+    const index = document.createElement("span");
+    index.className = "dbg-reg-number";
+    index.textContent = number;
+    const value = document.createElement("span");
+    value.className = "dbg-reg-value";
+    value.textContent = NO_VALUE;
+    row.appendChild(label);
+    row.appendChild(index);
+    row.appendChild(value);
+    grid.appendChild(row);
+    this.rows.push(row);
+    this.cells.push(value);
+    this.names.push(name);
+  }
+
+  /**
+   * Show the registers of a stop, and mark each value that the step or the run
+   * changed.
+   *
+   * @param {number} pc the program counter
+   * @param {?number[]} values x0 to x31, or null for a state that carries none
+   */
+  set_values(pc, values) {
+    if (!values) {
+      this.clear();
+      return;
+    }
+    const all = [pc >>> 0].concat(values);
+    this.grid.classList.remove("dbg-regs-idle");
+    for (let index = 0; index < this.cells.length; index++) {
+      const value = all[index] >>> 0;
+      this.cells[index].textContent = hex(value);
+      // The cell of the program counter holds an address, and an address has
+      // no other form. A register holds a number, and the signed form of it
+      // answers the question that hexadecimal does not.
+      if (index > 0) {
+        this.rows[index].title = `${this.names[index]} = ${value | 0}`;
+        // The program counter is also not in the mark. Each step moves it, so
+        // a mark on it is always there and says nothing.
+        const changed = this.previous !== null && this.previous[index] !== value;
+        this.rows[index].classList.toggle("dbg-reg-changed", changed);
+      }
+    }
+    this.previous = all;
+  }
+
+  /** Forget the values. The session is gone, so none of them is true now. */
+  clear() {
+    this.previous = null;
+    this.grid.classList.add("dbg-regs-idle");
+    for (let index = 0; index < this.cells.length; index++) {
+      this.cells[index].textContent = NO_VALUE;
+      this.rows[index].classList.remove("dbg-reg-changed");
+      this.rows[index].removeAttribute("title");
+    }
+  }
+}
+
+
+/**
  * The Debugger page: the source view, the step and run controls, and the
  * session that they drive.
  *
@@ -399,6 +551,7 @@ class DebuggerPage {
       document.getElementById("debug_source_view"),
       /** @type {HTMLSelectElement} */ (document.getElementById("debug_source_file"))
     );
+    this.registers = new RegisterView(document.getElementById("debug_register_view"));
     this.step_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_step_button"));
     this.run_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_run_button"));
     this.stop_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_stop_button"));
@@ -424,6 +577,8 @@ class DebuggerPage {
     this.running = false;
     /** True between the start of a session and its first state message. */
     this.starting = false;
+    /** True after the page spoke about a worker that reports no registers. */
+    this.warned_stale_worker = false;
     /** Answers the waiter of a start, when the first state arrives. */
     this.resolve_ready = null;
 
@@ -484,6 +639,7 @@ class DebuggerPage {
     this.line_table = null;
     this.source.set_runnable(new Map());
     this.source.set_current(null);
+    this.registers.clear();
     this.draw_controls();
   }
 
@@ -510,8 +666,34 @@ class DebuggerPage {
     this.running = state.running;
     if (state.status !== "running") {
       this.source.set_current(this.position_of(state.pc));
+      // A run reports between two chunks and carries no registers there. The
+      // values of the last stop stay on screen until the run stops.
+      this.registers.set_values(state.pc, state.regs);
     }
+    if (!("regs" in state)) this.warn_stale_worker();
     this.draw_controls();
+  }
+
+  /**
+   * Say one time that the worker of the simulator reports no registers.
+   *
+   * The page and the worker are two files, and the service worker of the
+   * application caches each one of them. A cache that holds only one of the
+   * two gives a new page an older worker, and that worker sends a state with
+   * no `regs` field. Every cell of the register view then keeps its dash,
+   * which says nothing about the cause.
+   *
+   * A `regs` field that is null is not this case: a run reports between two
+   * chunks and carries no registers there, by design.
+   */
+  warn_stale_worker() {
+    if (this.warned_stale_worker) return;
+    this.warned_stale_worker = true;
+    console.log("[debugger] the worker sent a state with no registers");
+    notify("error", "The registers have no value",
+      "The browser is answering with an older copy of " +
+      "modules/simulator_worker.js, which reports no registers. Reload the " +
+      "page and take the update.");
   }
 
   /** The line of an address, from the line table of the build. */
@@ -628,6 +810,7 @@ class DebuggerPage {
     this.busy_message = "building the program...";
     this.state = NO_SESSION;
     this.source.set_current(null);
+    this.registers.clear();
     this.draw_controls();
     try {
       const program = await this.build(sources);
