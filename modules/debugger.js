@@ -422,11 +422,36 @@ const NO_VALUE = "\u2014";
 const REGISTER_COLUMNS = [1, 2, 4, 8];
 
 /**
- * The width in pixels that one box needs to hold its three parts on one line:
- * the name `zero`, the number `x31`, a value of eight hexadecimal digits, and
- * the gaps and the padding between them.
+ * The number forms that a register value can take: how a value of that form
+ * reads, and the longest value that the form can write.
+ *
+ * The view measures a box that holds the longest value to learn how wide a
+ * box of that form must be. A width written here would be the width of one
+ * font at one size, and the day the font or the size changes the boxes would
+ * cut their values.
+ *
+ * The decimal form is the signed one. A register holds thirty-two bits, and
+ * the instruction that reads them says which of the two forms they carry, but
+ * the signed form is the one that answers the question a reader of a loop or
+ * of a negative immediate has.
+ *
+ * @type {Object<string, {longest: string, format: function(number): string}>}
  */
-const REGISTER_BOX_WIDTH = 170;
+const REGISTER_FORMATS = {
+  hex: {longest: "0x00000000", format: (value) => hex(value)},
+  dec: {longest: "-2147483648", format: (value) => String(value | 0)}
+};
+
+/**
+ * The order of the words of the switch of a box, which is also the order that
+ * the title of a value reads them in.
+ *
+ * @type {string[]}
+ */
+const REGISTER_FORMAT_ORDER = ["hex", "dec"];
+
+/** The form that a box takes until its switch says another one. */
+const DEFAULT_REGISTER_FORMAT = "hex";
 
 /**
  * The width in pixels of one line of the grid, which the CSS makes from the
@@ -464,6 +489,18 @@ class RegisterView {
     /** The name of each register, in the order of the cells. */
     this.names = [];
     /**
+     * The number form that each cell shows. Index 0 is the program counter,
+     * which keeps the hexadecimal form of an address.
+     * @type {string[]}
+     */
+    this.formats = [];
+    /**
+     * The switch of each box, which is the control that writes `formats`.
+     * The program counter has none, so its entry is null.
+     * @type {?HTMLElement[]}
+     */
+    this.switches = [];
+    /**
      * The values of the stop before this one, which say which cell changed.
      * It is null for the first stop of a session, where nothing changed yet.
      * @type {?number[]}
@@ -475,15 +512,27 @@ class RegisterView {
      * opens.
      */
     this.shape = "";
+    /**
+     * The width that a box needs for each form, which the view measures the
+     * first time it lays the grid out. It is null while no measure holds.
+     * @type {?Object<string, number>}
+     */
+    this.widths = null;
     this.render();
     // The panel takes its size from the window, and the Bootstrap columns put
     // it beside the source view or below it. The shape of the grid follows.
     this.observer = new ResizeObserver(() => this.layout());
     this.observer.observe(this.container);
-    // A box is as tall as its line of text, and the line of text is as tall
-    // as the font that carries it. The first layout can come before the page
-    // has that font, and the box is a different height with it.
-    if (document.fonts) document.fonts.ready.then(() => this.layout());
+    // A box is as tall and as wide as its line of text, and the line of text
+    // has the size of the font that carries it. The first layout can come
+    // before the page has that font, and the box is another size with it, so
+    // the measure of the widths goes and the layout runs again.
+    if (document.fonts) {
+      document.fonts.ready.then(() => {
+        this.widths = null;
+        this.layout();
+      });
+    }
   }
 
   /**
@@ -502,8 +551,9 @@ class RegisterView {
     if (width === 0) return;
     const box = this.box_height();
     const height = this.file_height();
+    const box_width = this.box_width();
     const fits = REGISTER_COLUMNS.filter(
-      (columns) => columns * REGISTER_BOX_WIDTH <= width);
+      (columns) => columns * box_width <= width);
     if (fits.length === 0) fits.push(REGISTER_COLUMNS[0]);
     let choice = fits[fits.length - 1];
     for (const columns of fits) {
@@ -522,6 +572,60 @@ class RegisterView {
     this.shape = shape;
     this.file.style.setProperty("--dbg-reg-rows", String(rows));
     this.file.style.setProperty("--dbg-reg-box-height", box + "px");
+  }
+
+  /**
+   * The width in pixels that one box of the grid needs now.
+   *
+   * Every column of the grid has the width of every other one, so the file
+   * needs the width of its widest box: the widest form that a switch holds
+   * now. One register in the wider form can therefore give the whole grid
+   * fewer columns. That is the price of a switch for each box, and the other
+   * way costs more: a column that only the widest box fills makes the grid
+   * wider than the panel, and the panel then scrolls to the right at every
+   * stop. The two forms are close in width, so the grid keeps its shape
+   * through most of the widths that the panel takes.
+   *
+   * @returns {number}
+   */
+  box_width() {
+    if (this.widths === null) this.widths = this.measure_widths();
+    let widest = 0;
+    // Index 0 is the program counter, which is not in the grid.
+    for (let index = 1; index < this.formats.length; index++) {
+      widest = Math.max(widest, this.widths[this.formats[index]]);
+    }
+    return widest;
+  }
+
+  /**
+   * The width in pixels that a box needs for the longest value of each form.
+   *
+   * The measure is a box of the file with the longest value in it, which the
+   * page lays out but does not show. It carries the name, the number, the
+   * value, the switch, and every gap and padding between them, so the number
+   * is the whole box and not a sum of parts.
+   *
+   * The box goes inside the grid, because the font and the size come from
+   * there. It is out of the flow, so it is no box of the grid and the grid
+   * does not move for it.
+   *
+   * @returns {Object<string, number>}
+   */
+  measure_widths() {
+    const probe = /** @type {HTMLElement} */ (this.rows[1].cloneNode(true));
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.width = "max-content";
+    this.grid.appendChild(probe);
+    const cell = probe.querySelector(".dbg-reg-value");
+    const widths = {};
+    for (const name of REGISTER_FORMAT_ORDER) {
+      cell.textContent = REGISTER_FORMATS[name].longest;
+      widths[name] = Math.ceil(probe.getBoundingClientRect().width);
+    }
+    probe.remove();
+    return widths;
   }
 
   /**
@@ -573,6 +677,11 @@ class RegisterView {
     const file = document.createElement("div");
     file.className = "dbg-reg-file";
     this.file = file;
+    // Sixty-four words of a switch are sixty-four listeners, so the file
+    // listens once for all of them. A box that the view builds later needs no
+    // listener of its own either.
+    file.addEventListener("click", (event) => this.on_switch_click(event));
+    file.addEventListener("keydown", (event) => this.on_switch_key(event));
     for (let index = 0; index < REGISTER_NAMES.length; index++) {
       this.add_cell(file, REGISTER_NAMES[index], "x" + index);
     }
@@ -583,15 +692,20 @@ class RegisterView {
   }
 
   /**
-   * One cell of the view: the name of the register, its number, and its value.
+   * One cell of the view: the name of the register, its number, its value,
+   * and the switch that says which form the value takes.
    *
    * @param {HTMLElement} parent the element that takes the cell
    * @param {string} name the name of the calling convention
    * @param {string} number the `x` name, which the program counter does not have
    */
   add_cell(parent, name, number) {
+    const at = this.cells.length;
     const row = document.createElement("div");
     row.className = number === "" ? "dbg-reg dbg-reg-pc" : "dbg-reg";
+    // The listener of the file reads this to learn which box a word of a
+    // switch belongs to.
+    row.dataset.index = String(at);
     const label = document.createElement("span");
     label.className = "dbg-reg-name";
     label.textContent = name;
@@ -604,10 +718,122 @@ class RegisterView {
     row.appendChild(label);
     row.appendChild(index);
     row.appendChild(value);
+    // The program counter holds an address, which the panels, the terminal
+    // and the output of the simulator all write in hexadecimal. A reader must
+    // find the same address in each of them, so that box has no switch. The
+    // column of the switch stays empty there and the four parts of the boxes
+    // keep their line.
+    const control = number === "" ? null : this.build_switch(name);
+    if (control !== null) row.appendChild(control);
     parent.appendChild(row);
     this.rows.push(row);
     this.cells.push(value);
     this.names.push(name);
+    this.switches.push(control);
+    this.formats.push(DEFAULT_REGISTER_FORMAT);
+    this.apply_format(at);
+  }
+
+  /**
+   * The switch of one box: the forms, each one in a word of its own short
+   * name.
+   *
+   * One of them holds at a time, so they are a group of radio buttons and not
+   * buttons that a reader presses. The group takes one stop of the keyboard,
+   * and the arrows walk between the words inside it: a stop for each word
+   * would make the panel a wall to anybody who does not use a mouse.
+   *
+   * @param {string} name the register that the switch belongs to
+   * @returns {HTMLElement}
+   */
+  build_switch(name) {
+    const group = document.createElement("span");
+    group.className = "dbg-reg-switch";
+    group.setAttribute("role", "radiogroup");
+    group.setAttribute("aria-label", "The number form of " + name);
+    for (const format of REGISTER_FORMAT_ORDER) {
+      const word = document.createElement("button");
+      word.type = "button";
+      word.className = "dbg-reg-form";
+      word.dataset.format = format;
+      word.setAttribute("role", "radio");
+      word.textContent = format;
+      group.appendChild(word);
+    }
+    return group;
+  }
+
+  /**
+   * A word of a switch takes the form of its box.
+   *
+   * @param {MouseEvent} event
+   */
+  on_switch_click(event) {
+    const word = /** @type {HTMLElement} */ (event.target).closest(".dbg-reg-form");
+    if (word === null) return;
+    this.set_format(Number(word.closest(".dbg-reg").dataset.index), word.dataset.format);
+  }
+
+  /**
+   * The left and right arrows walk the words of one switch, and the word that
+   * the walk reaches is the form that the box takes. This is how a group of
+   * radio buttons answers the keyboard.
+   *
+   * @param {KeyboardEvent} event
+   */
+  on_switch_key(event) {
+    const word = /** @type {HTMLElement} */ (event.target).closest(".dbg-reg-form");
+    if (word === null) return;
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    const count = REGISTER_FORMAT_ORDER.length;
+    const at = REGISTER_FORMAT_ORDER.indexOf(word.dataset.format);
+    const next = (at + step + count) % count;
+    const index = Number(word.closest(".dbg-reg").dataset.index);
+    this.set_format(index, REGISTER_FORMAT_ORDER[next]);
+    /** @type {HTMLElement} */ (this.switches[index].children[next]).focus();
+  }
+
+  /**
+   * Show the value of one register in another number form.
+   *
+   * The switch belongs to the box: a reader asks the question of one register
+   * and not of the file. The value does not come again from the session,
+   * because the session is stopped and the view already holds it.
+   *
+   * @param {number} index the box, where 0 is the program counter
+   * @param {string} format a key of `REGISTER_FORMATS`
+   */
+  set_format(index, format) {
+    if (index <= 0 || index >= this.formats.length) return;
+    if (!(format in REGISTER_FORMATS) || this.formats[index] === format) return;
+    this.formats[index] = format;
+    this.apply_format(index);
+    // A box as wide as the widest form holds the file, so one box in the
+    // wider form can give the grid another shape.
+    this.layout();
+  }
+
+  /**
+   * Put the form of one box on screen: the word of the switch that holds, and
+   * the value that the cell shows.
+   *
+   * @param {number} index the box, where 0 is the program counter
+   */
+  apply_format(index) {
+    const group = this.switches[index];
+    if (group !== null) {
+      for (const word of group.children) {
+        const on = /** @type {HTMLElement} */ (word).dataset.format === this.formats[index];
+        word.classList.toggle("active", on);
+        word.setAttribute("aria-checked", String(on));
+        // The group takes one stop of the keyboard, and that stop is the word
+        // that holds now.
+        /** @type {HTMLElement} */ (word).tabIndex = on ? 0 : -1;
+      }
+    }
+    if (this.previous !== null) this.write_cell(index, this.previous[index]);
   }
 
   /**
@@ -626,19 +852,40 @@ class RegisterView {
     this.grid.classList.remove("dbg-regs-idle");
     for (let index = 0; index < this.cells.length; index++) {
       const value = all[index] >>> 0;
-      this.cells[index].textContent = hex(value);
-      // The cell of the program counter holds an address, and an address has
-      // no other form. A register holds a number, and the signed form of it
-      // answers the question that hexadecimal does not.
+      this.write_cell(index, value);
+      // The program counter is not in the mark. Each step moves it, so a mark
+      // on it is always there and says nothing.
       if (index > 0) {
-        this.rows[index].title = `${this.names[index]} = ${value | 0}`;
-        // The program counter is also not in the mark. Each step moves it, so
-        // a mark on it is always there and says nothing.
         const changed = this.previous !== null && this.previous[index] !== value;
         this.rows[index].classList.toggle("dbg-reg-changed", changed);
       }
     }
     this.previous = all;
+  }
+
+  /**
+   * Write the value of one cell, in the form that its switch says, and give
+   * the cell the title that holds the other two forms.
+   *
+   * The title sits on the value and not on the box, because the switch is in
+   * the box: a title of the box would open over the words that the reader is
+   * going to press. The program counter has no title, because the other forms
+   * of an address answer no question.
+   *
+   * @param {number} index the cell, where 0 is the program counter
+   * @param {number} value the value of the register, as 32 bits with no sign
+   */
+  write_cell(index, value) {
+    if (index === 0) {
+      this.cells[0].textContent = hex(value);
+      return;
+    }
+    const format = this.formats[index];
+    this.cells[index].textContent = REGISTER_FORMATS[format].format(value);
+    const others = REGISTER_FORMAT_ORDER
+      .filter((name) => name !== format)
+      .map((name) => REGISTER_FORMATS[name].format(value));
+    this.cells[index].title = `${this.names[index]} = ${others.join(" = ")}`;
   }
 
   /** Forget the values. The session is gone, so none of them is true now. */
@@ -648,7 +895,7 @@ class RegisterView {
     for (let index = 0; index < this.cells.length; index++) {
       this.cells[index].textContent = NO_VALUE;
       this.rows[index].classList.remove("dbg-reg-changed");
-      this.rows[index].removeAttribute("title");
+      this.cells[index].removeAttribute("title");
     }
   }
 }

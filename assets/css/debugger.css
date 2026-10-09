@@ -228,10 +228,15 @@
 
 /* The name column is wider than the four characters of `zero`, because the
    name is bold and `ch` is the width of a character of the weight of the
-   row. A name that wraps makes a box of two lines, which breaks the grid. */
+   row. A name that wraps makes a box of two lines, which breaks the grid.
+
+   The switch takes the last column, which is as wide as its words. The
+   value takes what is left, so the switch of every box stands at the right
+   border of the box and the switches make a column of their own. A switch
+   that followed its value would move each time a value took another form. */
 .dbg-reg {
   display: grid;
-  grid-template-columns: 4.6ch 3.6ch 1fr;
+  grid-template-columns: 4.6ch 3.6ch 1fr auto;
   align-items: center;
   gap: 0.4rem;
   padding: 0.05rem 0.4rem;
@@ -281,9 +286,61 @@
   font-weight: 700;
 }
 
-/* No session holds these registers, so no value on screen is true. */
+/* No session holds these registers, so no value on screen is true. The
+   switch keeps its colours: it says which form the next stop will take, and
+   it answers before a session starts. */
 .dbg-regs-idle .dbg-reg-name,
 .dbg-regs-idle .dbg-reg-value {
   color: #8a94a6;
   font-weight: 400;
+}
+
+/* ─── The switch of one register ─────────────────────────────────────────── */
+
+/* Thirty-two switches of two words are sixty-four words on one panel, so a
+   word is small and quiet: the value is what the panel is for, and the switch
+   must not compete with it. The word that holds takes the colour of the
+   register names, which is the colour of the panel. */
+.dbg-reg-switch {
+  display: inline-flex;
+  gap: 0.25rem;
+  /* The switch is a control and not a value, so a copy of the panel carries
+     the registers and not the words of the switches. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dbg-reg-form {
+  padding: 0 0.15rem;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.65rem;
+  line-height: 1.6;
+  /* The shorthand is a short name and not a title, so the theme does not put
+     it in capitals. */
+  text-transform: none;
+  letter-spacing: normal;
+  color: #8a94a6;
+  cursor: pointer;
+}
+
+.dbg-reg-form:hover {
+  color: #0f766e;
+  background: #e3efed;
+}
+
+/* The form that the box shows now. */
+.dbg-reg-form[aria-checked="true"] {
+  color: #0f766e;
+  font-weight: 700;
+  background: #dcebe9;
+}
+
+/* The theme draws no ring on a button that has the focus. A switch takes one,
+   because the arrows walk the words and a reader must see where they are. */
+.dbg-reg-form:focus {
+  outline: 2px solid #0f766e;
+  outline-offset: 1px;
 }
