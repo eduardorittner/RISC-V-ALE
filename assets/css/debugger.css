@@ -176,41 +176,78 @@
 
 /* ─── The register view ──────────────────────────────────────────────────── */
 
+/* The view fills the panel, so the panel is a column of two parts: the
+   program counter, which takes the height of one box, and the register file,
+   which takes all that is left.
+
+   The panel keeps no padding, so the boxes go to the edge of the card. The
+   border of the card is then the outer line of the grid, and the grid draws
+   no line of its own there. */
 #debug_register_view {
-  padding: 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-/* The number of columns follows the width of the panel. A column is as wide
-   as the widest cell: the name `zero`, the number `x31` and a value of eight
-   hexadecimal digits. */
 .dbg-regs {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
-  gap: 0.1rem 0.5rem;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   font-family: 'Courier Prime', monospace;
   font-size: 0.8rem;
 }
 
+/* The thirty-two registers of the file go in columns, and each column fills
+   from the top down before the next column starts. x0 is thus at the top of
+   the first column and x31 at the foot of the last one, which is the order of
+   the table of the calling convention.
+
+   `--dbg-reg-rows` says how many boxes one column holds, and
+   `--dbg-reg-box-height` is the height of the line of text of a box. The
+   debugger module writes the two of them: it measures the panel and gives the
+   grid the shape that fills it. The number of rows always divides thirty-two,
+   so every column is full and the grid has no hole at its foot. The columns
+   then share the width and the rows share the height, which is what makes the
+   grid fill the panel.
+
+   The lines between the boxes are the background of the grid, which the gap
+   of one pixel lets through. A border on each box would give two lines
+   between two boxes. The grid has no border: the card gives the line at its
+   left, its right and its foot, and the box of the program counter gives the
+   line at its head. */
+.dbg-reg-file {
+  flex: 1 1 auto;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows:
+    repeat(var(--dbg-reg-rows, 16), minmax(var(--dbg-reg-box-height, 18px), 1fr));
+  grid-auto-columns: 1fr;
+  gap: 1px;
+  background: #e0e4ea;
+}
+
 /* The name column is wider than the four characters of `zero`, because the
    name is bold and `ch` is the width of a character of the weight of the
-   row. A name that wraps makes a row of two lines, which breaks the grid. */
+   row. A name that wraps makes a box of two lines, which breaks the grid. */
 .dbg-reg {
   display: grid;
   grid-template-columns: 4.6ch 3.6ch 1fr;
-  align-items: baseline;
+  align-items: center;
   gap: 0.4rem;
-  padding: 0.05rem 0.25rem;
-  border-radius: 3px;
+  padding: 0.05rem 0.4rem;
   white-space: nowrap;
+  background: #fff;
 }
 
-/* The program counter takes a row of its own, above the register file. It is
-   not a register of the file, and it is the value that a reader looks at
-   first. */
+/* The program counter takes a box of its own, at the head of the register
+   file. It is not a register of the file, and it is the value that a reader
+   looks at first. Its one line is the line that closes the head of the grid.
+
+   It keeps the padding of a register box, and the grid does not stretch it.
+   The debugger module measures it to learn how short a box of the grid can
+   be, so the two boxes must hold their line of text in the same way. */
 .dbg-reg-pc {
-  grid-column: 1 / -1;
-  margin-bottom: 0.4rem;
-  padding-bottom: 0.4rem;
+  flex: 0 0 auto;
   border-bottom: 1px solid #e0e4ea;
 }
 

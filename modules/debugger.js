@@ -410,6 +410,30 @@ const REGISTER_NAMES = [
 /** What a cell shows while no session gives a value. */
 const NO_VALUE = "\u2014";
 
+/**
+ * The number of columns that the register file can take.
+ *
+ * Each one divides the thirty-two registers without a remainder, so every
+ * column holds the same number of boxes and the grid has no hole at the foot
+ * of its last column.
+ *
+ * @type {number[]}
+ */
+const REGISTER_COLUMNS = [1, 2, 4, 8];
+
+/**
+ * The width in pixels that one box needs to hold its three parts on one line:
+ * the name `zero`, the number `x31`, a value of eight hexadecimal digits, and
+ * the gaps and the padding between them.
+ */
+const REGISTER_BOX_WIDTH = 170;
+
+/**
+ * The width in pixels of one line of the grid, which the CSS makes from the
+ * gap between two boxes and from the border around the grid.
+ */
+const REGISTER_GRID_LINE = 1;
+
 
 /**
  * The value of each register of the hart, in hexadecimal.
@@ -445,34 +469,127 @@ class RegisterView {
      * @type {?number[]}
      */
     this.previous = null;
+    /**
+     * The shape that the grid has now, as `rows:box height`. It is empty
+     * until the panel takes a size, which it does when the Debugger tab
+     * opens.
+     */
+    this.shape = "";
     this.render();
+    // The panel takes its size from the window, and the Bootstrap columns put
+    // it beside the source view or below it. The shape of the grid follows.
+    this.observer = new ResizeObserver(() => this.layout());
+    this.observer.observe(this.container);
+    // A box is as tall as its line of text, and the line of text is as tall
+    // as the font that carries it. The first layout can come before the page
+    // has that font, and the box is a different height with it.
+    if (document.fonts) document.fonts.ready.then(() => this.layout());
+  }
+
+  /**
+   * Give the grid the shape that fills the panel.
+   *
+   * The choice is the smallest number of columns that holds the file: the
+   * fewer the columns, the more boxes a column holds, and the closer a box is
+   * to the height of its one line of text. A column count that the width
+   * cannot hold is not a choice, and when no count makes the boxes tall
+   * enough, the widest one that the panel holds wins and the panel scrolls.
+   */
+  layout() {
+    const width = this.container.clientWidth;
+    // The Debugger tab is hidden until the reader opens it, and a hidden
+    // panel has no size to measure.
+    if (width === 0) return;
+    const box = this.box_height();
+    const height = this.file_height();
+    const fits = REGISTER_COLUMNS.filter(
+      (columns) => columns * REGISTER_BOX_WIDTH <= width);
+    if (fits.length === 0) fits.push(REGISTER_COLUMNS[0]);
+    let choice = fits[fits.length - 1];
+    for (const columns of fits) {
+      const rows = REGISTER_NAMES.length / columns;
+      // The lines of the grid take their own place: one between two rows.
+      // The lines at the edge belong to the card and to the box of the
+      // program counter, which the height here already leaves out.
+      if (rows * box + (rows - 1) * REGISTER_GRID_LINE <= height) {
+        choice = columns;
+        break;
+      }
+    }
+    const rows = REGISTER_NAMES.length / choice;
+    const shape = rows + ":" + box;
+    if (shape === this.shape) return;
+    this.shape = shape;
+    this.file.style.setProperty("--dbg-reg-rows", String(rows));
+    this.file.style.setProperty("--dbg-reg-box-height", box + "px");
+  }
+
+  /**
+   * The height in pixels that one box needs for its line of text.
+   *
+   * The box of the program counter gives the number. It holds the same line
+   * as a register box, and the grid does not stretch it, so its height is the
+   * height that a register box cannot go below. A number written here instead
+   * would be the height of one font at one size, and the panel would overflow
+   * the day one of the two changes.
+   *
+   * @returns {number}
+   */
+  box_height() {
+    // clientHeight leaves out the border of the box, which the boxes of the
+    // grid do not have: there the gap draws the line.
+    return this.rows[0].clientHeight;
+  }
+
+  /**
+   * The height in pixels that the grid of the file can take: what the panel
+   * holds, less its padding and less the box of the program counter.
+   *
+   * @returns {number}
+   */
+  file_height() {
+    const panel = getComputedStyle(this.container);
+    const pc = this.rows[0];
+    const gap = parseFloat(getComputedStyle(pc).marginBottom);
+    return this.container.clientHeight
+      - parseFloat(panel.paddingTop) - parseFloat(panel.paddingBottom)
+      - pc.getBoundingClientRect().height - gap;
   }
 
   /**
    * Build one cell for each register. The cells carry no value until a session
    * reports one.
+   *
+   * The program counter is a child of the panel, and the thirty-two registers
+   * of the file are children of a box of their own. That box puts them in
+   * columns from the top down, so a reader finds x0 to x31 in the order of
+   * the table of the calling convention when the eye goes down a column.
    */
   render() {
     const grid = document.createElement("div");
     grid.className = "dbg-regs dbg-regs-idle";
     this.grid = grid;
     this.add_cell(grid, "pc", "");
+    const file = document.createElement("div");
+    file.className = "dbg-reg-file";
+    this.file = file;
     for (let index = 0; index < REGISTER_NAMES.length; index++) {
-      this.add_cell(grid, REGISTER_NAMES[index], "x" + index);
+      this.add_cell(file, REGISTER_NAMES[index], "x" + index);
     }
+    grid.appendChild(file);
     this.container.textContent = "";
     this.container.classList.remove("text-muted");
     this.container.appendChild(grid);
   }
 
   /**
-   * One cell of the grid: the name of the register, its number, and its value.
+   * One cell of the view: the name of the register, its number, and its value.
    *
-   * @param {HTMLElement} grid
+   * @param {HTMLElement} parent the element that takes the cell
    * @param {string} name the name of the calling convention
    * @param {string} number the `x` name, which the program counter does not have
    */
-  add_cell(grid, name, number) {
+  add_cell(parent, name, number) {
     const row = document.createElement("div");
     row.className = number === "" ? "dbg-reg dbg-reg-pc" : "dbg-reg";
     const label = document.createElement("span");
@@ -487,7 +604,7 @@ class RegisterView {
     row.appendChild(label);
     row.appendChild(index);
     row.appendChild(value);
-    grid.appendChild(row);
+    parent.appendChild(row);
     this.rows.push(row);
     this.cells.push(value);
     this.names.push(name);
