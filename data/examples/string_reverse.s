@@ -1,11 +1,12 @@
 # string_reverse.s -- Turn a string around in memory, then write it out.
 #
-# The program changes bytes and not words, so the memory grid shows one cell
-# change at a time.
+# The program changes bytes and not words, so the memory pane marks one byte
+# at a time.
 #
-# Try this: put a breakpoint on "swap_loop", open the memory pane in STR mode,
-# and type the address of "text" in its address box. Press run again and again.
-# Two cells trade places on each pass.
+# Try this: put a breakpoint on "swap_loop" and type "t0" in the address box
+# of the memory pane, which puts the text at the top of the pane. Press run
+# again and again. Two bytes trade places on each pass, and the pane marks
+# them in the hex column and in the text column.
 
 # The text is in .data and not in .rodata, because the program writes to it.
     .section .data

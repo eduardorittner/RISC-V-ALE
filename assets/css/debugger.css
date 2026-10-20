@@ -344,3 +344,117 @@
   outline: 2px solid #0f766e;
   outline-offset: 1px;
 }
+
+/* ─── The memory view ────────────────────────────────────────────────────── */
+
+/* The lines go to the border of the panel, like the lines of the source view.
+
+   The panel keeps no scroll anchor: the view moves the scroll by hand when
+   the window of memory moves, and the anchor of the browser would move it a
+   second time. */
+#debug_memory_view.dbg-memory {
+  padding: 0;
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-anchor: none;
+}
+
+/* A message is prose, so it does not take the monospace font of the lines. */
+#debug_memory_view .dbg-mem-message {
+  padding: 1.25rem;
+  font-family: 'Nunito Sans', sans-serif;
+}
+
+/* The field holds an address, so it takes the font of the dump. It is as wide
+   as the longest expression that a reader is likely to write, and not as wide
+   as the header: the title of the panel stands beside it. */
+.dbg-mem-address {
+  width: 20ch;
+  font-family: 'Courier Prime', monospace;
+}
+
+/* A line is as wide as its text, and not as wide as the panel, so that the
+   sticky address has a row to stay in when the panel scrolls to the right.
+   The spaces between the bytes are text, so the line keeps them. */
+.dbg-mem-line {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  white-space: pre;
+}
+
+/* The address column has the width of its eight digits. The head writes a
+   word there, which is shorter, and the two must stand over each other. */
+.dbg-mem-addr {
+  position: sticky;
+  left: 0;
+  flex: 0 0 auto;
+  box-sizing: content-box;
+  width: 8ch;
+  padding: 0 0.6rem;
+  color: #8a94a6;
+  background: #f2f4f7;
+  border-right: 1px solid #e0e4ea;
+}
+
+.dbg-mem-hex {
+  padding: 0 0.75rem;
+}
+
+/* The text column, with a line between it and the bytes. */
+.dbg-mem-ascii {
+  padding: 0 0.75rem;
+  border-left: 1px solid #e0e4ea;
+}
+
+/* The head names the offset of each column. It stays at the top while the
+   lines scroll under it, and a copy of the dump does not carry it. */
+.dbg-mem-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #8a94a6;
+  background: #f2f4f7;
+  border-bottom: 1px solid #e0e4ea;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dbg-mem-head .dbg-mem-line {
+  background: #f2f4f7;
+}
+
+.dbg-mem-byte,
+.dbg-mem-char {
+  color: #212529;
+  border-radius: 2px;
+}
+
+/* A zero says the least of all the bytes, and most of a memory is zeros. It
+   is pale, so that the data stands out. */
+.dbg-mem-zero {
+  color: #b6bdc8;
+}
+
+/* A byte that the hart could not read. */
+.dbg-mem-none {
+  color: #b6bdc8;
+}
+
+/* A byte that the last step or run changed, in both columns. The mark takes
+   no bold face: the columns of a dump must keep their width. */
+.dbg-mem-changed {
+  background: #fff6da;
+  color: #9a5500;
+}
+
+/* The line under the pointer, so the eye walks from a byte to its character
+   and back. */
+.dbg-mem-lines .dbg-mem-line:hover {
+  background: #f8f9fb;
+}
+
+.dbg-mem-lines .dbg-mem-line:hover .dbg-mem-addr {
+  background: #e6eaf1;
+}

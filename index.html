@@ -167,10 +167,17 @@
                             </div>
                             <div class="card" style="height: 40vh;margin-top: 10px;">
                                 <div class="card-header">
-                                    <h5 class="mb-0">Memory</h5>
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <h5 class="mb-0">Memory</h5>
+                                        <!-- The field names the address that the
+                                             view shows. It takes a number or a
+                                             register, and a view at a register
+                                             follows it from stop to stop. -->
+                                        <input class="form-control form-control-sm dbg-mem-address" id="debug_memory_address" type="text" spellcheck="false" autocomplete="off" placeholder="address or register">
+                                    </div>
                                 </div>
-                                <div class="card-body text-muted" id="debug_memory_view" style="overflow: auto;">
-                                    <p class="mb-0">The memory contents appear here.</p>
+                                <div class="card-body text-muted dbg-memory" id="debug_memory_view" style="overflow: auto;">
+                                    <p class="dbg-mem-message mb-0">The memory of the program appears here when a session stops.</p>
                                 </div>
                             </div>
                         </div>

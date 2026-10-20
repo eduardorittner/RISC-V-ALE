@@ -5,8 +5,9 @@
 #   a7 = 93  exit(code)
 #
 # Try this: put a breakpoint on the "ecall" of the write and look at a0, a1
-# and a2 in the register pane. a1 holds the address of the text, so type that
-# address in the memory pane and read the string in STR mode.
+# and a2 in the register pane. a1 holds the address of the text, so type "a1"
+# in the address box of the memory pane and read the string in its text
+# column.
 
     .section .rodata
 message:

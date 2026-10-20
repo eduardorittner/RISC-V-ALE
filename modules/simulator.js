@@ -74,6 +74,7 @@ class SimulatorController{
           }
           break;
         case "dbg_state":
+        case "dbg_mem":
           this.sim_status_ch.postMessage(e.data);
           break;
         case 'sync':
@@ -139,6 +140,19 @@ class SimulatorController{
   /** Stop a run that `debug_run` started. */
   debug_stop(){
     this.simulator.postMessage({type: "dbg_stop"});
+  }
+
+  /**
+   * Choose the part of memory that a debug session reports: `len` bytes from
+   * the address `addr`. A stopped session answers with a `dbg_mem` message on
+   * the status channel, and every stop after that carries the bytes of the
+   * part in its `dbg_state` message.
+   *
+   * @param {number} addr
+   * @param {number} len
+   */
+  debug_view_memory(addr, len){
+    this.simulator.postMessage({type: "dbg_mem", addr, len});
   }
 
   load_syscall(number, code, desc){

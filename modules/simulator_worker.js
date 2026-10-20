@@ -70,6 +70,10 @@ onmessage = function(e) {
       dbgStop();
       break;
 
+    case "dbg_mem":
+      dbgViewMem(e.data.addr, e.data.len);
+      break;
+
     case 'sync':
       bus_sync.merge(e.data.buffer);
       bus_sync.sync();
@@ -349,7 +353,9 @@ function aleStartRunLoop(){
  * ─── The debugger ───────────────────────────────────────────────────────────
  *
  * A debug session does not run by itself. The page sends `dbg_step` and
- * `dbg_run`, and each answer carries the state of the hart.
+ * `dbg_run`, and each answer carries the state of the hart: the program
+ * counter, the registers, and the part of memory that the page asked for
+ * with `dbg_mem`.
  *
  * The module exports the state (`patches/0008-expose-a-debug-api.patch`), so
  * no command of the interactive shell is on this path. A step is one call of
@@ -379,7 +385,8 @@ var DEBUG_FREE_CHUNK = 2000000;
 /* The functions of the debug API that a session uses.
  * `patches/0008-expose-a-debug-api.patch` adds them to the module. */
 var DEBUG_API = ["_ale_pc", "_ale_reg", "_ale_inst_count", "_ale_disasm",
-                 "_ale_text_buffer"];
+                 "_ale_text_buffer", "_ale_mem_size", "_ale_mem_buffer",
+                 "_ale_read_mem"];
 
 /** The number of integer registers of the hart. */
 var DEBUG_REG_COUNT = 32;
@@ -400,7 +407,8 @@ function postDebugFailure(missing){
   postMessage({
     type: "dbg_state",
     status: "no session",
-    pc: 0, count: 0, inst: "", regs: null, running: false, ended: false,
+    pc: 0, count: 0, inst: "", regs: null, mem: null, mem_size: 0,
+    running: false, ended: false,
     error: "The simulator module has no debug API (" + missing.join(", ") +
            "). The browser is answering with an older copy of " +
            "modules/whisper.js. Reload the page and take the update."
@@ -418,6 +426,75 @@ function dbgReadRegs(){
   return regs;
 }
 
+/**
+ * The size of the buffer that `_ale_read_mem` fills, in bytes. A read of more
+ * bytes takes more than one call.
+ */
+var DEBUG_MEM_CHUNK = 4096;
+
+/** The most bytes that one request of the page can ask for. */
+var DEBUG_MEM_MAX = 16 * DEBUG_MEM_CHUNK;
+
+/**
+ * The part of the memory of the guest that the page shows: the address of its
+ * first byte and its length. The page sets it with a `dbg_mem` message, and
+ * every stop of the session carries the bytes of this part.
+ */
+var debug_mem_addr = 0;
+var debug_mem_len = 0;
+
+/**
+ * `len` bytes of the memory of the guest, from the address `addr`.
+ *
+ * The copy stops at the first address that the hart cannot read, so the
+ * answer is shorter than `len` when the part reaches past the end of the
+ * memory.
+ *
+ * @returns {Uint8Array}
+ */
+function dbgReadMem(addr, len){
+  var out = new Uint8Array(len);
+  var at = Module._ale_mem_buffer();
+  var done = 0;
+  while(done < len){
+    var want = Math.min(DEBUG_MEM_CHUNK, len - done);
+    var got = Module._ale_read_mem((addr + done) >>> 0, want);
+    if(got <= 0) break;
+    out.set(HEAPU8.subarray(at, at + got), done);
+    done += got;
+    if(got < want) break;
+  }
+  return done === len? out : out.slice(0, done);
+}
+
+/**
+ * The part of memory that the page asked for, with its bytes as they are now.
+ * Null while the page asked for none.
+ */
+function dbgMemWindow(){
+  if(debug_mem_len === 0) return null;
+  return {addr: debug_mem_addr, bytes: dbgReadMem(debug_mem_addr, debug_mem_len)};
+}
+
+/**
+ * The page asks for another part of memory. A session that is stopped answers
+ * now, with a `dbg_mem` message. A session that runs, or that is not up yet,
+ * keeps the request: the state of its next stop carries the bytes.
+ */
+function dbgViewMem(addr, len){
+  debug_mem_addr = addr >>> 0;
+  debug_mem_len = Math.min(Math.max(0, len | 0), DEBUG_MEM_MAX);
+  if(!debug_ready || debug_running) return;
+  var answer = {type: "dbg_mem", mem: null, mem_size: 0};
+  try{
+    answer.mem = dbgMemWindow();
+    answer.mem_size = Module._ale_mem_size();
+  }catch(error){
+    answer.error = "The simulator module did not answer: " + error;
+  }
+  postMessage(answer);
+}
+
 function postDebugState(status, extra){
   var state = {
     type: "dbg_state",
@@ -426,6 +503,8 @@ function postDebugState(status, extra){
     count: 0,
     inst: "",
     regs: null,
+    mem: null,
+    mem_size: 0,
     running: debug_running,
     ended: debug_ended
   };
@@ -439,9 +518,13 @@ function postDebugState(status, extra){
         state.inst = new TextDecoder().decode(HEAPU8.subarray(at, at + len));
       }
       // A "running" state is the report between two chunks of a run. The page
-      // keeps the registers of the last stop on screen, so the 32 calls into
-      // the module would have no reader.
-      if(status !== "running") state.regs = dbgReadRegs();
+      // keeps the registers and the memory of the last stop on screen, so the
+      // calls into the module would have no reader.
+      if(status !== "running"){
+        state.regs = dbgReadRegs();
+        state.mem = dbgMemWindow();
+        state.mem_size = Module._ale_mem_size();
+      }
     }
   }catch(error){
     // The page waits for this message. A session that cannot read its state

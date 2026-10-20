@@ -902,8 +902,755 @@ class RegisterView {
 
 
 /**
- * The Debugger page: the source view, the step and run controls, and the
- * session that they drive.
+ * The number of bytes of memory that the view holds at a time.
+ *
+ * The session copies this many bytes at each stop, so the number is a cost of
+ * every step. It is also the distance that a reader can scroll before the
+ * view must ask the session for more.
+ */
+const MEMORY_WINDOW = 4096;
+
+/**
+ * How far the window moves when the scroll comes near one of its edges, in
+ * bytes. Half of the window: the lines on screen stay in the window after the
+ * move, and the next move is half a window away.
+ */
+const MEMORY_SHIFT = MEMORY_WINDOW / 2;
+
+/**
+ * How near to an edge of the window the scroll must come before the view asks
+ * for the part of memory on the other side of the edge, in lines.
+ */
+const MEMORY_EDGE_LINES = 16;
+
+/**
+ * The number of bytes that one line can hold, widest first. The view takes
+ * the widest one that the panel holds, so a narrow panel shows eight bytes a
+ * line and scrolls no line to the right.
+ *
+ * Each one divides `MEMORY_WINDOW` and `MEMORY_ALIGN`, so a line always
+ * starts at a multiple of its own width.
+ */
+const MEMORY_LINE_WIDTHS = [16, 8];
+
+/**
+ * The number of bytes in one group of a line. One space more than usual
+ * stands between two groups, so the eye finds the byte of an offset.
+ */
+const MEMORY_GROUP = 8;
+
+/** The multiple that the first address of the window is aligned to. */
+const MEMORY_ALIGN = 16;
+
+/** The size of the address space of a hart with 32 bit registers. */
+const ADDRESS_SPACE = 0x100000000;
+
+/** What a cell shows for a byte that the hart could not read. */
+const NO_BYTE = "??";
+
+/** The title of the address field, which says what the field takes. */
+const MEMORY_FIELD_HINT =
+  "An address, or a register with an offset: 0x10000, sp, sp-16, pc. " +
+  "A view at a register follows it from stop to stop.";
+
+
+/**
+ * The memory of the hart, as a dump: on each line an address, the bytes from
+ * that address in hexadecimal, and the same bytes as text.
+ *
+ * The view holds one window of the memory, which the session copies to it at
+ * each stop. A scroll that comes near an edge of the window moves the window,
+ * so a reader walks the whole memory with the wheel and meets no edge.
+ *
+ * The field of the panel says where the window is. It takes an address, which
+ * pins the view there, or a register, which the view follows from stop to
+ * stop.
+ */
+class MemoryView {
+  /**
+   * @param {HTMLElement} container the body of the memory panel
+   * @param {HTMLInputElement} field the control that names the address
+   */
+  constructor(container, field) {
+    this.container = container;
+    this.field = field;
+    /** The number of bytes on one line. */
+    this.bytes_per_line = MEMORY_LINE_WIDTHS[0];
+    /** The size of the memory of the hart, in bytes. */
+    this.mem_size = ADDRESS_SPACE;
+    /** The address of the first byte of the window. */
+    this.base = 0;
+    /**
+     * The bytes of the window, or null while the view holds none.
+     * @type {?Uint8Array}
+     */
+    this.bytes = null;
+    /**
+     * The window at the stop before this one, which says which byte changed.
+     * It is null at the first stop of a session.
+     * @type {?{base: number, bytes: Uint8Array}}
+     */
+    this.previous = null;
+    /**
+     * The first address of the window that the view asked for and that has
+     * no answer yet, or null.
+     * @type {?number}
+     */
+    this.pending = null;
+    /**
+     * The registers of the last stop, which an expression of the field reads.
+     * Null while no session is stopped.
+     * @type {?number[]}
+     */
+    this.regs = null;
+    /** The program counter of the last stop. */
+    this.pc = 0;
+    /**
+     * The expression of the field, parsed, or null for an empty field.
+     * @type {?{terms: Array<object>, follows: boolean}}
+     */
+    this.expression = null;
+    /** The text of the field that `expression` came from. */
+    this.applied_text = "";
+    /**
+     * The address that the view opens at when the field names none: the
+     * first instruction of the program, or null without a line table.
+     * @type {?number}
+     */
+    this.default_address = null;
+    /**
+     * An address to bring on screen at the next draw, and where to put it.
+     * @type {?{address: number, where: string}}
+     */
+    this.scroll_to = null;
+    /** The lines on screen, each one with its cells. */
+    this.lines = [];
+    /** The number of bytes that each line on screen has cells for. */
+    this.lines_width = 0;
+    /** The height in pixels of one line, which the view measures at a draw. */
+    this.line_height = 0;
+    /**
+     * The width in pixels that a line of each width needs, which the view
+     * measures the first time it lays the panel out. Null while no measure
+     * holds.
+     * @type {?Object<number, number>}
+     */
+    this.widths = null;
+    this.build();
+    this.field.title = MEMORY_FIELD_HINT;
+    this.field.addEventListener("change", () => this.on_expression());
+    this.field.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      this.on_expression();
+    });
+    this.container.addEventListener("scroll", () => this.on_scroll());
+    // Eight thousand cells are eight thousand titles. One listener writes the
+    // title of the cell under the pointer.
+    this.body.addEventListener("mouseover", (event) => this.on_hover(event));
+    // The panel takes its size from the window. The width of a line follows.
+    this.observer = new ResizeObserver(() => this.layout());
+    this.observer.observe(this.container);
+    // The first layout can come before the page has the font of the dump,
+    // and a line is another width with it.
+    if (document.fonts) {
+      document.fonts.ready.then(() => {
+        this.widths = null;
+        this.layout();
+      });
+    }
+  }
+
+  /**
+   * The three parts of the panel: the message that holds while no session
+   * gives bytes, the head with the offset of each column, and the lines.
+   */
+  build() {
+    this.container.textContent = "";
+    this.container.classList.remove("text-muted");
+    this.message = document.createElement("p");
+    this.message.className = "dbg-mem-message mb-0 text-muted";
+    this.message.textContent =
+      "The memory of the program appears here when a session stops.";
+    this.head = document.createElement("div");
+    this.head.className = "dbg-mem-head";
+    this.body = document.createElement("div");
+    this.body.className = "dbg-mem-lines";
+    this.container.appendChild(this.message);
+    this.container.appendChild(this.head);
+    this.container.appendChild(this.body);
+    this.show_idle();
+  }
+
+  /** Show the message in place of the lines. */
+  show_idle() {
+    this.message.hidden = false;
+    this.head.hidden = true;
+    this.body.hidden = true;
+  }
+
+  /**
+   * One line of the dump: the address, a cell for each byte, and a cell for
+   * the character of each byte. A space of text stands between two byte
+   * cells, so that a copy of the lines reads as a dump.
+   *
+   * @param {number} width the number of bytes of the line
+   * @returns {{row: HTMLElement, address: HTMLElement, bytes: HTMLElement[], chars: HTMLElement[]}}
+   */
+  build_line(width) {
+    const row = document.createElement("div");
+    row.className = "dbg-mem-line";
+    const address = document.createElement("span");
+    address.className = "dbg-mem-addr";
+    const hex_part = document.createElement("span");
+    hex_part.className = "dbg-mem-hex";
+    const text_part = document.createElement("span");
+    text_part.className = "dbg-mem-ascii";
+    const bytes = [];
+    const chars = [];
+    for (let offset = 0; offset < width; offset++) {
+      if (offset > 0) {
+        const gap = offset % MEMORY_GROUP === 0 ? "  " : " ";
+        hex_part.appendChild(document.createTextNode(gap));
+      }
+      const byte = document.createElement("span");
+      byte.className = "dbg-mem-byte";
+      byte.dataset.offset = String(offset);
+      hex_part.appendChild(byte);
+      bytes.push(byte);
+      const char = document.createElement("span");
+      char.className = "dbg-mem-char";
+      char.dataset.offset = String(offset);
+      text_part.appendChild(char);
+      chars.push(char);
+    }
+    row.appendChild(address);
+    row.appendChild(hex_part);
+    row.appendChild(text_part);
+    return {row, address, bytes, chars};
+  }
+
+  /**
+   * The head of the dump: the offset of each column, in the form of a line so
+   * that the columns of the two stand over each other.
+   *
+   * @param {number} width the number of bytes of a line
+   */
+  build_head(width) {
+    const line = this.build_line(width);
+    line.address.textContent = "address";
+    for (let offset = 0; offset < width; offset++) {
+      line.bytes[offset].textContent = hex_byte(offset);
+    }
+    line.row.querySelector(".dbg-mem-ascii").textContent = "text";
+    this.head.textContent = "";
+    this.head.appendChild(line.row);
+  }
+
+  /**
+   * Build the lines of a window of `count` lines of `width` bytes.
+   *
+   * @param {number} width
+   * @param {number} count
+   */
+  build_lines(width, count) {
+    this.build_head(width);
+    this.lines = [];
+    const rows = document.createDocumentFragment();
+    for (let index = 0; index < count; index++) {
+      const line = this.build_line(width);
+      this.lines.push(line);
+      rows.appendChild(line.row);
+    }
+    this.body.textContent = "";
+    this.body.appendChild(rows);
+    this.lines_width = width;
+  }
+
+  /**
+   * Draw the window. The lines stay from one draw to the next: the view
+   * writes their cells, because a new set of lines would lose the scroll
+   * position.
+   */
+  render() {
+    if (this.bytes === null) {
+      this.show_idle();
+      return;
+    }
+    const width = this.bytes_per_line;
+    const count = Math.ceil(this.bytes.length / width);
+    if (this.lines_width !== width || this.lines.length !== count) {
+      this.build_lines(width, count);
+    }
+    for (let index = 0; index < count; index++) {
+      const line = this.lines[index];
+      const start = index * width;
+      const address = this.base + start;
+      line.row.dataset.address = String(address);
+      line.address.textContent = hex_address(address);
+      for (let offset = 0; offset < width; offset++) {
+        const at = start + offset;
+        const byte = line.bytes[offset];
+        const char = line.chars[offset];
+        const none = at >= this.bytes.length;
+        const value = none ? 0 : this.bytes[at];
+        const changed = !none && this.changed(address + offset, value);
+        byte.textContent = none ? NO_BYTE : hex_byte(value);
+        char.textContent = none ? " " : printable(value);
+        byte.classList.toggle("dbg-mem-none", none);
+        // A zero is the most common byte of a memory, and it says the least.
+        // It is pale in both columns, so that the data stands out.
+        byte.classList.toggle("dbg-mem-zero", !none && value === 0);
+        char.classList.toggle("dbg-mem-zero", !none && value === 0);
+        byte.classList.toggle("dbg-mem-changed", changed);
+        char.classList.toggle("dbg-mem-changed", changed);
+      }
+    }
+    this.message.hidden = true;
+    this.head.hidden = false;
+    this.body.hidden = false;
+    this.line_height = this.lines[0].row.getBoundingClientRect().height;
+    if (this.scroll_to !== null) {
+      const target = this.scroll_to;
+      this.scroll_to = null;
+      this.place(target.address, target.where);
+    }
+  }
+
+  /**
+   * True when the byte at `address` had another value at the stop before.
+   * A byte that the window of that stop did not hold is not changed: the
+   * view does not know.
+   *
+   * @param {number} address
+   * @param {number} value
+   */
+  changed(address, value) {
+    const before = this.previous;
+    if (before === null) return false;
+    const at = address - before.base;
+    return at >= 0 && at < before.bytes.length && before.bytes[at] !== value;
+  }
+
+  /**
+   * Scroll the window so that the line of `address` is on screen: at the top
+   * of the panel when `where` is "top", or else at the nearest edge, and
+   * nowhere when the line is on screen already.
+   *
+   * @param {number} address
+   * @param {string} where "top" or "nearest"
+   */
+  place(address, where) {
+    const index = Math.floor((address - this.base) / this.bytes_per_line);
+    if (index < 0 || index >= this.lines.length) return;
+    const panel = this.container;
+    // The scroll position that puts the line right under the head. The head
+    // is sticky, so a line that is under it is not on screen.
+    const top = index * this.line_height;
+    if (where === "top") {
+      panel.scrollTop = top;
+      return;
+    }
+    const visible = panel.clientHeight - this.head.offsetHeight - this.line_height;
+    if (top < panel.scrollTop) panel.scrollTop = top;
+    else if (top > panel.scrollTop + visible) panel.scrollTop = top - visible;
+  }
+
+  /** The address of the first line on screen. */
+  top_address() {
+    if (this.bytes === null || this.line_height === 0) return this.base;
+    const index = Math.floor(this.container.scrollTop / this.line_height);
+    return this.base + index * this.bytes_per_line;
+  }
+
+  /**
+   * Give the lines the width that the panel holds.
+   *
+   * The choice is the widest line that fits, so the dump keeps sixteen bytes
+   * a line where the panel is wide enough and takes eight where it is not. A
+   * line that is wider than the panel scrolls to the right at every move,
+   * and a dump of four bytes a line is a column and not a dump.
+   */
+  layout() {
+    const width = this.container.clientWidth;
+    // The Debugger tab is hidden until the reader opens it, and a hidden
+    // panel has no size to measure.
+    if (width === 0) return;
+    if (this.widths === null) this.widths = this.measure_widths();
+    let choice = MEMORY_LINE_WIDTHS[MEMORY_LINE_WIDTHS.length - 1];
+    for (const candidate of MEMORY_LINE_WIDTHS) {
+      if (this.widths[candidate] <= width) {
+        choice = candidate;
+        break;
+      }
+    }
+    if (choice === this.bytes_per_line) return;
+    // The line at the top of the panel stays there, in its new width.
+    const top = this.top_address();
+    this.bytes_per_line = choice;
+    if (this.bytes !== null) this.scroll_to = {address: top, where: "top"};
+    this.render();
+  }
+
+  /**
+   * The width in pixels that a line of each width needs. The measure is a
+   * line with a value in every cell, which the page lays out but does not
+   * show. It is out of the flow, so the lines do not move for it.
+   *
+   * @returns {Object<number, number>}
+   */
+  measure_widths() {
+    const widths = {};
+    for (const width of MEMORY_LINE_WIDTHS) {
+      const line = this.build_line(width);
+      line.address.textContent = hex_address(0);
+      for (let offset = 0; offset < width; offset++) {
+        line.bytes[offset].textContent = "00";
+        line.chars[offset].textContent = "0";
+      }
+      line.row.style.position = "absolute";
+      line.row.style.visibility = "hidden";
+      line.row.style.minWidth = "0";
+      this.container.appendChild(line.row);
+      widths[width] = Math.ceil(line.row.getBoundingClientRect().width);
+      line.row.remove();
+    }
+    return widths;
+  }
+
+  /**
+   * The scroll came near an edge of the window: ask for the part of memory
+   * on the other side of the edge. The window moves by half its size, so the
+   * lines on screen stay in it and the scroll goes on.
+   */
+  on_scroll() {
+    if (this.bytes === null || this.pending !== null || this.line_height === 0) return;
+    const panel = this.container;
+    const edge = MEMORY_EDGE_LINES * this.line_height;
+    if (panel.scrollTop < edge) {
+      if (this.base > 0) this.request(this.base - MEMORY_SHIFT);
+      return;
+    }
+    const end = this.base + this.bytes.length;
+    const bottom = panel.scrollTop + panel.clientHeight;
+    if (bottom > panel.scrollHeight - edge && end < this.mem_size) {
+      this.request(this.base + MEMORY_SHIFT);
+    }
+  }
+
+  /**
+   * Ask the session for the window that starts at `base`. The answer comes
+   * as a message, so the view draws nothing now.
+   *
+   * @param {number} base
+   */
+  request(base) {
+    const last = Math.max(0, align_down(this.mem_size - MEMORY_WINDOW));
+    base = Math.min(Math.max(0, align_down(base)), last);
+    const length = Math.min(MEMORY_WINDOW, this.mem_size - base);
+    if (length <= 0 || this.pending === base) return;
+    this.pending = base;
+    simulator_controller.debug_view_memory(base, length);
+  }
+
+  /**
+   * Bring `address` on screen. A window that holds it scrolls; any other
+   * comes from the session, with the address a quarter of the way down it,
+   * so that there is room to scroll up without a wait.
+   *
+   * @param {number} address
+   * @param {string} where "top" or "nearest", for a window that holds it
+   */
+  go_to(address, where) {
+    address = Math.min(Math.max(0, address), this.mem_size - 1);
+    const held = this.bytes !== null
+      && address >= this.base && address < this.base + this.bytes.length;
+    if (held) {
+      this.place(address, where);
+      return;
+    }
+    this.scroll_to = {address, where: "top"};
+    this.request(align_down(address) - MEMORY_WINDOW / 4);
+  }
+
+  /**
+   * Take a window from the session and draw it. The byte that was at the top
+   * of the panel stays there when the window moved for a scroll.
+   *
+   * @param {{addr: number, bytes: Uint8Array}} mem
+   */
+  take(mem) {
+    if (this.pending === mem.addr) this.pending = null;
+    const keep = this.bytes !== null && this.scroll_to === null
+      ? this.base - mem.addr : 0;
+    this.base = mem.addr;
+    this.bytes = mem.bytes;
+    this.render();
+    if (keep !== 0) {
+      this.container.scrollTop += keep / this.bytes_per_line * this.line_height;
+    }
+  }
+
+  /**
+   * The state of a stop: the registers, which the field can name, and the
+   * bytes of the window, which the view draws and compares with the stop
+   * before.
+   *
+   * @param {number} pc
+   * @param {?number[]} regs x0 to x31, or null for a state that carries none
+   * @param {?{addr: number, bytes: Uint8Array}} mem the window, or null
+   * @param {number} mem_size the size of the memory, or 0 when unknown
+   */
+  set_stop(pc, regs, mem, mem_size) {
+    if (!regs) {
+      this.clear();
+      return;
+    }
+    this.regs = regs;
+    this.pc = pc >>> 0;
+    if (mem_size > 0) this.mem_size = mem_size;
+    if (mem !== null && mem.bytes.length > 0) {
+      if (this.bytes !== null) this.previous = {base: this.base, bytes: this.bytes};
+      this.take(mem);
+    }
+    this.follow();
+  }
+
+  /**
+   * The answer of a request: the window as the session copied it now. The
+   * stop stays the same, so the marks of the changed bytes stay too.
+   *
+   * @param {?{addr: number, bytes: Uint8Array}} mem
+   * @param {number} mem_size
+   */
+  set_window(mem, mem_size) {
+    if (mem_size > 0) this.mem_size = mem_size;
+    // An answer for a session that is gone has no reader.
+    if (mem === null || this.regs === null) return;
+    this.take(mem);
+  }
+
+  /**
+   * Where the view goes at a stop: to the register of the field, when the
+   * field names one, or to the opening address at the first stop of a
+   * session.
+   */
+  follow() {
+    if (this.expression !== null && this.expression.follows) {
+      const target = this.evaluate(this.expression);
+      if (target !== null) this.go_to(target, "nearest");
+      return;
+    }
+    if (this.bytes !== null || this.pending !== null) return;
+    this.go_to(this.opening_address(), "top");
+  }
+
+  /**
+   * The address that the view opens at: the field, the first instruction of
+   * the program, or the program counter.
+   *
+   * @returns {number}
+   */
+  opening_address() {
+    if (this.expression !== null) {
+      const value = this.evaluate(this.expression);
+      if (value !== null) return value;
+    }
+    return this.default_address !== null ? this.default_address : this.pc;
+  }
+
+  /**
+   * A session starts. The view asks for its first window now, so that the
+   * first stop carries the bytes. A field that names a register waits for
+   * that stop, which is the first state that has the value of the register.
+   *
+   * @param {?number} default_address the first instruction of the program
+   */
+  prepare(default_address) {
+    this.default_address = default_address;
+    let target = null;
+    if (this.expression !== null && !this.expression.follows) {
+      target = this.evaluate(this.expression);
+    }
+    if (target === null) target = default_address;
+    if (target !== null) this.go_to(target, "top");
+  }
+
+  /** Forget the session. The bytes on screen are from a program that is gone. */
+  clear() {
+    this.regs = null;
+    this.pc = 0;
+    this.bytes = null;
+    this.previous = null;
+    this.pending = null;
+    this.scroll_to = null;
+    this.default_address = null;
+    this.show_idle();
+  }
+
+  /**
+   * The field changed. The view goes where it says, when a session is
+   * stopped; a field that names no valid expression takes the mark of an
+   * error and changes nothing.
+   */
+  on_expression() {
+    const text = this.field.value;
+    if (text === this.applied_text) return;
+    const parsed = parse_address_expression(text);
+    if (parsed !== null && parsed.error) {
+      this.field.classList.add("is-invalid");
+      this.field.title = parsed.error;
+      return;
+    }
+    this.applied_text = text;
+    this.field.classList.remove("is-invalid");
+    this.field.title = MEMORY_FIELD_HINT;
+    this.expression = parsed;
+    if (parsed === null || this.regs === null) return;
+    const target = this.evaluate(parsed);
+    if (target !== null) this.go_to(target, "top");
+  }
+
+  /**
+   * The value of an expression of the field, with the registers of the last
+   * stop. Null when the expression names a register and no stop gave one.
+   *
+   * @param {{terms: Array<object>}} expression
+   * @returns {?number}
+   */
+  evaluate(expression) {
+    let total = 0;
+    for (const term of expression.terms) {
+      let value = term.value;
+      if (term.register === "pc") {
+        value = this.pc;
+      } else if (term.register !== undefined) {
+        if (this.regs === null) return null;
+        value = this.regs[term.register];
+      }
+      total += term.sign * value;
+    }
+    return ((total % ADDRESS_SPACE) + ADDRESS_SPACE) % ADDRESS_SPACE;
+  }
+
+  /**
+   * The title of the cell under the pointer: the address of its byte, and the
+   * byte in the forms that the cell does not show.
+   *
+   * @param {MouseEvent} event
+   */
+  on_hover(event) {
+    const cell = /** @type {HTMLElement} */ (event.target)
+      .closest(".dbg-mem-byte, .dbg-mem-char");
+    if (cell === null || this.bytes === null) return;
+    const row = cell.closest(".dbg-mem-line");
+    const address = Number(row.dataset.address) + Number(cell.dataset.offset);
+    const at = address - this.base;
+    if (at < 0 || at >= this.bytes.length) {
+      cell.title = hex(address);
+      return;
+    }
+    const value = this.bytes[at];
+    const char = value >= 0x20 && value < 0x7f ? ` '${String.fromCharCode(value)}'` : "";
+    cell.title = `${hex(address)} = 0x${hex_byte(value)} = ${value}${char}`;
+  }
+}
+
+
+/**
+ * Read an expression of the address field: terms with a sign between them,
+ * where a term is a number or a register. A number with `0x` is hexadecimal
+ * and a number without it is decimal, as in GDB; a register is a name of the
+ * calling convention, an `x` name, `fp` or `pc`, with or without a `$`.
+ *
+ * @param {string} text
+ * @returns {?{terms: Array<object>, follows: boolean}|{error: string}}
+ *   null for an empty text, and an object with `error` for a text that is
+ *   not an expression
+ */
+function parse_address_expression(text) {
+  const source = text.trim().toLowerCase();
+  if (source === "") return null;
+  const terms = [];
+  let follows = false;
+  const pattern = /\s*([+-]?)\s*(0x[0-9a-f]+|[0-9]+|\$?[a-z][a-z0-9]*)\s*/y;
+  let at = 0;
+  while (at < source.length) {
+    pattern.lastIndex = at;
+    const match = pattern.exec(source);
+    if (match === null || (at > 0 && match[1] === "")) {
+      return {error: `"${text.trim()}" is not an address. Write a number such as 0x10000, or a register such as sp or sp-16.`};
+    }
+    at = pattern.lastIndex;
+    const sign = match[1] === "-" ? -1 : 1;
+    const word = match[2];
+    if (word.startsWith("0x")) {
+      terms.push({sign, value: parseInt(word, 16)});
+    } else if (/^[0-9]/.test(word)) {
+      terms.push({sign, value: parseInt(word, 10)});
+    } else {
+      const register = register_index(word.replace(/^\$/, ""));
+      if (register === null) {
+        return {error: `"${word}" is not a register. A hexadecimal number starts with 0x.`};
+      }
+      terms.push({sign, register});
+      follows = true;
+    }
+  }
+  return {terms, follows};
+}
+
+
+/**
+ * The register that a name of an expression means: "pc" for the program
+ * counter, or the index of an integer register.
+ *
+ * @param {string} name
+ * @returns {?(number|string)}
+ */
+function register_index(name) {
+  if (name === "pc") return "pc";
+  if (name === "fp") return 8;
+  const named = REGISTER_NAMES.indexOf(name);
+  if (named >= 0) return named;
+  const numbered = /^x([0-9]|[12][0-9]|3[01])$/.exec(name);
+  return numbered ? Number(numbered[1]) : null;
+}
+
+
+/** The largest multiple of `MEMORY_ALIGN` that is not above `address`. */
+function align_down(address) {
+  return Math.floor(address / MEMORY_ALIGN) * MEMORY_ALIGN;
+}
+
+
+/** A byte, as two hexadecimal digits. */
+function hex_byte(value) {
+  return value.toString(16).padStart(2, "0");
+}
+
+
+/**
+ * An address of the dump: eight digits and no prefix, which keeps the column
+ * narrow. The title of a cell writes the same address with the prefix.
+ */
+function hex_address(value) {
+  return (value >>> 0).toString(16).padStart(8, "0");
+}
+
+
+/**
+ * The character of a byte: the byte itself when it is printable ASCII, and a
+ * point for every other value, which is what every dump does.
+ */
+function printable(value) {
+  return value >= 0x20 && value < 0x7f ? String.fromCharCode(value) : ".";
+}
+
+
+/**
+ * The Debugger page: the source, register and memory views, the step and run
+ * controls, and the session that they drive.
  *
  * The session is a worker that holds the program between two commands. The
  * module exports the state of the hart, so a command here is a call into
@@ -916,6 +1663,10 @@ class DebuggerPage {
       /** @type {HTMLSelectElement} */ (document.getElementById("debug_source_file"))
     );
     this.registers = new RegisterView(document.getElementById("debug_register_view"));
+    this.memory = new MemoryView(
+      document.getElementById("debug_memory_view"),
+      /** @type {HTMLInputElement} */ (document.getElementById("debug_memory_address"))
+    );
     this.step_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_step_button"));
     this.run_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_run_button"));
     this.stop_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_stop_button"));
@@ -988,6 +1739,10 @@ class DebuggerPage {
       this.end_session();
       return;
     }
+    if (data.type === "dbg_mem") {
+      this.memory.set_window(data.mem, data.mem_size);
+      return;
+    }
     if (data.type !== "dbg_state") return;
     this.on_debug_state(data);
   }
@@ -1004,6 +1759,7 @@ class DebuggerPage {
     this.source.set_runnable(new Map());
     this.source.set_current(null);
     this.registers.clear();
+    this.memory.clear();
     this.draw_controls();
   }
 
@@ -1033,6 +1789,7 @@ class DebuggerPage {
       // A run reports between two chunks and carries no registers there. The
       // values of the last stop stay on screen until the run stops.
       this.registers.set_values(state.pc, state.regs);
+      this.memory.set_stop(state.pc, state.regs, state.mem || null, state.mem_size || 0);
     }
     if (!("regs" in state)) this.warn_stale_worker();
     this.draw_controls();
@@ -1175,6 +1932,7 @@ class DebuggerPage {
     this.state = NO_SESSION;
     this.source.set_current(null);
     this.registers.clear();
+    this.memory.clear();
     this.draw_controls();
     try {
       const program = await this.build(sources);
@@ -1191,6 +1949,9 @@ class DebuggerPage {
       simulator_controller.restart_simulator();
       simulator_controller.load_new_file(program.file);
       simulator_controller.start_execution(this.build_args(DEBUG_PROGRAM), true);
+      // The worker keeps the request until the module is up, so the first
+      // stop carries the bytes of the window.
+      this.memory.prepare(first_address(program.line_table));
       return await this.wait_for_ready(ready);
     } catch (error) {
       console.log("[debugger] the session did not start:", error);
@@ -1309,6 +2070,18 @@ class DebuggerPage {
       compiler.quiet = false;
     }
   }
+}
+
+
+/**
+ * The address of the first instruction of the program, or null for a program
+ * with no line table. The entries of the table are in the order of their
+ * addresses, and an end-of-sequence entry is the address after the last
+ * instruction and not an instruction.
+ */
+function first_address(line_table) {
+  const entry = line_table.entries.find(row => !row.end);
+  return entry ? entry.address : null;
 }
 
 
