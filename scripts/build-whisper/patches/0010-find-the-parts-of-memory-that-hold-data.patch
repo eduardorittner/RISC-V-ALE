@@ -1,0 +1,152 @@
+diff -ruN a/whisper.cpp b/whisper.cpp
+--- a/whisper.cpp	2026-10-21 12:57:53
++++ b/whisper.cpp	2026-10-21 12:57:53
+@@ -1960,6 +1960,7 @@
+   int      (*accessKind)() = nullptr;
+   uint32_t (*accessAddr)() = nullptr;
+   uint32_t (*accessSize)() = nullptr;
++  double   (*findData)(uint32_t, int, uint32_t) = nullptr;
+ };
+ 
+ static AleDebugApi aleDebug;
+@@ -2134,6 +2135,113 @@
+ }
+ 
+ 
++/// Eight bytes of the memory of the guest, at an address that is a multiple
++/// of eight. The guest memory comes from `aligned_alloc`, so the read is
++/// aligned. The compile flags have `-fno-builtin`, so a `memcpy` here would
++/// be a call for every word of the scan.
++static inline
++uint64_t
++aleWordAt(const uint8_t* at)
++{
++  return *reinterpret_cast<const uint64_t*>(at);
++}
++
++
++/// Find the first byte of a part of the memory of the guest that holds data.
++///
++/// Most of the memory is zero. A run of `gap` or more zero bytes divides it,
++/// and what stands between two such runs is a part that holds data. A run of
++/// zeros that is shorter than `gap` is inside a part: a word of zeros in a
++/// structure is data, and not space between two structures.
++///
++/// With `forward` not zero the answer is the first part that starts at or
++/// after `addr`; with `forward` zero it is the last part that starts before
++/// `addr`. The answer is -1 when no part is on that side.
++///
++/// The scan reads the guest memory in place, a word at a time through the
++/// runs of zeros, so a pass over the whole memory is a few tens of
++/// milliseconds and not the second that `peekMemory` on every byte would
++/// take.
++template <typename URV>
++static
++double
++aleDbgFindData(uint32_t addr, int forward, uint32_t gap)
++{
++  auto* hart = aleDebugHart<URV>();
++  if (not hart)
++    return -1;
++  size_t size = hart->memorySize();
++  size_t simAddr = 0;
++  if (size == 0 or not hart->getSimMemAddr(0, simAddr))
++    return -1;
++  const uint8_t* data = reinterpret_cast<const uint8_t*>(simAddr);
++
++  // `p` is a part start when data[p] is not zero and the `gap` bytes before
++  // it are zero, or when every byte before it is zero: the start of the
++  // memory is a boundary too.
++
++  if (forward)
++    {
++      size_t p = addr;
++      if (p >= size)
++        return -1;
++      // The zeros right before the first byte of the scan, at most `gap` of
++      // them: that byte can start a part only when enough of them are there.
++      size_t run = 0;
++      while (run < gap and run < p and data[p - run - 1] == 0)
++        run++;
++      while (p < size)
++        {
++          if (data[p] != 0)
++            {
++              if (run >= gap or run == p)
++                return double(p);
++              run = 0;
++              p++;
++              continue;
++            }
++          p++;
++          run++;
++          if ((p & 7) == 0)
++            while (p + 8 <= size and aleWordAt(data + p) == 0)
++              {
++                p += 8;
++                run += 8;
++              }
++        }
++      return -1;
++    }
++
++  // Backward. `p` is the address above the bytes that the scan has not seen.
++  size_t p = addr < size? addr : size;
++  while (p > 0)
++    {
++      // The highest byte below `p` that is not zero.
++      size_t q = p;
++      while (q > 0 and data[q - 1] == 0)
++        {
++          q--;
++          if ((q & 7) == 0)
++            while (q >= 8 and aleWordAt(data + q - 8) == 0)
++              q -= 8;
++        }
++      if (q == 0)
++        return -1;
++      size_t a = q - 1;
++      // The zeros right below it, at most `gap` of them.
++      size_t run = 0;
++      while (run < gap and run < a and data[a - run - 1] == 0)
++        run++;
++      if (run >= gap or run == a)
++        return double(a);
++      // Not a part start: the byte below the run is data of the same part,
++      // and it is the next candidate.
++      p = a - run;
++    }
++  return -1;
++}
++
++
+ /// Called by session, with the register width that main chose.
+ template <typename URV>
+ static
+@@ -2150,6 +2258,7 @@
+   aleDebug.accessKind = &aleDbgAccessKind<URV>;
+   aleDebug.accessAddr = &aleDbgAccessAddr<URV>;
+   aleDebug.accessSize = &aleDbgAccessSize<URV>;
++  aleDebug.findData = &aleDbgFindData<URV>;
+ }
+ 
+ 
+@@ -2261,6 +2370,18 @@
+ ale_access_size()
+ {
+   return aleDebug.accessSize? aleDebug.accessSize() : 0;
++}
++
++
++/// The first byte of a part of the memory of the guest that holds data: the
++/// first part that starts at or after `addr` when `forward` is not zero, or
++/// the last part that starts before `addr` when it is zero. A run of `gap`
++/// zero bytes ends a part. The answer is -1 when no part is on that side.
++extern "C" EMSCRIPTEN_KEEPALIVE
++double
++ale_find_data(uint32_t addr, int forward, uint32_t gap)
++{
++  return aleDebug.findData? aleDebug.findData(addr, forward, gap) : -1;
+ }
+ 
+ #endif  // ALE_NO_ASYNCIFY

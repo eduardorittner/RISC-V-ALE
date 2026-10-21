@@ -75,6 +75,7 @@ class SimulatorController{
           break;
         case "dbg_state":
         case "dbg_mem":
+        case "dbg_found":
           this.sim_status_ch.postMessage(e.data);
           break;
         case 'sync':
@@ -153,6 +154,21 @@ class SimulatorController{
    */
   debug_view_memory(addr, len){
     this.simulator.postMessage({type: "dbg_mem", addr, len});
+  }
+
+  /**
+   * Ask a debug session for a part of memory that holds data: the first part
+   * that starts at or after `addr` when `forward` is true, or the last part
+   * that starts before it when `forward` is false. A run of `gap` zero bytes
+   * ends a part. The worker answers with a `dbg_found` message on the status
+   * channel, whose `addr` is the first address of the part or null.
+   *
+   * @param {number} addr
+   * @param {boolean} forward
+   * @param {number} gap
+   */
+  debug_find_data(addr, forward, gap){
+    this.simulator.postMessage({type: "dbg_find", addr, forward, gap});
   }
 
   load_syscall(number, code, desc){

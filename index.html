@@ -168,11 +168,23 @@
                                 <div class="card-header">
                                     <div class="d-flex align-items-center justify-content-between">
                                         <h5 class="mb-0">Memory</h5>
-                                        <!-- The field names the address that the
-                                             view shows. It takes a number or a
-                                             register, and a view at a register
-                                             follows it from stop to stop. -->
-                                        <input class="form-control form-control-sm dbg-mem-address" id="debug_memory_address" type="text" spellcheck="false" autocomplete="off" placeholder="address or register">
+                                        <div class="d-flex align-items-center">
+                                            <!-- The arrows go to the part of memory
+                                                 that holds data before or after the
+                                                 one on screen. Most of the memory is
+                                                 zero, and the arrows find the code,
+                                                 the heap and the stack without a
+                                                 scroll through it. -->
+                                            <div class="btn-group btn-group-sm mr-2 dbg-mem-nav" role="group" aria-label="Parts of memory that hold data">
+                                                <button class="btn btn-outline-secondary" id="debug_memory_previous" type="button" title="Go to the part of memory that holds data before this one"><i class="material-icons">keyboard_arrow_up</i></button>
+                                                <button class="btn btn-outline-secondary" id="debug_memory_next" type="button" title="Go to the part of memory that holds data after this one"><i class="material-icons">keyboard_arrow_down</i></button>
+                                            </div>
+                                            <!-- The field names the address that the
+                                                 view shows. It takes a number or a
+                                                 register, and a view at a register
+                                                 follows it from stop to stop. -->
+                                            <input class="form-control form-control-sm dbg-mem-address" id="debug_memory_address" type="text" spellcheck="false" autocomplete="off" placeholder="address or register">
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="card-body text-muted dbg-memory" id="debug_memory_view" style="overflow: auto;"></div>

@@ -178,6 +178,8 @@ drives the core with `ale_run_slice(1)` and reads the state with them.
 | `ale_mem_buffer()` | The address of that buffer in the linear memory of the module. |
 | `ale_disasm(addr)` | Puts the disassembly of the instruction at `addr` in a text buffer and answers its length. |
 | `ale_text_buffer()` | The address of the text buffer. |
+| `ale_access_kind()`, `ale_access_addr()`, `ale_access_size()` | The last memory access of the hart: its kind (0 for none, 1 for a load, 2 for a store), its data address and its width in bytes. `patches/0009` adds them. |
+| `ale_find_data(addr, forward, gap)` | The first byte of a part of the guest memory that holds data: the first part that starts at or after `addr` when `forward` is not zero, or the last part that starts before `addr` when it is zero. A run of `gap` zero bytes ends a part. The answer is -1 when no part is on that side. The scan reads the guest memory in place, a word at a time through the zeros. `patches/0010` adds it. |
 
 **The interactive shell can give the same values, and it is not usable for a
 page.** Each command of the shell crosses the worker boundary as a string and
@@ -397,4 +399,6 @@ comparison.
 | `0002` to `0005` | The guards of steps 6, 7 and 8. The sections above describe them. |
 | `0007-allocate-the-guest-memory-without-a-fill.patch` | The guest memory. It replaces the anonymous `mmap` of `Memory::Memory` with `aligned_alloc`, which does not fill. Emscripten implements an anonymous `mmap` as `memalign` and then `memset(ptr, 0, len)`, and for the 128 MB guest memory of the application that fill was 16 ms of the 32 ms from the run message to the end of a small program. `ALLOC_FLAGS` holds the macros and `local/36ms.md` holds the measurements. |
 | `0008-expose-a-debug-api.patch` | The debug API. It adds ten `extern "C"` functions to `whisper.cpp` that answer the state of the hart, and one call in `session` that fills their table of pointers. Nothing of it is in a run loop. The section "The debug API" above lists the functions. |
+| `0009-record-the-last-memory-access.patch` | The last memory access. The load and store paths of `Hart.cpp`, also the `FAST_SLOPPY` ones, record the address, the width and the kind of the access, and three functions of the debug API answer them. The memory view of the Debugger page marks the bytes. |
+| `0010-find-the-parts-of-memory-that-hold-data.patch` | The search of the memory view. `ale_find_data` scans the guest memory in place for the next or the previous part that holds data, where a run of zero bytes of a given length ends a part. The arrows of the memory view of the Debugger page call it. Nothing of it is in a run loop. |
 | `0006-time-the-startup.patch` | The startup marks. It adds `AleTiming.hpp` and one `ALE_MARK` call at each phase of the startup, in `whisper.cpp`, `System.cpp`, `Memory.cpp`, `Hart.cpp`, `InstEntry.cpp` and `CsRegs.cpp`. Without `-DALE_TIME_STARTUP` every macro is `((void) 0)`. |

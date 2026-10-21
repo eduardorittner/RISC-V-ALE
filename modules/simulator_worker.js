@@ -74,6 +74,10 @@ onmessage = function(e) {
       dbgViewMem(e.data.addr, e.data.len);
       break;
 
+    case "dbg_find":
+      dbgFindData(e.data.addr, e.data.forward, e.data.gap);
+      break;
+
     case 'sync':
       bus_sync.merge(e.data.buffer);
       bus_sync.sync();
@@ -383,12 +387,14 @@ var DEBUG_BREAK_CHUNK = 20000;
 var DEBUG_FREE_CHUNK = 2000000;
 
 /* The functions of the debug API that a session uses.
- * `patches/0008-expose-a-debug-api.patch` adds them to the module, and
- * `patches/0009-record-the-last-memory-access.patch` adds the access ones. */
+ * `patches/0008-expose-a-debug-api.patch` adds them to the module,
+ * `patches/0009-record-the-last-memory-access.patch` adds the access ones, and
+ * `patches/0010-find-the-parts-of-memory-that-hold-data.patch` adds the
+ * search. */
 var DEBUG_API = ["_ale_pc", "_ale_reg", "_ale_inst_count", "_ale_disasm",
                  "_ale_text_buffer", "_ale_mem_size", "_ale_mem_buffer",
                  "_ale_read_mem", "_ale_access_kind", "_ale_access_addr",
-                 "_ale_access_size"];
+                 "_ale_access_size", "_ale_find_data"];
 
 /** The number of integer registers of the hart. */
 var DEBUG_REG_COUNT = 32;
@@ -512,6 +518,30 @@ function dbgViewMem(addr, len){
     answer.mem_size = Module._ale_mem_size();
   }catch(error){
     answer.error = "The simulator module did not answer: " + error;
+  }
+  postMessage(answer);
+}
+
+/**
+ * The page asks for a part of memory that holds data: the first part that
+ * starts at or after `addr` when `forward` is true, or the last part that
+ * starts before it when `forward` is false. A run of `gap` zero bytes ends a
+ * part. The module scans the memory of the guest in place, so the answer is
+ * a few tens of milliseconds for the whole memory.
+ *
+ * The answer is a `dbg_found` message with the first address of the part, or
+ * null when no part is on that side. A session that runs, or that is not up,
+ * answers null too: the core is not free to scan.
+ */
+function dbgFindData(addr, forward, gap){
+  var answer = {type: "dbg_found", addr: null, forward: !!forward};
+  if(debug_ready && !debug_running){
+    try{
+      var found = Module._ale_find_data(addr >>> 0, forward? 1 : 0, gap >>> 0);
+      if(found >= 0) answer.addr = found;
+    }catch(error){
+      answer.error = "The simulator module did not answer: " + error;
+    }
   }
   postMessage(answer);
 }

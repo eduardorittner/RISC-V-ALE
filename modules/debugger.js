@@ -942,6 +942,18 @@ const MEMORY_GROUP = 8;
 /** The multiple that the first address of the window is aligned to. */
 const MEMORY_ALIGN = 16;
 
+/**
+ * The number of zero bytes that divide two parts of memory that hold data.
+ *
+ * Most of the memory is zero, and the arrows of the panel walk the parts
+ * that are not: the headers of the program, its code and data, the heap and
+ * the stack. A run of zeros that is shorter than this is inside a part: a
+ * word of zeros in a structure is data, and not space between two
+ * structures. A page of padding between two sections is longer, so the
+ * sections are two parts.
+ */
+const MEMORY_GAP = 64;
+
 /** The size of the address space of a hart with 32 bit registers. */
 const ADDRESS_SPACE = 0x100000000;
 
@@ -970,15 +982,26 @@ const MEMORY_FIELD_HINT =
  * pins the view there, or a register, which the view follows from stop to
  * stop. An empty field leaves the view free to follow the loads and stores of
  * the program.
+ *
+ * The two arrows go to the part of memory that holds data before or after
+ * the one on screen, where `MEMORY_GAP` zero bytes end a part. The session
+ * finds the part, because the view holds one window of a memory that is
+ * mostly zeros, and the view pins itself to its first address.
  */
 class MemoryView {
   /**
    * @param {HTMLElement} container the body of the memory panel
    * @param {HTMLInputElement} field the control that names the address
+   * @param {HTMLButtonElement} previous_button the arrow to the part before
+   * @param {HTMLButtonElement} next_button the arrow to the part after
    */
-  constructor(container, field) {
+  constructor(container, field, previous_button, next_button) {
     this.container = container;
     this.field = field;
+    this.previous_button = previous_button;
+    this.next_button = next_button;
+    /** True while the page is busy or a run is in progress: no search then. */
+    this.busy = false;
     /** The number of bytes on one line. */
     this.bytes_per_line = MEMORY_LINE_WIDTHS[0];
     /** The size of the memory of the hart, in bytes. */
@@ -1050,6 +1073,8 @@ class MemoryView {
     this.widths = null;
     this.build();
     this.field.title = MEMORY_FIELD_HINT;
+    this.previous_button.addEventListener("click", () => this.on_navigate(false));
+    this.next_button.addEventListener("click", () => this.on_navigate(true));
     this.field.addEventListener("change", () => this.on_expression());
     this.field.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
@@ -1090,10 +1115,32 @@ class MemoryView {
     this.show_idle();
   }
 
-  /** Leave the panel empty: no head and no lines. */
+  /** Leave the panel empty: no head and no lines, and no arrow to press. */
   show_idle() {
     this.head.hidden = true;
     this.body.hidden = true;
+    this.draw_buttons();
+  }
+
+  /**
+   * The state of the arrows: there is a part to look for only while the view
+   * holds bytes of a stopped session.
+   */
+  draw_buttons() {
+    const disabled = this.bytes === null || this.busy;
+    this.previous_button.disabled = disabled;
+    this.next_button.disabled = disabled;
+  }
+
+  /**
+   * The page is busy with a build, or a run is in progress. The core is not
+   * free for a search then, so the arrows wait.
+   *
+   * @param {boolean} busy
+   */
+  set_busy(busy) {
+    this.busy = busy;
+    this.draw_buttons();
   }
 
   /**
@@ -1220,6 +1267,7 @@ class MemoryView {
     }
     this.head.hidden = false;
     this.body.hidden = false;
+    this.draw_buttons();
     this.line_height = this.lines[0].row.getBoundingClientRect().height;
     if (this.scroll_to !== null) {
       const target = this.scroll_to;
@@ -1553,6 +1601,50 @@ class MemoryView {
   }
 
   /**
+   * An arrow: ask the session for the part of memory that holds data after
+   * the line at the top of the panel, or before it. The search starts at the
+   * line after the top one, so that a press moves the view: a part that
+   * starts on the top line is on screen already. The answer comes as a
+   * message, which `set_found` takes.
+   *
+   * @param {boolean} forward
+   */
+  on_navigate(forward) {
+    if (this.bytes === null || this.regs === null || this.busy) return;
+    const top = this.top_address();
+    const from = forward ? top + this.bytes_per_line : top;
+    if (from >= this.mem_size) return;
+    simulator_controller.debug_find_data(from, forward, MEMORY_GAP);
+  }
+
+  /**
+   * The answer of a search: the first address of the part, or null when no
+   * part is on that side, which leaves the view where it is.
+   *
+   * @param {?number} address
+   */
+  set_found(address) {
+    if (address === null || this.regs === null) return;
+    this.pin(address);
+  }
+
+  /**
+   * Put `address` in the field and go there, as if the reader had typed it.
+   * The view is pinned: a step does not take it away from the part.
+   *
+   * @param {number} address
+   */
+  pin(address) {
+    const text = hex(address);
+    this.field.value = text;
+    this.applied_text = text;
+    this.field.classList.remove("is-invalid");
+    this.field.title = MEMORY_FIELD_HINT;
+    this.expression = parse_address_expression(text);
+    this.go_to(address, "top");
+  }
+
+  /**
    * The value of an expression of the field, with the registers of the last
    * stop. Null when the expression names a register and no stop gave one.
    *
@@ -1709,7 +1801,9 @@ class DebuggerPage {
     this.registers = new RegisterView(document.getElementById("debug_register_view"));
     this.memory = new MemoryView(
       document.getElementById("debug_memory_view"),
-      /** @type {HTMLInputElement} */ (document.getElementById("debug_memory_address"))
+      /** @type {HTMLInputElement} */ (document.getElementById("debug_memory_address")),
+      /** @type {HTMLButtonElement} */ (document.getElementById("debug_memory_previous")),
+      /** @type {HTMLButtonElement} */ (document.getElementById("debug_memory_next"))
     );
     this.step_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_step_button"));
     this.run_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_run_button"));
@@ -1776,6 +1870,11 @@ class DebuggerPage {
     }
     if (data.type === "dbg_mem") {
       this.memory.set_window(data.mem, data.mem_size);
+      return;
+    }
+    if (data.type === "dbg_found") {
+      if (data.error) console.log("[debugger] the search of the memory failed:", data.error);
+      this.memory.set_found(data.addr);
       return;
     }
     if (data.type !== "dbg_state") return;
@@ -1863,6 +1962,7 @@ class DebuggerPage {
     this.step_button.disabled = this.busy || running;
     this.run_button.disabled = this.busy || running;
     this.stop_button.disabled = this.busy || !running;
+    this.memory.set_busy(this.busy || running);
   }
 
   /** The addresses of the breakpoints that the view holds. */

@@ -364,6 +364,20 @@
   font-family: 'Courier Prime', monospace;
 }
 
+/* The arrows stand beside the field, and they are as high as it. The icon
+   font is 24 px, which is higher than the field: the icon takes a smaller
+   size and the button keeps no padding above it. */
+.dbg-mem-nav .btn {
+  display: inline-flex;
+  align-items: center;
+  height: calc(1.5em + 0.5rem + 2px);
+  padding: 0 0.3rem;
+}
+
+.dbg-mem-nav .material-icons {
+  font-size: 20px;
+}
+
 /* A line is as wide as its text, and not as wide as the panel, so that the
    sticky address has a row to stay in when the panel scrolls to the right.
    The spaces between the bytes are text, so the line keeps them. */
