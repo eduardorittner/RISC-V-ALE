@@ -449,6 +449,21 @@
   color: #9a5500;
 }
 
+/* The bytes that the last instruction read or wrote, in both columns. A read
+   is blue and a write is amber, like a changed register. The outline tells
+   the access of the last instruction from the bytes that a run changed. */
+.dbg-mem-read {
+  background: #e4efff;
+  color: #1a4f9c;
+  outline: 1px solid #9dbdf0;
+}
+
+.dbg-mem-write {
+  background: #fff6da;
+  color: #9a5500;
+  outline: 1px solid #e3b95c;
+}
+
 /* The line under the pointer, so the eye walks from a byte to its character
    and back. */
 .dbg-mem-lines .dbg-mem-line:hover {

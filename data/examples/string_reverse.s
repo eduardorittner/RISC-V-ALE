@@ -6,7 +6,9 @@
 # Try this: put a breakpoint on "swap_loop" and type "t0" in the address box
 # of the memory pane, which puts the text at the top of the pane. Press run
 # again and again. Two bytes trade places on each pass, and the pane marks
-# them in the hex column and in the text column.
+# them in the hex column and in the text column. Step instead of run, and
+# the pane marks the byte that each load reads in blue and the byte that
+# each store writes in amber.
 
 # The text is in .data and not in .rodata, because the program writes to it.
     .section .data

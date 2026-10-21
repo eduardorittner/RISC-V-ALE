@@ -951,7 +951,8 @@ const NO_BYTE = "??";
 /** The title of the address field, which says what the field takes. */
 const MEMORY_FIELD_HINT =
   "An address, or a register with an offset: 0x10000, sp, sp-16, pc. " +
-  "A view at a register follows it from stop to stop.";
+  "A view at a register follows it from stop to stop, and an empty field " +
+  "follows the loads and stores of the program.";
 
 
 /**
@@ -962,9 +963,13 @@ const MEMORY_FIELD_HINT =
  * each stop. A scroll that comes near an edge of the window moves the window,
  * so a reader walks the whole memory with the wheel and meets no edge.
  *
+ * At each stop the view marks the bytes that changed since the stop before,
+ * and the bytes that the last instruction read or wrote.
+ *
  * The field of the panel says where the window is. It takes an address, which
  * pins the view there, or a register, which the view follows from stop to
- * stop.
+ * stop. An empty field leaves the view free to follow the loads and stores of
+ * the program.
  */
 class MemoryView {
   /**
@@ -991,6 +996,13 @@ class MemoryView {
      * @type {?{base: number, bytes: Uint8Array}}
      */
     this.previous = null;
+    /**
+     * The bytes that the last instruction read or wrote, or null when it
+     * did neither: the address, the length and the kind of the access.
+     *
+     * @type {?{addr: number, len: number, write: boolean}}
+     */
+    this.access = null;
     /**
      * The first address of the window that the view asked for and that has
      * no answer yet, or null.
@@ -1204,6 +1216,11 @@ class MemoryView {
         char.classList.toggle("dbg-mem-zero", !none && value === 0);
         byte.classList.toggle("dbg-mem-changed", changed);
         char.classList.toggle("dbg-mem-changed", changed);
+        const access = none ? null : this.accessed(address + offset);
+        byte.classList.toggle("dbg-mem-read", access === "read");
+        char.classList.toggle("dbg-mem-read", access === "read");
+        byte.classList.toggle("dbg-mem-write", access === "write");
+        char.classList.toggle("dbg-mem-write", access === "write");
       }
     }
     this.message.hidden = true;
@@ -1230,6 +1247,20 @@ class MemoryView {
     if (before === null) return false;
     const at = address - before.base;
     return at >= 0 && at < before.bytes.length && before.bytes[at] !== value;
+  }
+
+  /**
+   * How the last instruction touched the byte at `address`: "read", "write"
+   * or null.
+   *
+   * @param {number} address
+   * @returns {?string}
+   */
+  accessed(address) {
+    const access = this.access;
+    if (access === null) return null;
+    if (address < access.addr || address >= access.addr + access.len) return null;
+    return access.write ? "write" : "read";
   }
 
   /**
@@ -1392,26 +1423,32 @@ class MemoryView {
   }
 
   /**
-   * The state of a stop: the registers, which the field can name, and the
-   * bytes of the window, which the view draws and compares with the stop
-   * before.
+   * The state of a stop: the registers, which the field can name, the bytes
+   * of the window, which the view draws and compares with the stop before,
+   * and the access of the last instruction, which the view marks.
    *
    * @param {number} pc
    * @param {?number[]} regs x0 to x31, or null for a state that carries none
    * @param {?{addr: number, bytes: Uint8Array}} mem the window, or null
    * @param {number} mem_size the size of the memory, or 0 when unknown
+   * @param {?{addr: number, len: number, write: boolean}} access the bytes
+   *   that the last instruction read or wrote, or null
    */
-  set_stop(pc, regs, mem, mem_size) {
+  set_stop(pc, regs, mem, mem_size, access) {
     if (!regs) {
       this.clear();
       return;
     }
     this.regs = regs;
     this.pc = pc >>> 0;
+    this.access = access;
     if (mem_size > 0) this.mem_size = mem_size;
     if (mem !== null && mem.bytes.length > 0) {
       if (this.bytes !== null) this.previous = {base: this.base, bytes: this.bytes};
       this.take(mem);
+    } else if (this.bytes !== null) {
+      // The marks of the access are new, even when the window is not.
+      this.render();
     }
     this.follow();
   }
@@ -1432,8 +1469,9 @@ class MemoryView {
 
   /**
    * Where the view goes at a stop: to the register of the field, when the
-   * field names one, or to the opening address at the first stop of a
-   * session.
+   * field names one; to the opening address at the first stop of a session;
+   * or to the bytes that the last instruction read or wrote, when the field
+   * is empty, so that the mark of the access is on screen.
    */
   follow() {
     if (this.expression !== null && this.expression.follows) {
@@ -1441,8 +1479,16 @@ class MemoryView {
       if (target !== null) this.go_to(target, "nearest");
       return;
     }
-    if (this.bytes !== null || this.pending !== null) return;
-    this.go_to(this.opening_address(), "top");
+    if (this.bytes === null && this.pending === null) {
+      this.go_to(this.opening_address(), "top");
+      return;
+    }
+    // An access outside the memory is a device register, which the view
+    // cannot show.
+    if (this.expression === null && this.access !== null
+        && this.access.addr < this.mem_size) {
+      this.go_to(this.access.addr, "nearest");
+    }
   }
 
   /**
@@ -1481,6 +1527,7 @@ class MemoryView {
     this.regs = null;
     this.pc = 0;
     this.bytes = null;
+    this.access = null;
     this.previous = null;
     this.pending = null;
     this.scroll_to = null;
@@ -1552,7 +1599,10 @@ class MemoryView {
     }
     const value = this.bytes[at];
     const char = value >= 0x20 && value < 0x7f ? ` '${String.fromCharCode(value)}'` : "";
-    cell.title = `${hex(address)} = 0x${hex_byte(value)} = ${value}${char}`;
+    const access = this.accessed(address);
+    const note = access === null ? ""
+      : `, ${access === "write" ? "written" : "read"} by the last instruction`;
+    cell.title = `${hex(address)} = 0x${hex_byte(value)} = ${value}${char}${note}`;
   }
 }
 
@@ -1789,7 +1839,8 @@ class DebuggerPage {
       // A run reports between two chunks and carries no registers there. The
       // values of the last stop stay on screen until the run stops.
       this.registers.set_values(state.pc, state.regs);
-      this.memory.set_stop(state.pc, state.regs, state.mem || null, state.mem_size || 0);
+      this.memory.set_stop(state.pc, state.regs, state.mem || null,
+        state.mem_size || 0, state.access || null);
     }
     if (!("regs" in state)) this.warn_stale_worker();
     this.draw_controls();

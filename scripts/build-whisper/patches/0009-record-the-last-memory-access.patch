@@ -1,0 +1,275 @@
+diff -ruN a/Hart.cpp b/Hart.cpp
+--- a/Hart.cpp	2026-10-20 14:36:14
++++ b/Hart.cpp	2026-10-20 14:37:25
+@@ -1925,6 +1925,12 @@
+   URV base = intRegs_.read(rs1);
+   URV addr = base + SRV(imm);
+ 
++  // RISC-V ALE reads the last access through its debug API.
++  ldStAddr_ = addr;
++  ldStAddrValid_ = true;
++  ldStSize_ = sizeof(LOAD_TYPE);
++  ldStIsStore_ = false;
++
+   // Unsigned version of LOAD_TYPE
+   typedef typename std::make_unsigned<LOAD_TYPE>::type ULT;
+ 
+@@ -1974,6 +1980,8 @@
+ 
+   ldStAddr_ = virtAddr;   // For reporting ld/st addr in trace-mode.
+   ldStAddrValid_ = true;  // For reporting ld/st addr in trace-mode.
++  ldStSize_ = ldSize;
++  ldStIsStore_ = false;
+ 
+   if (loadQueueEnabled_)
+     removeFromLoadQueue(rs1, false);
+@@ -2112,6 +2120,12 @@
+ Hart<URV>::fastStore(uint32_t /*rs1*/, URV /*base*/, URV addr,
+                      STORE_TYPE storeVal)
+ {
++  // RISC-V ALE reads the last access through its debug API.
++  ldStAddr_ = addr;
++  ldStAddrValid_ = true;
++  ldStSize_ = sizeof(STORE_TYPE);
++  ldStIsStore_ = true;
++
+ #ifdef __EMSCRIPTEN__
+   // MMIO for javascript
+   if(addr > 0xffff0000){
+@@ -2163,6 +2177,8 @@
+ 
+   ldStAddr_ = virtAddr;   // For reporting ld/st addr in trace-mode.
+   ldStAddrValid_ = true;  // For reporting ld/st addr in trace-mode.
++  ldStSize_ = sizeof(STORE_TYPE);
++  ldStIsStore_ = true;
+ 
+   // ld/st-address or instruction-address triggers have priority over
+   // ld/st access or misaligned exceptions.
+@@ -4808,6 +4824,7 @@
+   while (noUserStop and instCounter_ < limit) 
+     {
+       currPc_ = pc_;
++      ldStAddrValid_ = false;  // The record is of this instruction.
+       ++instCounter_;
+ 
+ #ifdef __EMSCRIPTEN__
+@@ -4861,6 +4878,7 @@
+   while (noUserStop) 
+     {
+       currPc_ = pc_;
++      ldStAddrValid_ = false;  // The record is of this instruction.
+       ++instCounter_;
+ 
+ #ifdef __EMSCRIPTEN__
+@@ -9256,6 +9274,8 @@
+ 
+   ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
+   ldStAddrValid_ = true;  // For reporting load addr in trace-mode.
++  ldStSize_ = 4;
++  ldStIsStore_ = false;
+ 
+   if (loadQueueEnabled_)
+     removeFromLoadQueue(rs1, false);
+@@ -9302,6 +9322,8 @@
+ 
+   ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
+   ldStAddrValid_ = true;  // For reporting load addr in trace-mode.
++  ldStSize_ = 8;
++  ldStIsStore_ = false;
+ 
+   if (loadQueueEnabled_)
+     removeFromLoadQueue(rs1, false);
+@@ -10772,6 +10794,8 @@
+ 
+   ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
+   ldStAddrValid_ = true;  // For reporting load addr in trace-mode.
++  ldStSize_ = sizeof(LOAD_TYPE);
++  ldStIsStore_ = false;
+ 
+   if (loadQueueEnabled_)
+     removeFromLoadQueue(rs1, false);
+@@ -10890,6 +10914,8 @@
+ {
+   ldStAddr_ = virtAddr;   // For reporting ld/st addr in trace-mode.
+   ldStAddrValid_ = true;  // For reporting ld/st addr in trace-mode.
++  ldStSize_ = sizeof(STORE_TYPE);
++  ldStIsStore_ = true;
+ 
+   // ld/st-address or instruction-address triggers have priority over
+   // ld/st access or misaligned exceptions.
+diff -ruN a/Hart.hpp b/Hart.hpp
+--- a/Hart.hpp	2026-10-20 14:36:14
++++ b/Hart.hpp	2026-10-20 14:37:25
+@@ -629,6 +629,20 @@
+     URV lastLdStAddress() const
+     { return ldStAddr_; }
+ 
++    /// Return true if the last executed instruction was a load or a store,
++    /// and set addr, size and isStore to the data address, the width in
++    /// bytes and the kind of the access. The debug API of RISC-V ALE reads
++    /// it, so the fast load and store paths keep the record too.
++    bool lastLdStAccess(URV& addr, unsigned& size, bool& isStore) const
++    {
++      if (not ldStAddrValid_)
++        return false;
++      addr = ldStAddr_;
++      size = ldStSize_;
++      isStore = ldStIsStore_;
++      return true;
++    }
++
+     /// Read instruction at given address. Return true on success and
+     /// false if address is out of memory bounds.
+     bool readInst(size_t address, uint32_t& instr);
+@@ -2993,6 +3007,8 @@
+     bool traceLdSt_ = false;        // Trace addr of ld/st insts if true.
+     URV ldStAddr_ = 0;              // Address of data of most recent ld/st inst.
+     bool ldStAddrValid_ = false;    // True if ldStAddr_ valid.
++    unsigned ldStSize_ = 0;         // Width in bytes of most recent ld/st.
++    bool ldStIsStore_ = false;      // True if most recent ld/st is a store.
+ 
+     // We keep track of the last committed 8 loads so that we can
+     // revert in the case of an imprecise load exception.
+diff -ruN a/float.cpp b/float.cpp
+--- a/float.cpp	2026-10-20 14:36:14
++++ b/float.cpp	2026-10-20 14:37:25
+@@ -475,6 +475,8 @@
+ 
+   ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
+   ldStAddrValid_ = true;  // For reporting load addr in trace-mode.
++  ldStSize_ = 4;
++  ldStIsStore_ = false;
+   uint64_t addr = virtAddr;
+   unsigned ldSize = 4;
+ 
+@@ -1631,6 +1633,8 @@
+ 
+   ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
+   ldStAddrValid_ = true;  // For reporting load addr in trace-mode.
++  ldStSize_ = 8;
++  ldStIsStore_ = false;
+   unsigned ldSize = 8;
+   uint64_t addr = virtAddr;
+ 
+diff -ruN a/whisper.cpp b/whisper.cpp
+--- a/whisper.cpp	2026-10-20 14:36:14
++++ b/whisper.cpp	2026-10-20 14:37:25
+@@ -1957,6 +1957,9 @@
+   double   (*memSize)() = nullptr;
+   int      (*readMem)(uint32_t, uint32_t) = nullptr;
+   int      (*disasm)(uint32_t) = nullptr;
++  int      (*accessKind)() = nullptr;
++  uint32_t (*accessAddr)() = nullptr;
++  uint32_t (*accessSize)() = nullptr;
+ };
+ 
+ static AleDebugApi aleDebug;
+@@ -2074,6 +2077,63 @@
+ }
+ 
+ 
++/// The last memory access of the hart, which the debugger page marks.
++///
++/// Kind is 0 when the last instruction was not a load or a store, 1 for a
++/// load and 2 for a store. An atomic instruction counts as a store: it reads
++/// and then writes the same bytes, and the write is the record that stays.
++/// The address and the size are 0 when the kind is 0.
++template <typename URV>
++static
++bool
++aleDbgAccess(uint32_t& addr, uint32_t& size, bool& isStore)
++{
++  auto* hart = aleDebugHart<URV>();
++  URV a = 0;
++  unsigned n = 0;
++  if (not hart or not hart->lastLdStAccess(a, n, isStore))
++    return false;
++  addr = uint32_t(a);
++  size = uint32_t(n);
++  return true;
++}
++
++
++template <typename URV>
++static
++int
++aleDbgAccessKind()
++{
++  uint32_t addr = 0, size = 0;
++  bool isStore = false;
++  if (not aleDbgAccess<URV>(addr, size, isStore))
++    return 0;
++  return isStore? 2 : 1;
++}
++
++
++template <typename URV>
++static
++uint32_t
++aleDbgAccessAddr()
++{
++  uint32_t addr = 0, size = 0;
++  bool isStore = false;
++  return aleDbgAccess<URV>(addr, size, isStore)? addr : 0;
++}
++
++
++template <typename URV>
++static
++uint32_t
++aleDbgAccessSize()
++{
++  uint32_t addr = 0, size = 0;
++  bool isStore = false;
++  return aleDbgAccess<URV>(addr, size, isStore)? size : 0;
++}
++
++
+ /// Called by session, with the register width that main chose.
+ template <typename URV>
+ static
+@@ -2087,6 +2147,9 @@
+   aleDebug.memSize = &aleDbgMemSize<URV>;
+   aleDebug.readMem = &aleDbgReadMem<URV>;
+   aleDebug.disasm = &aleDbgDisasm<URV>;
++  aleDebug.accessKind = &aleDbgAccessKind<URV>;
++  aleDebug.accessAddr = &aleDbgAccessAddr<URV>;
++  aleDebug.accessSize = &aleDbgAccessSize<URV>;
+ }
+ 
+ 
+@@ -2170,6 +2233,34 @@
+ ale_disasm(uint32_t addr)
+ {
+   return aleDebug.disasm? aleDebug.disasm(addr) : 0;
++}
++
++
++/// The kind of the last memory access: 0 for none, 1 for a load, 2 for a
++/// store.
++extern "C" EMSCRIPTEN_KEEPALIVE
++int
++ale_access_kind()
++{
++  return aleDebug.accessKind? aleDebug.accessKind() : 0;
++}
++
++
++/// The data address of the last memory access.
++extern "C" EMSCRIPTEN_KEEPALIVE
++uint32_t
++ale_access_addr()
++{
++  return aleDebug.accessAddr? aleDebug.accessAddr() : 0;
++}
++
++
++/// The width of the last memory access, in bytes.
++extern "C" EMSCRIPTEN_KEEPALIVE
++uint32_t
++ale_access_size()
++{
++  return aleDebug.accessSize? aleDebug.accessSize() : 0;
+ }
+ 
+ #endif  // ALE_NO_ASYNCIFY

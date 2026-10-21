@@ -354,8 +354,8 @@ function aleStartRunLoop(){
  *
  * A debug session does not run by itself. The page sends `dbg_step` and
  * `dbg_run`, and each answer carries the state of the hart: the program
- * counter, the registers, and the part of memory that the page asked for
- * with `dbg_mem`.
+ * counter, the registers, the part of memory that the page asked for with
+ * `dbg_mem`, and the bytes that the last instruction read or wrote.
  *
  * The module exports the state (`patches/0008-expose-a-debug-api.patch`), so
  * no command of the interactive shell is on this path. A step is one call of
@@ -383,10 +383,12 @@ var DEBUG_BREAK_CHUNK = 20000;
 var DEBUG_FREE_CHUNK = 2000000;
 
 /* The functions of the debug API that a session uses.
- * `patches/0008-expose-a-debug-api.patch` adds them to the module. */
+ * `patches/0008-expose-a-debug-api.patch` adds them to the module, and
+ * `patches/0009-record-the-last-memory-access.patch` adds the access ones. */
 var DEBUG_API = ["_ale_pc", "_ale_reg", "_ale_inst_count", "_ale_disasm",
                  "_ale_text_buffer", "_ale_mem_size", "_ale_mem_buffer",
-                 "_ale_read_mem"];
+                 "_ale_read_mem", "_ale_access_kind", "_ale_access_addr",
+                 "_ale_access_size"];
 
 /** The number of integer registers of the hart. */
 var DEBUG_REG_COUNT = 32;
@@ -408,10 +410,12 @@ function postDebugFailure(missing){
     type: "dbg_state",
     status: "no session",
     pc: 0, count: 0, inst: "", regs: null, mem: null, mem_size: 0,
-    running: false, ended: false,
+    access: null, running: false, ended: false,
     error: "The simulator module has no debug API (" + missing.join(", ") +
            "). The browser is answering with an older copy of " +
-           "modules/whisper.js. Reload the page and take the update."
+           "modules/whisper.js. Reload the page and take the update. If " +
+           "no update is offered, clear the site data of this page in the " +
+           "browser and reload."
   });
 }
 
@@ -424,6 +428,23 @@ function dbgReadRegs(){
   var regs = new Array(DEBUG_REG_COUNT);
   for(var i = 0; i < DEBUG_REG_COUNT; i++) regs[i] = Module._ale_reg(i) >>> 0;
   return regs;
+}
+
+/**
+ * The bytes that the last instruction read or wrote, which the page marks.
+ * It is null when that instruction was not a load or a store. An atomic
+ * instruction counts as a write: it reads and then writes the same bytes.
+ *
+ * @returns {?{addr: number, len: number, write: boolean}}
+ */
+function dbgReadAccess(){
+  var kind = Module._ale_access_kind();
+  if(kind === 0) return null;
+  return {
+    addr: Module._ale_access_addr() >>> 0,
+    len: Module._ale_access_size() >>> 0,
+    write: kind === 2
+  };
 }
 
 /**
@@ -505,6 +526,7 @@ function postDebugState(status, extra){
     regs: null,
     mem: null,
     mem_size: 0,
+    access: null,
     running: debug_running,
     ended: debug_ended
   };
@@ -524,6 +546,7 @@ function postDebugState(status, extra){
         state.regs = dbgReadRegs();
         state.mem = dbgMemWindow();
         state.mem_size = Module._ale_mem_size();
+        state.access = dbgReadAccess();
       }
     }
   }catch(error){
