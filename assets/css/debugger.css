@@ -388,6 +388,18 @@
   white-space: pre;
 }
 
+/* The dump has 512 lines and the panel shows about 30. The browser lays out
+   and paints only the lines near the panel, and keeps a box of one line
+   height for each of the others, so the scroll bar and the scroll position
+   are the same as with every line in place. The height is `1lh`, the line
+   height of the dump itself; the `rem` value before it is the same height,
+   for a browser without the unit. */
+.dbg-mem-lines > .dbg-mem-line {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 1.16rem;
+  contain-intrinsic-block-size: auto 1lh;
+}
+
 /* The address column has the width of its eight digits. The head writes a
    word there, which is shorter, and the two must stand over each other. */
 .dbg-mem-addr {

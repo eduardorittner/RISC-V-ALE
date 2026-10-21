@@ -960,6 +960,40 @@ const ADDRESS_SPACE = 0x100000000;
 /** What a cell shows for a byte that the hart could not read. */
 const NO_BYTE = "??";
 
+/** What `MemoryView.shown` holds for a byte that the hart could not read. */
+const NO_BYTE_VALUE = -1;
+
+/** What `MemoryView.shown` holds for a cell that no draw wrote yet. */
+const NOT_DRAWN = -2;
+
+/**
+ * The marks of a cell, as bits. A draw keeps the marks of each cell and
+ * writes a class only when its bit changes.
+ */
+const MARK_NONE = 1;
+const MARK_ZERO = 2;
+const MARK_CHANGED = 4;
+const MARK_READ = 8;
+const MARK_WRITE = 16;
+
+/** The marks that both cells of a byte carry, with the class of each one. */
+const CELL_MARKS = [
+  [MARK_ZERO, "dbg-mem-zero"],
+  [MARK_CHANGED, "dbg-mem-changed"],
+  [MARK_READ, "dbg-mem-read"],
+  [MARK_WRITE, "dbg-mem-write"],
+];
+
+/** The two hexadecimal digits of each byte value, made once. */
+const HEX_BYTES = Array.from({length: 256}, (_, value) => value.toString(16).padStart(2, "0"));
+
+/**
+ * The character of each byte value: the byte itself when it is printable
+ * ASCII, and a point for every other value, which is what every dump does.
+ */
+const PRINTABLE_CHARS = Array.from({length: 256},
+  (_, value) => value >= 0x20 && value < 0x7f ? String.fromCharCode(value) : ".");
+
 /** The title of the address field, which says what the field takes. */
 const MEMORY_FIELD_HINT =
   "An address, or a register with an offset: 0x10000, sp, sp-16, pc. " +
@@ -1062,7 +1096,25 @@ class MemoryView {
     this.lines = [];
     /** The number of bytes that each line on screen has cells for. */
     this.lines_width = 0;
-    /** The height in pixels of one line, which the view measures at a draw. */
+    /**
+     * What each cell shows: the value of its byte, `NO_BYTE_VALUE` for a byte
+     * that the hart could not read, or `NOT_DRAWN` for a cell that no draw
+     * wrote yet. A draw writes a cell only when it must show another value.
+     * @type {Int16Array}
+     */
+    this.shown = new Int16Array(0);
+    /**
+     * The marks that each cell has, as bits of `MARK_*`. A draw writes a
+     * class only when its bit changes.
+     * @type {Uint8Array}
+     */
+    this.marks = new Uint8Array(0);
+    /** The address of the first line on screen, or -1 while there is none. */
+    this.shown_base = -1;
+    /**
+     * The height in pixels of one line, which the view measures with the
+     * widths. It is the same at every stop, so a draw does not measure it.
+     */
     this.line_height = 0;
     /**
      * The width in pixels that a line of each width needs, which the view
@@ -1219,12 +1271,21 @@ class MemoryView {
     this.body.textContent = "";
     this.body.appendChild(rows);
     this.lines_width = width;
+    // New cells show nothing and carry no mark.
+    this.shown = new Int16Array(width * count).fill(NOT_DRAWN);
+    this.marks = new Uint8Array(width * count);
+    this.shown_base = -1;
   }
 
   /**
    * Draw the window. The lines stay from one draw to the next: the view
    * writes their cells, because a new set of lines would lose the scroll
    * position.
+   *
+   * A draw writes only the cells that must show another value or another
+   * mark. Few bytes change at a step, so a draw is a few writes and not a
+   * write of the whole dump. The draw reads no size of the page: a read
+   * after the writes makes the browser lay the dump out at once.
    */
   render() {
     if (this.bytes === null) {
@@ -1236,39 +1297,61 @@ class MemoryView {
     if (this.lines_width !== width || this.lines.length !== count) {
       this.build_lines(width, count);
     }
+    if (this.shown_base !== this.base) {
+      for (let index = 0; index < count; index++) {
+        const line = this.lines[index];
+        const address = this.base + index * width;
+        line.row.dataset.address = String(address);
+        line.address.textContent = hex_address(address);
+      }
+      this.shown_base = this.base;
+    }
+    const bytes = this.bytes;
+    const shown = this.shown;
+    const marks = this.marks;
     for (let index = 0; index < count; index++) {
       const line = this.lines[index];
       const start = index * width;
-      const address = this.base + start;
-      line.row.dataset.address = String(address);
-      line.address.textContent = hex_address(address);
       for (let offset = 0; offset < width; offset++) {
         const at = start + offset;
+        const none = at >= bytes.length;
+        const value = none ? NO_BYTE_VALUE : bytes[at];
+        let mark = 0;
+        if (none) {
+          mark = MARK_NONE;
+        } else {
+          const address = this.base + at;
+          // A zero is the most common byte of a memory, and it says the
+          // least. It is pale in both columns, so that the data stands out.
+          if (value === 0) mark |= MARK_ZERO;
+          if (this.changed(address, value)) mark |= MARK_CHANGED;
+          const access = this.accessed(address);
+          if (access === "read") mark |= MARK_READ;
+          else if (access === "write") mark |= MARK_WRITE;
+        }
+        const was = marks[at];
+        if (shown[at] === value && was === mark) continue;
         const byte = line.bytes[offset];
         const char = line.chars[offset];
-        const none = at >= this.bytes.length;
-        const value = none ? 0 : this.bytes[at];
-        const changed = !none && this.changed(address + offset, value);
-        byte.textContent = none ? NO_BYTE : hex_byte(value);
-        char.textContent = none ? " " : printable(value);
-        byte.classList.toggle("dbg-mem-none", none);
-        // A zero is the most common byte of a memory, and it says the least.
-        // It is pale in both columns, so that the data stands out.
-        byte.classList.toggle("dbg-mem-zero", !none && value === 0);
-        char.classList.toggle("dbg-mem-zero", !none && value === 0);
-        byte.classList.toggle("dbg-mem-changed", changed);
-        char.classList.toggle("dbg-mem-changed", changed);
-        const access = none ? null : this.accessed(address + offset);
-        byte.classList.toggle("dbg-mem-read", access === "read");
-        char.classList.toggle("dbg-mem-read", access === "read");
-        byte.classList.toggle("dbg-mem-write", access === "write");
-        char.classList.toggle("dbg-mem-write", access === "write");
+        if (shown[at] !== value) {
+          byte.textContent = none ? NO_BYTE : hex_byte(value);
+          char.textContent = none ? " " : printable(value);
+          shown[at] = value;
+        }
+        const differ = was ^ mark;
+        if (differ & MARK_NONE) byte.classList.toggle("dbg-mem-none", none);
+        for (const [bit, name] of CELL_MARKS) {
+          if ((differ & bit) === 0) continue;
+          const on = (mark & bit) !== 0;
+          byte.classList.toggle(name, on);
+          char.classList.toggle(name, on);
+        }
+        marks[at] = mark;
       }
     }
     this.head.hidden = false;
     this.body.hidden = false;
     this.draw_buttons();
-    this.line_height = this.lines[0].row.getBoundingClientRect().height;
     if (this.scroll_to !== null) {
       const target = this.scroll_to;
       this.scroll_to = null;
@@ -1349,7 +1432,7 @@ class MemoryView {
     // The Debugger tab is hidden until the reader opens it, and a hidden
     // panel has no size to measure.
     if (width === 0) return;
-    if (this.widths === null) this.widths = this.measure_widths();
+    if (this.widths === null) this.measure();
     let choice = MEMORY_LINE_WIDTHS[MEMORY_LINE_WIDTHS.length - 1];
     for (const candidate of MEMORY_LINE_WIDTHS) {
       if (this.widths[candidate] <= width) {
@@ -1366,14 +1449,19 @@ class MemoryView {
   }
 
   /**
-   * The width in pixels that a line of each width needs. The measure is a
-   * line with a value in every cell, which the page lays out but does not
-   * show. It is out of the flow, so the lines do not move for it.
+   * The width in pixels that a line of each width needs, and the height of a
+   * line. The measure is a line with a value in every cell, which the page
+   * lays out but does not show. It is out of the flow, so the lines do not
+   * move for it.
    *
-   * @returns {Object<number, number>}
+   * The height comes from here and not from a draw. A read of a size after
+   * the writes of a draw made the browser lay the whole dump out at once,
+   * which was most of the time of a step. The height is the same at every
+   * stop: the line height of the dump is a rule of its style.
    */
-  measure_widths() {
+  measure() {
     const widths = {};
+    let height = 0;
     for (const width of MEMORY_LINE_WIDTHS) {
       const line = this.build_line(width);
       line.address.textContent = hex_address(0);
@@ -1385,10 +1473,13 @@ class MemoryView {
       line.row.style.visibility = "hidden";
       line.row.style.minWidth = "0";
       this.container.appendChild(line.row);
-      widths[width] = Math.ceil(line.row.getBoundingClientRect().width);
+      const rect = line.row.getBoundingClientRect();
+      widths[width] = Math.ceil(rect.width);
+      height = rect.height;
       line.row.remove();
     }
-    return widths;
+    this.widths = widths;
+    this.line_height = height;
   }
 
   /**
@@ -1762,7 +1853,7 @@ function align_down(address) {
 
 /** A byte, as two hexadecimal digits. */
 function hex_byte(value) {
-  return value.toString(16).padStart(2, "0");
+  return HEX_BYTES[value];
 }
 
 
@@ -1775,12 +1866,9 @@ function hex_address(value) {
 }
 
 
-/**
- * The character of a byte: the byte itself when it is printable ASCII, and a
- * point for every other value, which is what every dump does.
- */
+/** The character of a byte, as the text column shows it. */
 function printable(value) {
-  return value >= 0x20 && value < 0x7f ? String.fromCharCode(value) : ".";
+  return PRINTABLE_CHARS[value];
 }
 
 
