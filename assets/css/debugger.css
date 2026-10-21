@@ -98,10 +98,6 @@
   font-weight: 600;
 }
 
-.dbg-status {
-  line-height: 1.4;
-}
-
 /* ─── The tokens of the source view ──────────────────────────────────────── */
 
 /* The colours keep a contrast of 4.6 or more against the white background of
@@ -360,12 +356,6 @@
   overflow-anchor: none;
 }
 
-/* A message is prose, so it does not take the monospace font of the lines. */
-#debug_memory_view .dbg-mem-message {
-  padding: 1.25rem;
-  font-family: 'Nunito Sans', sans-serif;
-}
-
 /* The field holds an address, so it takes the font of the dump. It is as wide
    as the longest expression that a reader is likely to write, and not as wide
    as the header: the title of the panel stands beside it. */
@@ -447,6 +437,21 @@
 .dbg-mem-changed {
   background: #fff6da;
   color: #9a5500;
+}
+
+/* The bytes that the last instruction read or wrote, in both columns. A read
+   is blue and a write is amber, like a changed register. The outline tells
+   the access of the last instruction from the bytes that a run changed. */
+.dbg-mem-read {
+  background: #e4efff;
+  color: #1a4f9c;
+  outline: 1px solid #9dbdf0;
+}
+
+.dbg-mem-write {
+  background: #fff6da;
+  color: #9a5500;
+  outline: 1px solid #e3b95c;
 }
 
 /* The line under the pointer, so the eye walks from a byte to its character

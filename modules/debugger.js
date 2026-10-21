@@ -45,8 +45,8 @@ const START_TIMEOUT = 20000;
  *
  * The first build of a page downloads the assembler (29 MB) and the linker
  * (16 MB), so a first build on a slow connection is much slower than the
- * builds after it. The limit is therefore high: the status line shows the step
- * that is in progress, which is what tells the user that the build is alive.
+ * builds after it. The limit is therefore high. The disabled Step and Run buttons are
+ * what shows that a build is in progress.
  */
 const BUILD_TIMEOUT = 180000;
 
@@ -951,7 +951,8 @@ const NO_BYTE = "??";
 /** The title of the address field, which says what the field takes. */
 const MEMORY_FIELD_HINT =
   "An address, or a register with an offset: 0x10000, sp, sp-16, pc. " +
-  "A view at a register follows it from stop to stop.";
+  "A view at a register follows it from stop to stop, and an empty field " +
+  "follows the loads and stores of the program.";
 
 
 /**
@@ -962,9 +963,13 @@ const MEMORY_FIELD_HINT =
  * each stop. A scroll that comes near an edge of the window moves the window,
  * so a reader walks the whole memory with the wheel and meets no edge.
  *
+ * At each stop the view marks the bytes that changed since the stop before,
+ * and the bytes that the last instruction read or wrote.
+ *
  * The field of the panel says where the window is. It takes an address, which
  * pins the view there, or a register, which the view follows from stop to
- * stop.
+ * stop. An empty field leaves the view free to follow the loads and stores of
+ * the program.
  */
 class MemoryView {
   /**
@@ -991,6 +996,13 @@ class MemoryView {
      * @type {?{base: number, bytes: Uint8Array}}
      */
     this.previous = null;
+    /**
+     * The bytes that the last instruction read or wrote, or null when it
+     * did neither: the address, the length and the kind of the access.
+     *
+     * @type {?{addr: number, len: number, write: boolean}}
+     */
+    this.access = null;
     /**
      * The first address of the window that the view asked for and that has
      * no answer yet, or null.
@@ -1062,29 +1074,24 @@ class MemoryView {
   }
 
   /**
-   * The three parts of the panel: the message that holds while no session
-   * gives bytes, the head with the offset of each column, and the lines.
+   * The two parts of the panel: the head with the offset of each column, and
+   * the lines. Both stay hidden while no session gives bytes, so the panel
+   * is empty.
    */
   build() {
     this.container.textContent = "";
     this.container.classList.remove("text-muted");
-    this.message = document.createElement("p");
-    this.message.className = "dbg-mem-message mb-0 text-muted";
-    this.message.textContent =
-      "The memory of the program appears here when a session stops.";
     this.head = document.createElement("div");
     this.head.className = "dbg-mem-head";
     this.body = document.createElement("div");
     this.body.className = "dbg-mem-lines";
-    this.container.appendChild(this.message);
     this.container.appendChild(this.head);
     this.container.appendChild(this.body);
     this.show_idle();
   }
 
-  /** Show the message in place of the lines. */
+  /** Leave the panel empty: no head and no lines. */
   show_idle() {
-    this.message.hidden = false;
     this.head.hidden = true;
     this.body.hidden = true;
   }
@@ -1204,9 +1211,13 @@ class MemoryView {
         char.classList.toggle("dbg-mem-zero", !none && value === 0);
         byte.classList.toggle("dbg-mem-changed", changed);
         char.classList.toggle("dbg-mem-changed", changed);
+        const access = none ? null : this.accessed(address + offset);
+        byte.classList.toggle("dbg-mem-read", access === "read");
+        char.classList.toggle("dbg-mem-read", access === "read");
+        byte.classList.toggle("dbg-mem-write", access === "write");
+        char.classList.toggle("dbg-mem-write", access === "write");
       }
     }
-    this.message.hidden = true;
     this.head.hidden = false;
     this.body.hidden = false;
     this.line_height = this.lines[0].row.getBoundingClientRect().height;
@@ -1230,6 +1241,20 @@ class MemoryView {
     if (before === null) return false;
     const at = address - before.base;
     return at >= 0 && at < before.bytes.length && before.bytes[at] !== value;
+  }
+
+  /**
+   * How the last instruction touched the byte at `address`: "read", "write"
+   * or null.
+   *
+   * @param {number} address
+   * @returns {?string}
+   */
+  accessed(address) {
+    const access = this.access;
+    if (access === null) return null;
+    if (address < access.addr || address >= access.addr + access.len) return null;
+    return access.write ? "write" : "read";
   }
 
   /**
@@ -1392,26 +1417,32 @@ class MemoryView {
   }
 
   /**
-   * The state of a stop: the registers, which the field can name, and the
-   * bytes of the window, which the view draws and compares with the stop
-   * before.
+   * The state of a stop: the registers, which the field can name, the bytes
+   * of the window, which the view draws and compares with the stop before,
+   * and the access of the last instruction, which the view marks.
    *
    * @param {number} pc
    * @param {?number[]} regs x0 to x31, or null for a state that carries none
    * @param {?{addr: number, bytes: Uint8Array}} mem the window, or null
    * @param {number} mem_size the size of the memory, or 0 when unknown
+   * @param {?{addr: number, len: number, write: boolean}} access the bytes
+   *   that the last instruction read or wrote, or null
    */
-  set_stop(pc, regs, mem, mem_size) {
+  set_stop(pc, regs, mem, mem_size, access) {
     if (!regs) {
       this.clear();
       return;
     }
     this.regs = regs;
     this.pc = pc >>> 0;
+    this.access = access;
     if (mem_size > 0) this.mem_size = mem_size;
     if (mem !== null && mem.bytes.length > 0) {
       if (this.bytes !== null) this.previous = {base: this.base, bytes: this.bytes};
       this.take(mem);
+    } else if (this.bytes !== null) {
+      // The marks of the access are new, even when the window is not.
+      this.render();
     }
     this.follow();
   }
@@ -1432,8 +1463,9 @@ class MemoryView {
 
   /**
    * Where the view goes at a stop: to the register of the field, when the
-   * field names one, or to the opening address at the first stop of a
-   * session.
+   * field names one; to the opening address at the first stop of a session;
+   * or to the bytes that the last instruction read or wrote, when the field
+   * is empty, so that the mark of the access is on screen.
    */
   follow() {
     if (this.expression !== null && this.expression.follows) {
@@ -1441,8 +1473,16 @@ class MemoryView {
       if (target !== null) this.go_to(target, "nearest");
       return;
     }
-    if (this.bytes !== null || this.pending !== null) return;
-    this.go_to(this.opening_address(), "top");
+    if (this.bytes === null && this.pending === null) {
+      this.go_to(this.opening_address(), "top");
+      return;
+    }
+    // An access outside the memory is a device register, which the view
+    // cannot show.
+    if (this.expression === null && this.access !== null
+        && this.access.addr < this.mem_size) {
+      this.go_to(this.access.addr, "nearest");
+    }
   }
 
   /**
@@ -1481,6 +1521,7 @@ class MemoryView {
     this.regs = null;
     this.pc = 0;
     this.bytes = null;
+    this.access = null;
     this.previous = null;
     this.pending = null;
     this.scroll_to = null;
@@ -1552,7 +1593,10 @@ class MemoryView {
     }
     const value = this.bytes[at];
     const char = value >= 0x20 && value < 0x7f ? ` '${String.fromCharCode(value)}'` : "";
-    cell.title = `${hex(address)} = 0x${hex_byte(value)} = ${value}${char}`;
+    const access = this.accessed(address);
+    const note = access === null ? ""
+      : `, ${access === "write" ? "written" : "read"} by the last instruction`;
+    cell.title = `${hex(address)} = 0x${hex_byte(value)} = ${value}${char}${note}`;
   }
 }
 
@@ -1670,24 +1714,15 @@ class DebuggerPage {
     this.step_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_step_button"));
     this.run_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_run_button"));
     this.stop_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_stop_button"));
-    this.status_line = document.getElementById("debug_status");
 
     /** The state of the session, as the worker reports it. */
     this.state = NO_SESSION;
     /** True while a build or a start is in progress. */
     this.busy = false;
-    /** What the status line says while `busy` is true. */
-    this.busy_message = "";
-    /** True until a build of this page is complete. */
-    this.first_build = true;
     /** The line table of the program that the session runs. */
     this.line_table = null;
     /** The program counter of the last stop. */
     this.pc = 0;
-    /** The disassembly of the instruction at the program counter. */
-    this.instruction = "";
-    /** The number of instructions that the program retired. */
-    this.count = 0;
     /** True while a run of the session is in progress. */
     this.running = false;
     /** True between the start of a session and its first state message. */
@@ -1778,8 +1813,6 @@ class DebuggerPage {
     }
     this.state = state.status;
     this.pc = state.pc;
-    this.instruction = state.inst;
-    this.count = state.count;
     // A step that stops for input leaves the session free, and a run that
     // waits for input keeps it. The worker knows which one it is, so the
     // buttons follow the flag and not the status.
@@ -1789,7 +1822,8 @@ class DebuggerPage {
       // A run reports between two chunks and carries no registers there. The
       // values of the last stop stay on screen until the run stops.
       this.registers.set_values(state.pc, state.regs);
-      this.memory.set_stop(state.pc, state.regs, state.mem || null, state.mem_size || 0);
+      this.memory.set_stop(state.pc, state.regs, state.mem || null,
+        state.mem_size || 0, state.access || null);
     }
     if (!("regs" in state)) this.warn_stale_worker();
     this.draw_controls();
@@ -1823,35 +1857,12 @@ class DebuggerPage {
     return this.line_table.line_of(address);
   }
 
-  /** The state of the buttons and the text of the status line. */
+  /** The state of the buttons. */
   draw_controls() {
     const running = !!this.running;
     this.step_button.disabled = this.busy || running;
     this.run_button.disabled = this.busy || running;
     this.stop_button.disabled = this.busy || !running;
-    this.status_line.textContent = this.status_text();
-  }
-
-  status_text() {
-    if (this.busy) return this.busy_message;
-    if (this.state === NO_SESSION) {
-      return "No session. Step starts the program and stops at its first instruction.";
-    }
-    if (this.state === "ended") {
-      return `Program ended after ${this.count} instructions. Step or Run starts it again.`;
-    }
-    const parts = [];
-    if (this.state === "breakpoint") parts.push("stopped at a breakpoint");
-    else if (this.state === "waiting") parts.push("waiting for input");
-    else if (this.state === "running") parts.push("running");
-    else if (this.state === "ready") parts.push("ready");
-    else parts.push("stopped");
-    parts.push("pc " + hex(this.pc));
-    const position = this.position_of(this.pc);
-    if (position) parts.push("line " + position.line);
-    if (this.instruction) parts.push(this.instruction);
-    parts.push(this.count + " instructions");
-    return parts.join("  ·  ");
   }
 
   /** The addresses of the breakpoints that the view holds. */
@@ -1928,7 +1939,6 @@ class DebuggerPage {
       return false;
     }
     this.busy = true;
-    this.busy_message = "building the program...";
     this.state = NO_SESSION;
     this.source.set_current(null);
     this.registers.clear();
@@ -1937,9 +1947,6 @@ class DebuggerPage {
     try {
       const program = await this.build(sources);
       if (!program) return false;
-      this.first_build = false;
-      this.busy_message = "starting the session...";
-      this.draw_controls();
       this.line_table = program.line_table;
       this.source.set_runnable(runnable_lines(program.line_table));
       // The worker of a session holds one program. A new program needs a new
@@ -1962,19 +1969,6 @@ class DebuggerPage {
       this.busy = false;
       this.draw_controls();
     }
-  }
-
-  /**
-   * Say what the build is doing now. A build that downloads the compiler takes
-   * a long time, and a status line that does not move looks like a stop.
-   *
-   * @param {string} text
-   */
-  step_message(text) {
-    this.busy_message = this.first_build
-      ? `${text} (the first build downloads the compiler, 45 MB)`
-      : text;
-    this.draw_controls();
   }
 
   /**
@@ -2039,7 +2033,6 @@ class DebuggerPage {
       const objects = [];
       for (const input of inputs) {
         const object = input.name.replace(DEBUG_SOURCE_SUFFIX, DEBUG_OBJECT_SUFFIX);
-        this.step_message(`assembling ${input.name}...`);
         const result = await with_timeout(
           compiler.as([input.name, "-o", object]), BUILD_TIMEOUT,
           `the assembler, for ${input.name}`);
@@ -2049,7 +2042,6 @@ class DebuggerPage {
         }
         objects.push(object);
       }
-      this.step_message("linking...");
       const elf = await with_timeout(
         compiler.ld([objects, "-o", DEBUG_PROGRAM].flat(), false), BUILD_TIMEOUT,
         "the linker");
