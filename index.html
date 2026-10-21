@@ -147,8 +147,7 @@
                                     <div class="d-flex align-items-center flex-wrap mt-2">
                                         <button class="btn btn-sm btn-outline-primary mr-2" id="debug_step_button" type="button" title="Run one instruction">Step</button>
                                         <button class="btn btn-sm btn-outline-success mr-2" id="debug_run_button" type="button" title="Run to the next breakpoint, or to the end of the program">Run</button>
-                                        <button class="btn btn-sm btn-outline-danger mr-3" id="debug_stop_button" type="button" title="Stop a run">Stop</button>
-                                        <small class="text-muted dbg-status" id="debug_status">No session.</small>
+                                        <button class="btn btn-sm btn-outline-danger mr-2" id="debug_stop_button" type="button" title="Stop a run">Stop</button>
                                     </div>
                                 </div>
                                 <div class="card-body text-muted dbg-source" id="debug_source_view" style="overflow: auto;">
@@ -176,9 +175,7 @@
                                         <input class="form-control form-control-sm dbg-mem-address" id="debug_memory_address" type="text" spellcheck="false" autocomplete="off" placeholder="address or register">
                                     </div>
                                 </div>
-                                <div class="card-body text-muted dbg-memory" id="debug_memory_view" style="overflow: auto;">
-                                    <p class="dbg-mem-message mb-0">The memory of the program appears here when a session stops.</p>
-                                </div>
+                                <div class="card-body text-muted dbg-memory" id="debug_memory_view" style="overflow: auto;"></div>
                             </div>
                         </div>
                     </div>

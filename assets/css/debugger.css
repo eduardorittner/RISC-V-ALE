@@ -98,10 +98,6 @@
   font-weight: 600;
 }
 
-.dbg-status {
-  line-height: 1.4;
-}
-
 /* ─── The tokens of the source view ──────────────────────────────────────── */
 
 /* The colours keep a contrast of 4.6 or more against the white background of
@@ -358,12 +354,6 @@
   font-size: 0.8rem;
   line-height: 1.45;
   overflow-anchor: none;
-}
-
-/* A message is prose, so it does not take the monospace font of the lines. */
-#debug_memory_view .dbg-mem-message {
-  padding: 1.25rem;
-  font-family: 'Nunito Sans', sans-serif;
 }
 
 /* The field holds an address, so it takes the font of the dump. It is as wide
