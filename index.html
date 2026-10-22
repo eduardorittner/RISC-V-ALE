@@ -157,7 +157,11 @@
                                 <div class="card-body ed-body" id="editor_view">
                                     <div class="ed-gutter"><div class="ed-gutter-lines" id="editor_gutter"></div></div>
                                     <div class="ed-scroll">
-                                        <pre class="ed-highlight" aria-hidden="true"><div class="ed-highlight-lines" id="editor_highlight"></div></pre>
+                                        <!-- The marks of the check go under the text: a tint
+                                             on the line, a squiggle under the token and the
+                                             message after the line. -->
+                                        <div class="ed-marks" aria-hidden="true"><div class="ed-marks-lines" id="editor_marks"></div></div>
+                                        <pre class="ed-highlight" aria-hidden="true"><span class="ed-probe" id="editor_probe">0000000000</span><div class="ed-highlight-lines" id="editor_highlight"></div></pre>
                                         <textarea class="ed-input" id="editor_input" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="Write a RISC-V assembly program here, or open one with the Open button."></textarea>
                                     </div>
                                 </div>

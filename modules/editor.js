@@ -38,6 +38,21 @@ const NEW_FILE = "";
 /** The note of the status line after a save, until the next change. */
 const SAVED_NOTE = "saved; the breakpoints of the debugger are cleared";
 
+/** The pause in typing after which the editor checks the text, in ms. */
+const CHECK_DELAY = 500;
+
+/** The width of a tab in the editor, in columns. The style sheet has the same. */
+const TAB_SIZE = 8;
+
+/** One line of a tool that names a position: `file:line:col: kind: message`. */
+const DIAGNOSTIC = /^(?<file>[^:\n]+):(?<line>\d+):(?<col>\d+): (?<kind>fatal error|error|warning|note): (?<message>.*)$/;
+
+/** The colour codes that the C compiler puts in its lines. */
+const ANSI_COLOUR = /\x1b\[[0-9;]*m/g;
+
+/** The height of a squiggle, in pixels. The style sheet draws it. */
+const SQUIGGLE_HEIGHT = 3;
+
 class EditorPage {
   constructor() {
     this.tab = document.getElementById("editor_tab");
@@ -48,6 +63,10 @@ class EditorPage {
     this.name_field = /** @type {HTMLInputElement} */ (document.getElementById("editor_name"));
     this.status = document.getElementById("editor_status");
     this.file_input = /** @type {HTMLInputElement} */ (document.getElementById("editor_file_input"));
+    /** The layer of the error marks, under the text. */
+    this.marks = document.getElementById("editor_marks");
+    /** Ten characters in the font of the text, to measure one of them. */
+    this.probe = document.getElementById("editor_probe");
 
     /**
      * The loaded file that the text came from, or null for a new file. A
@@ -69,12 +88,30 @@ class EditorPage {
     this.render_frame = 0;
     /** True after Escape: the next Tab moves the focus and inserts nothing. */
     this.tab_leaves = false;
+    /**
+     * What the assembler said about the text of the last check. A line of
+     * the text can move before the next check, so a mark can be one line off
+     * for the time of one pause.
+     * @type {{line: number, col: number, kind: string, message: string}[]}
+     */
+    this.diagnostics = [];
+    /** A word about a check that gave no diagnostics and no output. */
+    this.check_note = "";
+    /** The timer of the next check, or 0. */
+    this.check_timer = 0;
+    /** True while a check runs. One worker at a time is enough. */
+    this.check_running = false;
+    /** True when a check asked to run while another one ran. */
+    this.check_wanted = false;
 
     this.input.addEventListener("input", () => this.on_input());
     this.input.addEventListener("scroll", () => this.sync_scroll());
     this.input.addEventListener("keydown", (event) => this.on_key(event));
     this.input.addEventListener("focus", () => { this.tab_leaves = false; });
-    this.name_field.addEventListener("input", () => this.render());
+    this.name_field.addEventListener("input", () => {
+      this.render();
+      this.schedule_check();
+    });
     this.tab.addEventListener("keydown", (event) => this.on_tab_key(event));
     this.picker.onchange = () => this.on_pick();
     document.getElementById("editor_new_button").onclick = () => this.on_new();
@@ -100,6 +137,9 @@ class EditorPage {
   /** The page became visible. */
   open() {
     this.refresh();
+    // A check that ended while the page was hidden drew its marks with no
+    // metrics, because a hidden element has no size.
+    this.draw_marks();
     this.input.focus({preventScroll: true});
   }
 
@@ -286,6 +326,7 @@ class EditorPage {
     this.input.scrollLeft = 0;
     this.render();
     this.draw_status();
+    this.check_now();
   }
 
   /** The text changed. */
@@ -293,6 +334,7 @@ class EditorPage {
     this.dirty = true;
     this.note = "";
     this.draw_status();
+    this.schedule_check();
     // Several changes in one frame draw one time. A frame is also the first
     // moment that the user can see.
     if (this.render_frame) return;
@@ -329,6 +371,8 @@ class EditorPage {
     this.layer.textContent = "";
     this.layer.appendChild(nodes);
     this.draw_gutter(lines.length);
+    // A line tint spans the text, and the text can be wider than the view.
+    this.marks.style.width = this.layer.offsetWidth + "px";
     this.sync_scroll();
   }
 
@@ -349,6 +393,7 @@ class EditorPage {
     }
     this.gutter.textContent = "";
     this.gutter.appendChild(rows);
+    this.mark_gutter();
   }
 
   /**
@@ -360,6 +405,7 @@ class EditorPage {
     const top = this.input.scrollTop;
     const left = this.input.scrollLeft;
     this.layer.style.transform = `translate(${-left}px, ${-top}px)`;
+    this.marks.style.transform = `translate(${-left}px, ${-top}px)`;
     this.gutter.style.transform = `translateY(${-top}px)`;
   }
 
@@ -435,7 +481,177 @@ class EditorPage {
     let text = `${count} line${count === 1 ? "" : "s"}`;
     if (this.dirty) text += "; unsaved changes";
     else if (this.note) text += "; " + this.note;
+    const errors = this.diagnostics.filter(d => d.kind === "error").length;
+    const warnings = this.diagnostics.length - errors;
+    if (errors) text += `; ${errors} error${errors === 1 ? "" : "s"}`;
+    if (warnings) text += `; ${warnings} warning${warnings === 1 ? "" : "s"}`;
+    if (this.check_note) text += "; " + this.check_note;
     this.status.textContent = text;
+  }
+
+  /* ─── The check ──────────────────────────────────────────────────────── */
+
+  /**
+   * The tool that reads a file of this name, or null for a file that no tool
+   * of the page reads.
+   *
+   * @param {string} name
+   * @returns {?string}
+   */
+  check_tool(name) {
+    if (this.is_assembly(name)) return "clang_s";
+    if (name.toLowerCase().endsWith(".c")) return "clang_c";
+    return null;
+  }
+
+  /** Check the text after a pause. Each change starts the pause again. */
+  schedule_check() {
+    clearTimeout(this.check_timer);
+    this.check_timer = setTimeout(() => {
+      this.check_timer = 0;
+      this.check_now();
+    }, CHECK_DELAY);
+  }
+
+  /**
+   * Run the tool on the text and draw what it says. The run is in a worker,
+   * so the page goes on; the marks come about 100 ms later on a machine that
+   * has the module, and after the download on one that does not.
+   */
+  async check_now() {
+    clearTimeout(this.check_timer);
+    this.check_timer = 0;
+    if (this.check_running) {
+      this.check_wanted = true;
+      return;
+    }
+    const typed = this.name_field.value.trim();
+    const name = valid_name(typed) ? typed : this.free_name();
+    const tool = this.check_tool(name);
+    const text = this.input.value;
+    if (tool === null || text.trim() === "") {
+      this.set_diagnostics([], "");
+      return;
+    }
+    this.check_running = true;
+    let result;
+    try {
+      result = await compiler.diagnose(tool, [name, "-o", name + ".o"],
+                                       [new File([text], name, {type: "text/plain"})]);
+    } catch (error) {
+      result = {ok: false, stderr: [String(error)]};
+    } finally {
+      this.check_running = false;
+    }
+    const diagnostics = parse_diagnostics(result.stderr, name);
+    let note = "";
+    if (!result.ok && diagnostics.length === 0) {
+      note = "the check did not run";
+      console.log("[editor] the check gave no diagnostics and no output:", result.stderr);
+    }
+    this.set_diagnostics(diagnostics, note);
+    if (this.check_wanted) {
+      this.check_wanted = false;
+      this.check_now();
+    }
+  }
+
+  /**
+   * Keep the result of a check and show it.
+   *
+   * @param {{line: number, col: number, kind: string, message: string}[]} diagnostics
+   * @param {string} note
+   */
+  set_diagnostics(diagnostics, note) {
+    this.diagnostics = diagnostics;
+    this.check_note = note;
+    this.draw_marks();
+    this.draw_status();
+  }
+
+  /**
+   * The numbers that place a mark: the padding of the text, the height of a
+   * line and the width of a character. The editor never wraps a line and
+   * every character has the same width, so a position is a multiplication.
+   *
+   * @returns {{pad_top: number, pad_left: number, line_height: number, ch: number}}
+   */
+  metrics() {
+    const style = getComputedStyle(this.layer);
+    const row = this.gutter.firstElementChild;
+    return {
+      pad_top: parseFloat(style.paddingTop) || 0,
+      pad_left: parseFloat(style.paddingLeft) || 0,
+      line_height: row ? row.getBoundingClientRect().height : 0,
+      ch: this.probe.getBoundingClientRect().width / this.probe.textContent.length
+    };
+  }
+
+  /**
+   * Draw the marks of the diagnostics: a tint on the line, a squiggle under
+   * the token at the column, and the message after the end of the line. One
+   * message for each line: the first one.
+   */
+  draw_marks() {
+    const metrics = this.metrics();
+    // A hidden page has no sizes. `open` draws again.
+    if (metrics.line_height === 0 || !(metrics.ch > 0)) return;
+    const lines = this.input.value.split("\n");
+    const nodes = document.createDocumentFragment();
+    const told = new Set();
+    for (const diagnostic of this.diagnostics) {
+      if (diagnostic.line < 1 || diagnostic.line > lines.length) continue;
+      const text = lines[diagnostic.line - 1];
+      const kind = diagnostic.kind === "warning" ? "ed-mark-warning" : "ed-mark-error";
+      const top = metrics.pad_top + (diagnostic.line - 1) * metrics.line_height;
+
+      const tint = document.createElement("div");
+      tint.className = "ed-mark-line " + kind;
+      tint.style.top = top + "px";
+      tint.style.height = metrics.line_height + "px";
+      nodes.appendChild(tint);
+
+      const start = visual_column(text, diagnostic.col - 1);
+      const length = token_length(text, diagnostic.col - 1);
+      const width = Math.max(1, visual_column(text, diagnostic.col - 1 + length) - start);
+      const squiggle = document.createElement("div");
+      squiggle.className = "ed-mark-squiggle " + kind;
+      squiggle.style.left = (metrics.pad_left + start * metrics.ch) + "px";
+      squiggle.style.top = (top + metrics.line_height - SQUIGGLE_HEIGHT) + "px";
+      squiggle.style.width = (width * metrics.ch) + "px";
+      nodes.appendChild(squiggle);
+
+      if (told.has(diagnostic.line)) continue;
+      told.add(diagnostic.line);
+      const message = document.createElement("div");
+      message.className = "ed-mark-message " + kind;
+      message.style.left = (metrics.pad_left + (visual_column(text, text.length) + 2) * metrics.ch) + "px";
+      message.style.top = top + "px";
+      message.style.lineHeight = metrics.line_height + "px";
+      // The message is the output of a tool. Only `textContent` keeps it text.
+      message.textContent = diagnostic.message;
+      nodes.appendChild(message);
+    }
+    this.marks.textContent = "";
+    this.marks.appendChild(nodes);
+    this.marks.style.width = this.layer.offsetWidth + "px";
+    this.mark_gutter();
+  }
+
+  /** The number of a line with a diagnostic takes the colour of it. */
+  mark_gutter() {
+    const kinds = new Map();
+    for (const diagnostic of this.diagnostics) {
+      if (!kinds.has(diagnostic.line) || diagnostic.kind !== "warning") {
+        kinds.set(diagnostic.line, diagnostic.kind);
+      }
+    }
+    const rows = this.gutter.children;
+    for (let index = 0; index < rows.length; index++) {
+      const kind = kinds.get(index + 1);
+      rows[index].classList.toggle("ed-gutter-error", kind === "error");
+      rows[index].classList.toggle("ed-gutter-warning", kind === "warning");
+    }
   }
 
   /* ─── The buttons ────────────────────────────────────────────────────── */
@@ -520,7 +736,72 @@ class EditorPage {
     this.dirty = false;
     this.note = SAVED_NOTE;
     this.refresh();
+    this.check_now();
   }
+}
+
+
+/**
+ * The diagnostics in the lines of a tool, for the file `name`.
+ *
+ * A tool writes three lines for one diagnostic: the position and the message,
+ * the line of the source, and a caret under the column. Only the first one
+ * is read. A note is a comment on the diagnostic before it, and the editor
+ * shows the diagnostic and not the note.
+ *
+ * @param {string[]} lines
+ * @param {string} name
+ * @returns {{line: number, col: number, kind: string, message: string}[]}
+ */
+function parse_diagnostics(lines, name) {
+  const diagnostics = [];
+  for (const raw of lines) {
+    const match = DIAGNOSTIC.exec(raw.replace(ANSI_COLOUR, ""));
+    if (!match) continue;
+    const groups = match.groups;
+    if (groups.kind === "note") continue;
+    if (groups.file !== name && !groups.file.endsWith("/" + name)) continue;
+    diagnostics.push({
+      line: Number(groups.line),
+      col: Number(groups.col),
+      kind: groups.kind === "warning" ? "warning" : "error",
+      message: groups.message
+    });
+  }
+  return diagnostics;
+}
+
+
+/**
+ * The column on screen of the character at `index`, with each tab taken to
+ * the next multiple of the tab width. An index past the end of the line
+ * counts one column for each character past it.
+ *
+ * @param {string} text one line
+ * @param {number} index
+ * @returns {number}
+ */
+function visual_column(text, index) {
+  let column = 0;
+  const end = Math.min(index, text.length);
+  for (let at = 0; at < end; at++) {
+    column = text[at] === "\t" ? column + TAB_SIZE - (column % TAB_SIZE) : column + 1;
+  }
+  return column + Math.max(0, index - text.length);
+}
+
+
+/**
+ * The length of the token at `index`: a word, or one character that is not
+ * a space, or nothing at the end of the line.
+ *
+ * @param {string} text one line
+ * @param {number} index
+ * @returns {number}
+ */
+function token_length(text, index) {
+  const match = /^[\w.$]+|^\S/.exec(text.slice(index));
+  return match ? match[0].length : 0;
 }
 
 
