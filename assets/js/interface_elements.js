@@ -105,6 +105,7 @@ import {simulator_controller} from "../../modules/simulator.js";
 import {compiler} from "../../modules/compiler.js";
 import {conn} from "../../modules/connection.js";
 import {debugger_page} from "../../modules/debugger.js";
+import {editor_page} from "../../modules/editor.js";
 
 var mmio_manager = new MMIO_Manager();
 var web_terminal = new WebTerminal(document.getElementById('xterm-container'), document.getElementById("terminal_badge"));
@@ -116,7 +117,7 @@ var assistant = new Assistant(document.getElementById('assistant_container'), do
 
 class InterfaceNavegation{
   constructor(){
-    this.tabs = ["home_tab", "debug_tab", "hardware_tab", "os_tab", "settings_tab"];
+    this.tabs = ["home_tab", "editor_tab", "debug_tab", "hardware_tab", "os_tab", "settings_tab"];
   }
 
   addTab(name, icon, id, content){
@@ -148,6 +149,7 @@ class InterfaceNavegation{
       // The page holds the state of a program that the user can change from
       // the toolbar of any other page, so it reads that state again here.
       if(newHash == "debug_tab") debugger_page.open();
+      if(newHash == "editor_tab") editor_page.open();
     }else{
       home_tab.hidden = false;
       console.log(location.hash);
@@ -354,6 +356,8 @@ sim_status_ch.onmessage = function (ev) {
       break;
 
     case "load_file":
+      // A file is loaded, from any page, so the RUN button can run it.
+      run_button.setAttribute("class", "btn btn-outline-success");
       PNotify.info({
         title: 'File Loaded',
         text: 'Name: ' + ev.data.name + '\n (' + ev.data.size + ' bytes)',

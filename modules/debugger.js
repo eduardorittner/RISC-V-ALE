@@ -2074,6 +2074,18 @@ class DebuggerPage {
     this.draw_controls();
   }
 
+  /**
+   * Forget every breakpoint, of every file. The editor calls this when it
+   * saves a file: the lines moved, so a breakpoint of before points at a line
+   * that the user did not choose. The user sets the ones that are still
+   * wanted again.
+   */
+  clear_breakpoints() {
+    this.source.breakpoints.clear();
+    this.source.draw_marks();
+    this.on_breakpoint_change();
+  }
+
   async on_step() {
     const session = await this.ensure_session();
     if (!session) return;

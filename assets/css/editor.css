@@ -1,0 +1,130 @@
+/* The Editor page. */
+
+/* The body of the card holds the gutter and the two layers of the text. The
+   font is the one of the source view of the debugger, so a program looks the
+   same on the two pages. */
+#editor_view.ed-body {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  tab-size: 8;
+  -moz-tab-size: 8;
+}
+
+/* ─── The gutter ─────────────────────────────────────────────────────────── */
+
+.ed-gutter {
+  flex: 0 0 auto;
+  overflow: hidden;
+  color: #8a94a6;
+  background: #f2f4f7;
+  border-right: 1px solid #e0e4ea;
+  text-align: right;
+  /* A copy of the program must not carry the line numbers. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The numbers move with the text through a transform, so the column itself
+   never scrolls. The vertical padding is the one of the layers, so that line
+   one of the gutter is beside line one of the text. */
+.ed-gutter-lines {
+  box-sizing: content-box;
+  width: calc(var(--ed-gutter-digits, 2) * 1ch);
+  padding: 0.5rem 0.6rem;
+  white-space: pre;
+  will-change: transform;
+}
+
+/* ─── The two layers ─────────────────────────────────────────────────────── */
+
+.ed-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The layer with the colours sits under the textarea and fills the same box.
+   It takes no pointer event, so each click goes to the textarea. */
+.ed-highlight {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  pointer-events: none;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  word-spacing: inherit;
+  text-indent: 0;
+  text-transform: none;
+  text-rendering: inherit;
+  color: #041e42;
+  background: #fff;
+}
+
+/* The text of the layer has the padding of the textarea, and the same rules
+   for white space and tabs, so each character sits under its copy. */
+.ed-highlight-lines {
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  padding: 0.5rem 0.75rem;
+  white-space: pre;
+  tab-size: inherit;
+  -moz-tab-size: inherit;
+  will-change: transform;
+}
+
+/* The textarea shows the caret and the selection, and no text: the layer
+   under it shows the text. */
+.ed-input {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  font: inherit;
+  line-height: inherit;
+  /* The style sheet of the browser gives a textarea its own spacing and
+     indentation. The layer takes the ones of the page, so the textarea must
+     take the same, or the caret drifts from the text on a long line. */
+  letter-spacing: inherit;
+  word-spacing: inherit;
+  text-indent: 0;
+  text-transform: none;
+  text-rendering: inherit;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: inherit;
+  -moz-tab-size: inherit;
+  color: transparent;
+  background: transparent;
+  caret-color: #041e42;
+}
+
+.ed-input::placeholder {
+  color: #8a94a6;
+}
+
+/* The name field keeps the font of a file name. */
+#editor_name {
+  font-family: 'Courier Prime', monospace;
+  min-width: 12rem;
+}
