@@ -91,6 +91,55 @@ class Compiler{
     });
   }
 
+  /**
+   * Run one tool on `files` and give back what it wrote to its error output.
+   *
+   * The call is for a check and not for a build: the output file goes
+   * nowhere, the lines go to the caller and not to the terminal, and the
+   * loaded set of the page is not read and not changed. The editor checks a
+   * file this way after each pause in typing, so a build of the RUN button or
+   * of the debugger can run at the same time.
+   *
+   * @param {string} op "clang_s" for the assembler, "clang_c" for the C compiler
+   * @param {string[]} args the arguments of the tool, with the input and `-o`
+   * @param {File[]} files the files that the tool can read
+   * @returns {Promise<{ok: boolean, stderr: string[]}>} `ok` is true when the
+   *   tool wrote its output file
+   */
+  diagnose(op, args, files){
+    const worker = new Worker("./modules/clang_worker.js");
+    const out_name = this.get_output_name(args, "out.o");
+    return new Promise(resolve => {
+      const stderr = [];
+      let done = false;
+      let timer = 0;
+      const finish = (ok) => {
+        if(done) return;
+        done = true;
+        clearTimeout(timer);
+        worker.terminate();
+        resolve({ok, stderr});
+      };
+      timer = setTimeout(() => {
+        stderr.push("The compiler timed out");
+        finish(false);
+      }, this.timeout);
+      worker.onmessage = (event) => {
+        if(event.data.type === "stdio"){
+          if(event.data.stdioNumber === 2) stderr.push(String(event.data.msg));
+          return;
+        }
+        if(event.data.type === "file") finish(event.data.file !== -1);
+      };
+      worker.onerror = (event) => {
+        stderr.push("The compiler stopped: " + (event.message || "the worker did not start"));
+        finish(false);
+      };
+      worker.postMessage({type: "add_files", files});
+      worker.postMessage({type: op, args, out_filename: out_name});
+    });
+  }
+
   async auto_compile(c_ext, asm_ext, obj_ext, elf_ext){
     let obj_files = [];
     for (let index = 0; index < this.loaded_files.length; index++) {

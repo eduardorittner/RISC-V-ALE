@@ -364,6 +364,20 @@
   font-family: 'Courier Prime', monospace;
 }
 
+/* The arrows stand beside the field, and they are as high as it. The icon
+   font is 24 px, which is higher than the field: the icon takes a smaller
+   size and the button keeps no padding above it. */
+.dbg-mem-nav .btn {
+  display: inline-flex;
+  align-items: center;
+  height: calc(1.5em + 0.5rem + 2px);
+  padding: 0 0.3rem;
+}
+
+.dbg-mem-nav .material-icons {
+  font-size: 20px;
+}
+
 /* A line is as wide as its text, and not as wide as the panel, so that the
    sticky address has a row to stay in when the panel scrolls to the right.
    The spaces between the bytes are text, so the line keeps them. */
@@ -372,6 +386,18 @@
   width: max-content;
   min-width: 100%;
   white-space: pre;
+}
+
+/* The dump has 512 lines and the panel shows about 30. The browser lays out
+   and paints only the lines near the panel, and keeps a box of one line
+   height for each of the others, so the scroll bar and the scroll position
+   are the same as with every line in place. The height is `1lh`, the line
+   height of the dump itself; the `rem` value before it is the same height,
+   for a browser without the unit. */
+.dbg-mem-lines > .dbg-mem-line {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 1.16rem;
+  contain-intrinsic-block-size: auto 1lh;
 }
 
 /* The address column has the width of its eight digits. The head writes a

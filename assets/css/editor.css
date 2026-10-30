@@ -1,0 +1,234 @@
+/* The Editor page. */
+
+/* The body of the card holds the gutter and the two layers of the text. The
+   font is the one of the source view of the debugger, so a program looks the
+   same on the two pages. */
+#editor_view.ed-body {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  tab-size: 8;
+  -moz-tab-size: 8;
+}
+
+/* ─── The gutter ─────────────────────────────────────────────────────────── */
+
+.ed-gutter {
+  flex: 0 0 auto;
+  overflow: hidden;
+  color: #8a94a6;
+  background: #f2f4f7;
+  border-right: 1px solid #e0e4ea;
+  text-align: right;
+  /* A copy of the program must not carry the line numbers. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The numbers move with the text through a transform, so the column itself
+   never scrolls. The vertical padding is the one of the layers, so that line
+   one of the gutter is beside line one of the text. */
+.ed-gutter-lines {
+  box-sizing: content-box;
+  width: calc(var(--ed-gutter-digits, 2) * 1ch);
+  padding: 0.5rem 0.6rem;
+  white-space: pre;
+  will-change: transform;
+}
+
+/* ─── The two layers ─────────────────────────────────────────────────────── */
+
+.ed-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #fff;
+}
+
+/* The layer with the colours sits under the textarea and fills the same box.
+   It takes no pointer event, so each click goes to the textarea. */
+.ed-highlight {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  word-spacing: inherit;
+  text-indent: 0;
+  text-transform: none;
+  text-rendering: inherit;
+  color: #041e42;
+  background: transparent;
+}
+
+/* Ten characters that nothing shows. The page measures them to place a mark. */
+.ed-probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  white-space: pre;
+}
+
+/* The text of the layer has the padding of the textarea, and the same rules
+   for white space and tabs, so each character sits under its copy. */
+.ed-highlight-lines {
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  padding: 0.5rem 0.75rem;
+  white-space: pre;
+  tab-size: inherit;
+  -moz-tab-size: inherit;
+  will-change: transform;
+}
+
+/* The textarea shows the caret and the selection, and no text: the layer
+   under it shows the text. */
+.ed-input {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  z-index: 2;
+  font: inherit;
+  line-height: inherit;
+  /* The style sheet of the browser gives a textarea its own spacing and
+     indentation. The layer takes the ones of the page, so the textarea must
+     take the same, or the caret drifts from the text on a long line. */
+  letter-spacing: inherit;
+  word-spacing: inherit;
+  text-indent: 0;
+  text-transform: none;
+  text-rendering: inherit;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: inherit;
+  -moz-tab-size: inherit;
+  color: transparent;
+  background: transparent;
+  caret-color: #041e42;
+}
+
+.ed-input::placeholder {
+  color: #8a94a6;
+}
+
+/* The name field keeps the font of a file name. */
+#editor_name {
+  font-family: 'Courier Prime', monospace;
+  min-width: 12rem;
+}
+
+/* ─── The marks of the check ─────────────────────────────────────────────── */
+
+/* The layer is under the text and moves with it. Each mark is at a position
+   that the page computes from the line and the column. */
+.ed-marks {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ed-marks-lines {
+  position: relative;
+  min-width: 100%;
+  will-change: transform;
+}
+
+.ed-mark-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: rgba(217, 83, 79, 0.08);
+}
+
+.ed-mark-line.ed-mark-warning {
+  background: rgba(240, 173, 78, 0.14);
+}
+
+/* A wave of six pixels, drawn again and again under the token. */
+.ed-mark-squiggle {
+  position: absolute;
+  height: 3px;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='6' height='3'><path d='M0 2.5 L1.5 0.5 L3 2.5 L4.5 0.5 L6 2.5' fill='none' stroke='%23d9534f' stroke-width='1'/></svg>") repeat-x left bottom;
+}
+
+.ed-mark-squiggle.ed-mark-warning {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='6' height='3'><path d='M0 2.5 L1.5 0.5 L3 2.5 L4.5 0.5 L6 2.5' fill='none' stroke='%23c77c11' stroke-width='1'/></svg>");
+}
+
+/* The message sits after the end of the line, in the space that the text
+   does not use. It is cut at a width that leaves the line readable. */
+.ed-mark-message {
+  position: absolute;
+  max-width: 72ch;
+  overflow: hidden;
+  white-space: pre;
+  text-overflow: ellipsis;
+  font-style: italic;
+  color: #b23b36;
+}
+
+.ed-mark-message.ed-mark-warning {
+  color: #9a6309;
+}
+
+/* The number of a line with a diagnostic. The dot is the one of the
+   breakpoints of the debugger, in the colour of the diagnostic. */
+.ed-gutter-lines div {
+  position: relative;
+}
+
+.ed-gutter-error {
+  color: #d9534f;
+  font-weight: 600;
+}
+
+.ed-gutter-warning {
+  color: #c77c11;
+  font-weight: 600;
+}
+
+.ed-gutter-error::before,
+.ed-gutter-warning::before {
+  content: "";
+  position: absolute;
+  left: -0.45rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d9534f;
+}
+
+.ed-gutter-warning::before {
+  background: #c77c11;
+}

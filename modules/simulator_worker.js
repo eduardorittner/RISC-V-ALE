@@ -74,9 +74,14 @@ onmessage = function(e) {
       dbgViewMem(e.data.addr, e.data.len);
       break;
 
+    case "dbg_find":
+      dbgFindData(e.data.addr, e.data.forward, e.data.gap);
+      break;
+
     case 'sync':
+      // The bytes that a device wrote. The message gets no answer: the worker
+      // flushes its own output, see `BusSync`.
       bus_sync.merge(e.data.buffer);
-      bus_sync.sync();
       break;
 
     case "load_syscall":
@@ -140,43 +145,99 @@ class MMIO{
 
 var mmio = new MMIO(0x10000);
 
+/*
+ * ─── The bus between the core and the page ──────────────────────────────────
+ *
+ * The output of the program and the MMIO bytes that the core wrote go to the
+ * page in one `sync` message. The worker sends it on its own: after each
+ * slice of a run, with each state of a debug session, and at the end of the
+ * program. A long slice does not wait for its end: a write flushes by itself
+ * when the buffer is large or when `flush_interval_ms` passed since the last
+ * flush, so the terminal and the devices stay live.
+ *
+ * A `sync` message of the page carries the bytes that a device wrote. The
+ * worker merges them and does not answer. An answer to every message made a
+ * ping-pong with no delay between the two threads, which kept both at full
+ * load for the life of the worker, also while a debug session was stopped.
+ */
 class BusSync{
   constructor(mmio){
     this.mmio = mmio;
     this.stdout_buffer = "";
     this.stderr_buffer = "";
-    this.mmio_write_buffer = [];
+    this.mmio_buffer = new Uint8Array(0x10000);
+    this.dirty_flags = new Uint8Array(0x10000);
+    this.dirty_indices = new Uint32Array(0x10000);
+    this.dirty_count = 0;
+    this.last_flush_time = performance.now();
+    this.flush_interval_ms = 16;
+    this.max_buffer_size = 4096;
   }
 
   add_mmio_update(addr, size, value){
     for (let i = 0; i < size; i++) {
-      this.mmio_write_buffer[addr + i] = (value >> (i*8)) & 0xFF;
+      const idx = (addr + i) & 0xFFFF;
+      this.mmio_buffer[idx] = (value >> (i*8)) & 0xFF;
+      if(this.dirty_flags[idx] === 0){
+        this.dirty_flags[idx] = 1;
+        this.dirty_indices[this.dirty_count++] = idx;
+      }
     }
+    // A device must see the write also when the program never prints.
+    this.check_auto_flush();
   }
 
   add_stdout(text){
-    this.stdout_buffer += `${text}\n`; 
+    this.stdout_buffer += `${text}\n`;
+    this.check_auto_flush();
   }
 
   add_stderr(text){
-    this.stderr_buffer += `${text}\n`; 
+    this.stderr_buffer += `${text}\n`;
+    this.check_auto_flush();
   }
 
+  /** Flush when the buffer is large or when the last flush is old. */
+  check_auto_flush(){
+    const buffer_len = this.stdout_buffer.length + this.stderr_buffer.length;
+    if(buffer_len >= this.max_buffer_size ||
+       performance.now() - this.last_flush_time >= this.flush_interval_ms){
+      this.sync();
+    }
+  }
+
+  /** Take the bytes that a device wrote. A byte that the core wrote since the
+   *  last flush keeps its value: the processor has priority. */
   merge(extern_mmio_buffer){
+    if(!extern_mmio_buffer) return;
     for (const i in extern_mmio_buffer) {
-      const value = extern_mmio_buffer[i];
-      if(!(i in this.mmio_write_buffer)){ // processor priority
-        this.mmio.memory[1][i] = value;
+      if(this.dirty_flags[i] === 0){
+        this.mmio.memory[1][i] = extern_mmio_buffer[i];
       }
     }
   }
 
+  /** Send what the buffers hold. Nothing to send: no message. */
   sync(){
-    postMessage({type: "sync", mmio_buffer: this.mmio_write_buffer, stdout: this.stdout_buffer,
+    if(this.stdout_buffer.length === 0 && this.stderr_buffer.length === 0 &&
+       this.dirty_count === 0){
+      return;
+    }
+    let mmio_updates = null;
+    if(this.dirty_count > 0){
+      mmio_updates = {};
+      for (let i = 0; i < this.dirty_count; i++) {
+        const idx = this.dirty_indices[i];
+        mmio_updates[idx] = this.mmio_buffer[idx];
+        this.dirty_flags[idx] = 0;
+      }
+      this.dirty_count = 0;
+    }
+    postMessage({type: "sync", mmio_buffer: mmio_updates, stdout: this.stdout_buffer,
                  stderr: this.stderr_buffer});
     this.stdout_buffer = "";
     this.stderr_buffer = "";
-    this.mmio_write_buffer = [];
+    this.last_flush_time = performance.now();
   }
 
 }
@@ -280,8 +341,7 @@ function initFS() {
 
 function finishExec() {
   // Send the output that is still in the buffer before the host sees the
-  // stop. With Asyncify the core slept 100 ms here and a "sync" message from
-  // the host did this job. A module without Asyncify cannot sleep.
+  // stop.
   bus_sync.sync();
   // A debug session keeps its worker after the program ends, so that the page
   // can still show the last state. The host reads this flag and does not
@@ -319,6 +379,8 @@ function aleSliceBudget(){
 
 function aleRunLoop(){
   var status = Module._ale_run_slice(aleSliceBudget());
+  // The output of the slice goes to the page now, not with the next message.
+  bus_sync.sync();
   if(status === ALE_DONE) return;
   // ALE_WAIT: the core waits for the host, either for a character on the
   // standard input or for a command of the interactive shell.
@@ -383,12 +445,14 @@ var DEBUG_BREAK_CHUNK = 20000;
 var DEBUG_FREE_CHUNK = 2000000;
 
 /* The functions of the debug API that a session uses.
- * `patches/0008-expose-a-debug-api.patch` adds them to the module, and
- * `patches/0009-record-the-last-memory-access.patch` adds the access ones. */
+ * `patches/0008-expose-a-debug-api.patch` adds them to the module,
+ * `patches/0009-record-the-last-memory-access.patch` adds the access ones, and
+ * `patches/0010-find-the-parts-of-memory-that-hold-data.patch` adds the
+ * search. */
 var DEBUG_API = ["_ale_pc", "_ale_reg", "_ale_inst_count", "_ale_disasm",
                  "_ale_text_buffer", "_ale_mem_size", "_ale_mem_buffer",
                  "_ale_read_mem", "_ale_access_kind", "_ale_access_addr",
-                 "_ale_access_size"];
+                 "_ale_access_size", "_ale_find_data"];
 
 /** The number of integer registers of the hart. */
 var DEBUG_REG_COUNT = 32;
@@ -512,6 +576,30 @@ function dbgViewMem(addr, len){
     answer.mem_size = Module._ale_mem_size();
   }catch(error){
     answer.error = "The simulator module did not answer: " + error;
+  }
+  postMessage(answer);
+}
+
+/**
+ * The page asks for a part of memory that holds data: the first part that
+ * starts at or after `addr` when `forward` is true, or the last part that
+ * starts before it when `forward` is false. A run of `gap` zero bytes ends a
+ * part. The module scans the memory of the guest in place, so the answer is
+ * a few tens of milliseconds for the whole memory.
+ *
+ * The answer is a `dbg_found` message with the first address of the part, or
+ * null when no part is on that side. A session that runs, or that is not up,
+ * answers null too: the core is not free to scan.
+ */
+function dbgFindData(addr, forward, gap){
+  var answer = {type: "dbg_found", addr: null, forward: !!forward};
+  if(debug_ready && !debug_running){
+    try{
+      var found = Module._ale_find_data(addr >>> 0, forward? 1 : 0, gap >>> 0);
+      if(found >= 0) answer.addr = found;
+    }catch(error){
+      answer.error = "The simulator module did not answer: " + error;
+    }
   }
   postMessage(answer);
 }

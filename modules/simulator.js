@@ -75,6 +75,7 @@ class SimulatorController{
           break;
         case "dbg_state":
         case "dbg_mem":
+        case "dbg_found":
           this.sim_status_ch.postMessage(e.data);
           break;
         case 'sync':
@@ -86,37 +87,71 @@ class SimulatorController{
       }
     }.bind(this);
     mmio.reset();
-    this.mmio_write_buffer = [];
+    this.reset_mmio_updates();
     this.set_freq_limit(this.bus_freq_limit);
     this.set_int_freq_scale_limit(this.int_cont_freq_scale);
   }
 
-  add_mmio_update(addr, size, value){
-    for (let i = 0; i < size; i++) {
-      this.mmio_write_buffer[addr + i] = (value >> (i*8)) & 0xFF;
-    }
+  /*
+   * ─── MMIO updates for the worker ──────────────────────────────────────────
+   *
+   * A device writes to the MMIO area of the page, and the worker must see the
+   * bytes. The page keeps the bytes that changed since the last `sync` it
+   * sent, and sends them as soon as a device writes. A `sync` from the worker
+   * gets no answer: an answer to every message made a ping-pong with no delay
+   * between the two threads, which kept both at full load while a debug
+   * session was stopped. The worker flushes its own output on its own.
+   */
+  reset_mmio_updates(){
+    this.mmio_write_buffer = new Uint8Array(0x10000);
+    this.mmio_dirty_flags = new Uint8Array(0x10000);
+    this.mmio_dirty_indices = new Uint32Array(0x10000);
+    this.mmio_dirty_count = 0;
   }
 
-  bus_sync(data){
-    if(data.stdout.length > 0) this.stdio_ch.postMessage({fh:1, data:data.stdout});
-    if(data.stderr.length > 0) this.stdio_ch.postMessage({fh:2, data:data.stderr});
-    for (const i in data.mmio_buffer) {
-      mmio.memory[1][i] = data.mmio_buffer[i];
+  add_mmio_update(addr, size, value){
+    for (let i = 0; i < size; i++) {
+      const idx = (addr + i) & 0xFFFF;
+      this.mmio_write_buffer[idx] = (value >> (i*8)) & 0xFF;
+      if(this.mmio_dirty_flags[idx] === 0){
+        this.mmio_dirty_flags[idx] = 1;
+        this.mmio_dirty_indices[this.mmio_dirty_count++] = idx;
+      }
     }
-    setTimeout( _ => {
-      this.simulator.postMessage({type:"sync", buffer:this.mmio_write_buffer});
-      this.mmio_write_buffer = [];
-    }, 0);
+    this.flush_mmio();
+  }
+
+  /** Send the MMIO bytes that changed since the last flush, if there are any. */
+  flush_mmio(){
+    if(this.mmio_dirty_count === 0) return;
+    const updates = {};
+    for (let i = 0; i < this.mmio_dirty_count; i++) {
+      const idx = this.mmio_dirty_indices[i];
+      updates[idx] = this.mmio_write_buffer[idx];
+      this.mmio_dirty_flags[idx] = 0;
+    }
+    this.mmio_dirty_count = 0;
+    this.simulator.postMessage({type:"sync", buffer:updates});
+  }
+
+  /**
+   * Fan a `sync` of the worker out to the page: the text to the stdio channel
+   * and the MMIO bytes into the buffer that the devices read.
+   */
+  bus_sync(data){
+    if(data.stdout && data.stdout.length > 0) this.stdio_ch.postMessage({fh:1, data:data.stdout});
+    if(data.stderr && data.stderr.length > 0) this.stdio_ch.postMessage({fh:2, data:data.stderr});
+    if(data.mmio_buffer){
+      for (const i in data.mmio_buffer) {
+        mmio.memory[1][i] = data.mmio_buffer[i];
+      }
+    }
   }
 
   start_execution(args, debug){
     this.simulator.postMessage({type: "add_files", files: this.last_loaded_files});
     this.sim_status_ch.postMessage({type: "status", status:{starting_exec: true, args, debug}});
     this.simulator.postMessage({type: "start", args, debug});
-    setTimeout( _ => {
-      this.simulator.postMessage({type:"sync", buffer:this.mmio_write_buffer});
-      this.mmio_write_buffer = [];
-    }, 0)
   }
 
   /**
@@ -153,6 +188,21 @@ class SimulatorController{
    */
   debug_view_memory(addr, len){
     this.simulator.postMessage({type: "dbg_mem", addr, len});
+  }
+
+  /**
+   * Ask a debug session for a part of memory that holds data: the first part
+   * that starts at or after `addr` when `forward` is true, or the last part
+   * that starts before it when `forward` is false. A run of `gap` zero bytes
+   * ends a part. The worker answers with a `dbg_found` message on the status
+   * channel, whose `addr` is the first address of the part or null.
+   *
+   * @param {number} addr
+   * @param {boolean} forward
+   * @param {number} gap
+   */
+  debug_find_data(addr, forward, gap){
+    this.simulator.postMessage({type: "dbg_find", addr, forward, gap});
   }
 
   load_syscall(number, code, desc){

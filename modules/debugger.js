@@ -942,11 +942,57 @@ const MEMORY_GROUP = 8;
 /** The multiple that the first address of the window is aligned to. */
 const MEMORY_ALIGN = 16;
 
+/**
+ * The number of zero bytes that divide two parts of memory that hold data.
+ *
+ * Most of the memory is zero, and the arrows of the panel walk the parts
+ * that are not: the headers of the program, its code and data, the heap and
+ * the stack. A run of zeros that is shorter than this is inside a part: a
+ * word of zeros in a structure is data, and not space between two
+ * structures. A page of padding between two sections is longer, so the
+ * sections are two parts.
+ */
+const MEMORY_GAP = 64;
+
 /** The size of the address space of a hart with 32 bit registers. */
 const ADDRESS_SPACE = 0x100000000;
 
 /** What a cell shows for a byte that the hart could not read. */
 const NO_BYTE = "??";
+
+/** What `MemoryView.shown` holds for a byte that the hart could not read. */
+const NO_BYTE_VALUE = -1;
+
+/** What `MemoryView.shown` holds for a cell that no draw wrote yet. */
+const NOT_DRAWN = -2;
+
+/**
+ * The marks of a cell, as bits. A draw keeps the marks of each cell and
+ * writes a class only when its bit changes.
+ */
+const MARK_NONE = 1;
+const MARK_ZERO = 2;
+const MARK_CHANGED = 4;
+const MARK_READ = 8;
+const MARK_WRITE = 16;
+
+/** The marks that both cells of a byte carry, with the class of each one. */
+const CELL_MARKS = [
+  [MARK_ZERO, "dbg-mem-zero"],
+  [MARK_CHANGED, "dbg-mem-changed"],
+  [MARK_READ, "dbg-mem-read"],
+  [MARK_WRITE, "dbg-mem-write"],
+];
+
+/** The two hexadecimal digits of each byte value, made once. */
+const HEX_BYTES = Array.from({length: 256}, (_, value) => value.toString(16).padStart(2, "0"));
+
+/**
+ * The character of each byte value: the byte itself when it is printable
+ * ASCII, and a point for every other value, which is what every dump does.
+ */
+const PRINTABLE_CHARS = Array.from({length: 256},
+  (_, value) => value >= 0x20 && value < 0x7f ? String.fromCharCode(value) : ".");
 
 /** The title of the address field, which says what the field takes. */
 const MEMORY_FIELD_HINT =
@@ -970,15 +1016,26 @@ const MEMORY_FIELD_HINT =
  * pins the view there, or a register, which the view follows from stop to
  * stop. An empty field leaves the view free to follow the loads and stores of
  * the program.
+ *
+ * The two arrows go to the part of memory that holds data before or after
+ * the one on screen, where `MEMORY_GAP` zero bytes end a part. The session
+ * finds the part, because the view holds one window of a memory that is
+ * mostly zeros, and the view pins itself to its first address.
  */
 class MemoryView {
   /**
    * @param {HTMLElement} container the body of the memory panel
    * @param {HTMLInputElement} field the control that names the address
+   * @param {HTMLButtonElement} previous_button the arrow to the part before
+   * @param {HTMLButtonElement} next_button the arrow to the part after
    */
-  constructor(container, field) {
+  constructor(container, field, previous_button, next_button) {
     this.container = container;
     this.field = field;
+    this.previous_button = previous_button;
+    this.next_button = next_button;
+    /** True while the page is busy or a run is in progress: no search then. */
+    this.busy = false;
     /** The number of bytes on one line. */
     this.bytes_per_line = MEMORY_LINE_WIDTHS[0];
     /** The size of the memory of the hart, in bytes. */
@@ -1039,7 +1096,25 @@ class MemoryView {
     this.lines = [];
     /** The number of bytes that each line on screen has cells for. */
     this.lines_width = 0;
-    /** The height in pixels of one line, which the view measures at a draw. */
+    /**
+     * What each cell shows: the value of its byte, `NO_BYTE_VALUE` for a byte
+     * that the hart could not read, or `NOT_DRAWN` for a cell that no draw
+     * wrote yet. A draw writes a cell only when it must show another value.
+     * @type {Int16Array}
+     */
+    this.shown = new Int16Array(0);
+    /**
+     * The marks that each cell has, as bits of `MARK_*`. A draw writes a
+     * class only when its bit changes.
+     * @type {Uint8Array}
+     */
+    this.marks = new Uint8Array(0);
+    /** The address of the first line on screen, or -1 while there is none. */
+    this.shown_base = -1;
+    /**
+     * The height in pixels of one line, which the view measures with the
+     * widths. It is the same at every stop, so a draw does not measure it.
+     */
     this.line_height = 0;
     /**
      * The width in pixels that a line of each width needs, which the view
@@ -1050,6 +1125,8 @@ class MemoryView {
     this.widths = null;
     this.build();
     this.field.title = MEMORY_FIELD_HINT;
+    this.previous_button.addEventListener("click", () => this.on_navigate(false));
+    this.next_button.addEventListener("click", () => this.on_navigate(true));
     this.field.addEventListener("change", () => this.on_expression());
     this.field.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
@@ -1090,10 +1167,32 @@ class MemoryView {
     this.show_idle();
   }
 
-  /** Leave the panel empty: no head and no lines. */
+  /** Leave the panel empty: no head and no lines, and no arrow to press. */
   show_idle() {
     this.head.hidden = true;
     this.body.hidden = true;
+    this.draw_buttons();
+  }
+
+  /**
+   * The state of the arrows: there is a part to look for only while the view
+   * holds bytes of a stopped session.
+   */
+  draw_buttons() {
+    const disabled = this.bytes === null || this.busy;
+    this.previous_button.disabled = disabled;
+    this.next_button.disabled = disabled;
+  }
+
+  /**
+   * The page is busy with a build, or a run is in progress. The core is not
+   * free for a search then, so the arrows wait.
+   *
+   * @param {boolean} busy
+   */
+  set_busy(busy) {
+    this.busy = busy;
+    this.draw_buttons();
   }
 
   /**
@@ -1172,12 +1271,21 @@ class MemoryView {
     this.body.textContent = "";
     this.body.appendChild(rows);
     this.lines_width = width;
+    // New cells show nothing and carry no mark.
+    this.shown = new Int16Array(width * count).fill(NOT_DRAWN);
+    this.marks = new Uint8Array(width * count);
+    this.shown_base = -1;
   }
 
   /**
    * Draw the window. The lines stay from one draw to the next: the view
    * writes their cells, because a new set of lines would lose the scroll
    * position.
+   *
+   * A draw writes only the cells that must show another value or another
+   * mark. Few bytes change at a step, so a draw is a few writes and not a
+   * write of the whole dump. The draw reads no size of the page: a read
+   * after the writes makes the browser lay the dump out at once.
    */
   render() {
     if (this.bytes === null) {
@@ -1189,38 +1297,61 @@ class MemoryView {
     if (this.lines_width !== width || this.lines.length !== count) {
       this.build_lines(width, count);
     }
+    if (this.shown_base !== this.base) {
+      for (let index = 0; index < count; index++) {
+        const line = this.lines[index];
+        const address = this.base + index * width;
+        line.row.dataset.address = String(address);
+        line.address.textContent = hex_address(address);
+      }
+      this.shown_base = this.base;
+    }
+    const bytes = this.bytes;
+    const shown = this.shown;
+    const marks = this.marks;
     for (let index = 0; index < count; index++) {
       const line = this.lines[index];
       const start = index * width;
-      const address = this.base + start;
-      line.row.dataset.address = String(address);
-      line.address.textContent = hex_address(address);
       for (let offset = 0; offset < width; offset++) {
         const at = start + offset;
+        const none = at >= bytes.length;
+        const value = none ? NO_BYTE_VALUE : bytes[at];
+        let mark = 0;
+        if (none) {
+          mark = MARK_NONE;
+        } else {
+          const address = this.base + at;
+          // A zero is the most common byte of a memory, and it says the
+          // least. It is pale in both columns, so that the data stands out.
+          if (value === 0) mark |= MARK_ZERO;
+          if (this.changed(address, value)) mark |= MARK_CHANGED;
+          const access = this.accessed(address);
+          if (access === "read") mark |= MARK_READ;
+          else if (access === "write") mark |= MARK_WRITE;
+        }
+        const was = marks[at];
+        if (shown[at] === value && was === mark) continue;
         const byte = line.bytes[offset];
         const char = line.chars[offset];
-        const none = at >= this.bytes.length;
-        const value = none ? 0 : this.bytes[at];
-        const changed = !none && this.changed(address + offset, value);
-        byte.textContent = none ? NO_BYTE : hex_byte(value);
-        char.textContent = none ? " " : printable(value);
-        byte.classList.toggle("dbg-mem-none", none);
-        // A zero is the most common byte of a memory, and it says the least.
-        // It is pale in both columns, so that the data stands out.
-        byte.classList.toggle("dbg-mem-zero", !none && value === 0);
-        char.classList.toggle("dbg-mem-zero", !none && value === 0);
-        byte.classList.toggle("dbg-mem-changed", changed);
-        char.classList.toggle("dbg-mem-changed", changed);
-        const access = none ? null : this.accessed(address + offset);
-        byte.classList.toggle("dbg-mem-read", access === "read");
-        char.classList.toggle("dbg-mem-read", access === "read");
-        byte.classList.toggle("dbg-mem-write", access === "write");
-        char.classList.toggle("dbg-mem-write", access === "write");
+        if (shown[at] !== value) {
+          byte.textContent = none ? NO_BYTE : hex_byte(value);
+          char.textContent = none ? " " : printable(value);
+          shown[at] = value;
+        }
+        const differ = was ^ mark;
+        if (differ & MARK_NONE) byte.classList.toggle("dbg-mem-none", none);
+        for (const [bit, name] of CELL_MARKS) {
+          if ((differ & bit) === 0) continue;
+          const on = (mark & bit) !== 0;
+          byte.classList.toggle(name, on);
+          char.classList.toggle(name, on);
+        }
+        marks[at] = mark;
       }
     }
     this.head.hidden = false;
     this.body.hidden = false;
-    this.line_height = this.lines[0].row.getBoundingClientRect().height;
+    this.draw_buttons();
     if (this.scroll_to !== null) {
       const target = this.scroll_to;
       this.scroll_to = null;
@@ -1301,7 +1432,7 @@ class MemoryView {
     // The Debugger tab is hidden until the reader opens it, and a hidden
     // panel has no size to measure.
     if (width === 0) return;
-    if (this.widths === null) this.widths = this.measure_widths();
+    if (this.widths === null) this.measure();
     let choice = MEMORY_LINE_WIDTHS[MEMORY_LINE_WIDTHS.length - 1];
     for (const candidate of MEMORY_LINE_WIDTHS) {
       if (this.widths[candidate] <= width) {
@@ -1318,14 +1449,19 @@ class MemoryView {
   }
 
   /**
-   * The width in pixels that a line of each width needs. The measure is a
-   * line with a value in every cell, which the page lays out but does not
-   * show. It is out of the flow, so the lines do not move for it.
+   * The width in pixels that a line of each width needs, and the height of a
+   * line. The measure is a line with a value in every cell, which the page
+   * lays out but does not show. It is out of the flow, so the lines do not
+   * move for it.
    *
-   * @returns {Object<number, number>}
+   * The height comes from here and not from a draw. A read of a size after
+   * the writes of a draw made the browser lay the whole dump out at once,
+   * which was most of the time of a step. The height is the same at every
+   * stop: the line height of the dump is a rule of its style.
    */
-  measure_widths() {
+  measure() {
     const widths = {};
+    let height = 0;
     for (const width of MEMORY_LINE_WIDTHS) {
       const line = this.build_line(width);
       line.address.textContent = hex_address(0);
@@ -1337,10 +1473,13 @@ class MemoryView {
       line.row.style.visibility = "hidden";
       line.row.style.minWidth = "0";
       this.container.appendChild(line.row);
-      widths[width] = Math.ceil(line.row.getBoundingClientRect().width);
+      const rect = line.row.getBoundingClientRect();
+      widths[width] = Math.ceil(rect.width);
+      height = rect.height;
       line.row.remove();
     }
-    return widths;
+    this.widths = widths;
+    this.line_height = height;
   }
 
   /**
@@ -1553,6 +1692,50 @@ class MemoryView {
   }
 
   /**
+   * An arrow: ask the session for the part of memory that holds data after
+   * the line at the top of the panel, or before it. The search starts at the
+   * line after the top one, so that a press moves the view: a part that
+   * starts on the top line is on screen already. The answer comes as a
+   * message, which `set_found` takes.
+   *
+   * @param {boolean} forward
+   */
+  on_navigate(forward) {
+    if (this.bytes === null || this.regs === null || this.busy) return;
+    const top = this.top_address();
+    const from = forward ? top + this.bytes_per_line : top;
+    if (from >= this.mem_size) return;
+    simulator_controller.debug_find_data(from, forward, MEMORY_GAP);
+  }
+
+  /**
+   * The answer of a search: the first address of the part, or null when no
+   * part is on that side, which leaves the view where it is.
+   *
+   * @param {?number} address
+   */
+  set_found(address) {
+    if (address === null || this.regs === null) return;
+    this.pin(address);
+  }
+
+  /**
+   * Put `address` in the field and go there, as if the reader had typed it.
+   * The view is pinned: a step does not take it away from the part.
+   *
+   * @param {number} address
+   */
+  pin(address) {
+    const text = hex(address);
+    this.field.value = text;
+    this.applied_text = text;
+    this.field.classList.remove("is-invalid");
+    this.field.title = MEMORY_FIELD_HINT;
+    this.expression = parse_address_expression(text);
+    this.go_to(address, "top");
+  }
+
+  /**
    * The value of an expression of the field, with the registers of the last
    * stop. Null when the expression names a register and no stop gave one.
    *
@@ -1670,7 +1853,7 @@ function align_down(address) {
 
 /** A byte, as two hexadecimal digits. */
 function hex_byte(value) {
-  return value.toString(16).padStart(2, "0");
+  return HEX_BYTES[value];
 }
 
 
@@ -1683,12 +1866,9 @@ function hex_address(value) {
 }
 
 
-/**
- * The character of a byte: the byte itself when it is printable ASCII, and a
- * point for every other value, which is what every dump does.
- */
+/** The character of a byte, as the text column shows it. */
 function printable(value) {
-  return value >= 0x20 && value < 0x7f ? String.fromCharCode(value) : ".";
+  return PRINTABLE_CHARS[value];
 }
 
 
@@ -1709,7 +1889,9 @@ class DebuggerPage {
     this.registers = new RegisterView(document.getElementById("debug_register_view"));
     this.memory = new MemoryView(
       document.getElementById("debug_memory_view"),
-      /** @type {HTMLInputElement} */ (document.getElementById("debug_memory_address"))
+      /** @type {HTMLInputElement} */ (document.getElementById("debug_memory_address")),
+      /** @type {HTMLButtonElement} */ (document.getElementById("debug_memory_previous")),
+      /** @type {HTMLButtonElement} */ (document.getElementById("debug_memory_next"))
     );
     this.step_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_step_button"));
     this.run_button = /** @type {HTMLButtonElement} */ (document.getElementById("debug_run_button"));
@@ -1776,6 +1958,11 @@ class DebuggerPage {
     }
     if (data.type === "dbg_mem") {
       this.memory.set_window(data.mem, data.mem_size);
+      return;
+    }
+    if (data.type === "dbg_found") {
+      if (data.error) console.log("[debugger] the search of the memory failed:", data.error);
+      this.memory.set_found(data.addr);
       return;
     }
     if (data.type !== "dbg_state") return;
@@ -1863,6 +2050,7 @@ class DebuggerPage {
     this.step_button.disabled = this.busy || running;
     this.run_button.disabled = this.busy || running;
     this.stop_button.disabled = this.busy || !running;
+    this.memory.set_busy(this.busy || running);
   }
 
   /** The addresses of the breakpoints that the view holds. */
@@ -1884,6 +2072,18 @@ class DebuggerPage {
    */
   on_breakpoint_change() {
     this.draw_controls();
+  }
+
+  /**
+   * Forget every breakpoint, of every file. The editor calls this when it
+   * saves a file: the lines moved, so a breakpoint of before points at a line
+   * that the user did not choose. The user sets the ones that are still
+   * wanted again.
+   */
+  clear_breakpoints() {
+    this.source.breakpoints.clear();
+    this.source.draw_marks();
+    this.on_breakpoint_change();
   }
 
   async on_step() {
